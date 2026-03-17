@@ -53,6 +53,8 @@ export interface SanitizeOptions {
    * — it corrupts stored data with HTML entities. Default: false.
    */
   htmlEncode?: boolean;
+  /** Freeze sanitized objects with Object.freeze() to prevent mutation. Default: false */
+  freeze?: boolean;
 }
 
 /** Result of sanitizing a string */
@@ -248,6 +250,8 @@ export interface ValidationError {
 // =============================================================================
 
 /** Safe logging configuration */
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
+
 export interface LogOptions {
   /** Additional keys to redact beyond defaults */
   redactKeys?: string[];
@@ -255,6 +259,8 @@ export interface LogOptions {
   maxLength?: number;
   /** Additional patterns to redact (e.g., custom tokens) */
   redactPatterns?: RegExp[];
+  /** Minimum log level. Messages below this level are skipped (no redaction work). Default: 'debug' */
+  level?: LogLevel;
 }
 
 /** Safe logger interface */

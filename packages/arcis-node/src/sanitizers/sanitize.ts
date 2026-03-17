@@ -94,7 +94,8 @@ export function sanitizeObject(obj: unknown, options: SanitizeOptions = {}): unk
   if (typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(item => sanitizeObject(item, options));
 
-  return sanitizeObjectDepth(obj as Record<string, unknown>, options, 0);
+  const result = sanitizeObjectDepth(obj as Record<string, unknown>, options, 0);
+  return options.freeze ? Object.freeze(result) : result;
 }
 
 /**

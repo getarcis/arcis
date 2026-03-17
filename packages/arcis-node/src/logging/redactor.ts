@@ -4,7 +4,15 @@
  */
 
 import { REDACTION, INPUT } from '../core/constants';
-import type { LogOptions, SafeLogger } from '../core/types';
+import type { LogOptions, LogLevel, SafeLogger } from '../core/types';
+
+const LOG_LEVELS: Record<string, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+  silent: 4,
+};
 
 /**
  * Create a safe logger that redacts sensitive data and prevents log injection.
@@ -22,11 +30,14 @@ import type { LogOptions, SafeLogger } from '../core/types';
  * const logger = createSafeLogger({ redactKeys: ['customToken', 'internalId'] });
  */
 export function createSafeLogger(options: LogOptions = {}): SafeLogger {
-  const { 
-    redactKeys = [], 
+  const {
+    redactKeys = [],
     maxLength = REDACTION.DEFAULT_MAX_LENGTH,
     redactPatterns = [],
+    level: minLevel = 'debug',
   } = options;
+
+  const minLevelNum = LOG_LEVELS[minLevel] ?? 0;
 
   // Combine default and custom keys (lowercase for case-insensitive matching)
   const allRedactKeys = new Set([
@@ -66,16 +77,20 @@ export function createSafeLogger(options: LogOptions = {}): SafeLogger {
    * Log a message at the specified level.
    */
   function log(level: string, message: string, data?: unknown): void {
+    // Early exit: skip all work if message level is below minimum
+    const levelNum = LOG_LEVELS[level] ?? 0;
+    if (levelNum < minLevelNum) return;
+
     const entry: Record<string, unknown> = {
       timestamp: new Date().toISOString(),
       level,
       message: redactString(message, maxLength, redactPatterns),
     };
-    
+
     if (data !== undefined) {
       entry.data = redact(data);
     }
-    
+
     console.log(JSON.stringify(entry));
   }
 
