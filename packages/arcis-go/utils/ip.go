@@ -1,24 +1,13 @@
-package arcis
+package utils
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 )
 
-// InputTooLargeError is returned when input exceeds the maximum size.
-type InputTooLargeError struct {
-	Size    int
-	MaxSize int
-}
-
-func (e *InputTooLargeError) Error() string {
-	return fmt.Sprintf("input size %d exceeds maximum of %d bytes", e.Size, e.MaxSize)
-}
-
-// getClientIP extracts the client IP address from the request,
+// GetClientIP extracts the client IP address from the request,
 // handling common proxy headers.
-func getClientIP(r *http.Request) string {
+func GetClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header (comma-separated list, first is client)
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff != "" {

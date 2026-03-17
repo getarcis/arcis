@@ -1,4 +1,4 @@
-package arcis
+package validation
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/GagancM/arcis/sanitizers"
 )
 
 // Validation patterns
@@ -59,14 +61,14 @@ func (e *ValidationError) Error() string {
 // Validator validates request data against a schema.
 type Validator struct {
 	schema    ValidationSchema
-	sanitizer *Sanitizer
+	sanitizer *sanitizers.Sanitizer
 }
 
 // NewValidator creates a new Validator with the given schema.
 func NewValidator(schema ValidationSchema) *Validator {
 	return &Validator{
 		schema:    schema,
-		sanitizer: NewSanitizerWithOptions(true, true, true, true, true),
+		sanitizer: sanitizers.NewSanitizerWithOptions(true, true, true, true, true),
 	}
 }
 

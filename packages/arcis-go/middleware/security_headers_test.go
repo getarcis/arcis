@@ -1,12 +1,14 @@
-package arcis
+package middleware
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/GagancM/arcis/core"
 )
 
 func TestSecurityHeaders_DefaultHeaders(t *testing.T) {
-	config := DefaultConfig()
+	config := core.DefaultConfig()
 	headers := NewSecurityHeaders(config)
 	h := headers.GetHeaders()
 
@@ -31,7 +33,7 @@ func TestSecurityHeaders_DefaultHeaders(t *testing.T) {
 }
 
 func TestSecurityHeaders_CustomCSP(t *testing.T) {
-	config := DefaultConfig()
+	config := core.DefaultConfig()
 	config.CSP = "default-src 'none'"
 	headers := NewSecurityHeaders(config)
 
@@ -42,7 +44,7 @@ func TestSecurityHeaders_CustomCSP(t *testing.T) {
 }
 
 func TestSecurityHeaders_CacheControl(t *testing.T) {
-	config := DefaultConfig()
+	config := core.DefaultConfig()
 	headers := NewSecurityHeaders(config)
 	h := headers.GetHeaders()
 

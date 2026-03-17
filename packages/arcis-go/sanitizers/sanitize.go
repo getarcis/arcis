@@ -1,8 +1,10 @@
-package arcis
+package sanitizers
 
 import (
 	"regexp"
 	"strings"
+
+	"github.com/GagancM/arcis/core"
 )
 
 // Pre-compiled XSS patterns for performance (ReDoS-safe)
@@ -86,10 +88,10 @@ type Sanitizer struct {
 }
 
 // NewSanitizer creates a new Sanitizer with the given configuration.
-func NewSanitizer(config Config) *Sanitizer {
+func NewSanitizer(config core.Config) *Sanitizer {
 	maxSize := config.MaxInputSize
 	if maxSize <= 0 {
-		maxSize = DefaultMaxInputSize
+		maxSize = core.DefaultMaxInputSize
 	}
 	return &Sanitizer{
 		xss:          config.SanitizeXSS,
@@ -109,7 +111,7 @@ func NewSanitizerWithOptions(xss, sql, nosql, path, cmd bool) *Sanitizer {
 		nosql:        nosql,
 		path:         path,
 		cmd:          cmd,
-		maxInputSize: DefaultMaxInputSize,
+		maxInputSize: core.DefaultMaxInputSize,
 	}
 }
 
@@ -174,7 +176,7 @@ func (s *Sanitizer) SanitizeMap(data map[string]interface{}) map[string]interfac
 }
 
 func (s *Sanitizer) sanitizeMapDepth(data map[string]interface{}, depth int) map[string]interface{} {
-	if depth > MaxRecursionDepth || data == nil {
+	if depth > core.MaxRecursionDepth || data == nil {
 		return data
 	}
 
@@ -211,7 +213,7 @@ func (s *Sanitizer) sanitizeMapDepth(data map[string]interface{}, depth int) map
 }
 
 func (s *Sanitizer) sanitizeSlice(data []interface{}, depth int) []interface{} {
-	if depth > MaxRecursionDepth || data == nil {
+	if depth > core.MaxRecursionDepth || data == nil {
 		return data
 	}
 

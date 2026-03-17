@@ -1,4 +1,4 @@
-package arcis
+package middleware
 
 import (
 	"encoding/json"

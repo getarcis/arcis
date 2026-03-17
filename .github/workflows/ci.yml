@@ -47,5 +47,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
+          cache: false
       - run: go mod tidy
       - run: go test -v -race ./...

@@ -1,6 +1,10 @@
-package arcis
+package logging
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/GagancM/arcis/core"
+)
 
 // SafeLogger provides safe logging with automatic redaction of sensitive data.
 type SafeLogger struct {
@@ -63,7 +67,7 @@ func (l *SafeLogger) Redact(data map[string]interface{}) map[string]interface{} 
 }
 
 func (l *SafeLogger) redactDepth(data map[string]interface{}, depth int) map[string]interface{} {
-	if depth > MaxRecursionDepth || data == nil {
+	if depth > core.MaxRecursionDepth || data == nil {
 		return data
 	}
 
@@ -92,7 +96,7 @@ func (l *SafeLogger) redactDepth(data map[string]interface{}, depth int) map[str
 }
 
 func (l *SafeLogger) redactSlice(data []interface{}, depth int) []interface{} {
-	if depth > MaxRecursionDepth || data == nil {
+	if depth > core.MaxRecursionDepth || data == nil {
 		return data
 	}
 

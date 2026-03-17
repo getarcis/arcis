@@ -1,9 +1,11 @@
-package arcis
+package middleware
 
 import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+
+	"github.com/GagancM/arcis/logging"
 )
 
 // Patterns that indicate database or infrastructure internals in error messages.
@@ -34,7 +36,7 @@ func ContainsSensitiveInfo(message string) bool {
 type ErrorHandler struct {
 	isDev     bool
 	logErrors bool
-	logger    *SafeLogger
+	logger    *logging.SafeLogger
 }
 
 // NewErrorHandler creates a new ErrorHandler.
@@ -43,12 +45,12 @@ func NewErrorHandler(isDev bool) *ErrorHandler {
 	return &ErrorHandler{
 		isDev:     isDev,
 		logErrors: true,
-		logger:    NewSafeLogger(),
+		logger:    logging.NewSafeLogger(),
 	}
 }
 
 // NewErrorHandlerWithLogger creates an ErrorHandler with a custom logger.
-func NewErrorHandlerWithLogger(isDev bool, logger *SafeLogger) *ErrorHandler {
+func NewErrorHandlerWithLogger(isDev bool, logger *logging.SafeLogger) *ErrorHandler {
 	return &ErrorHandler{
 		isDev:     isDev,
 		logErrors: true,

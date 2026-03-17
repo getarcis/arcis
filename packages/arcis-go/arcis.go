@@ -46,76 +46,141 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"time"
+
+	"github.com/GagancM/arcis/core"
+	"github.com/GagancM/arcis/logging"
+	"github.com/GagancM/arcis/middleware"
+	"github.com/GagancM/arcis/sanitizers"
+	"github.com/GagancM/arcis/utils"
+	"github.com/GagancM/arcis/validation"
 )
 
-// Version is the current version of Arcis.
-const Version = "1.1.0"
+// ─── Type aliases (backward compatibility) ──────────────────────────────────
 
-// MaxRecursionDepth is the maximum depth for recursive operations.
-const MaxRecursionDepth = 10
+// Core types
+type Config = core.Config
+type RateLimitResult = core.RateLimitResult
+type RateLimitEntry = core.RateLimitEntry
+type RateLimitStore = core.RateLimitStore
+type InputTooLargeError = core.InputTooLargeError
 
-// DefaultMaxInputSize is the default maximum input size in bytes (1MB).
-const DefaultMaxInputSize = 1_000_000
+// Sanitizer types
+type Sanitizer = sanitizers.Sanitizer
 
-// Config holds Arcis configuration options.
-type Config struct {
-	// Sanitizer options
-	Sanitize      bool
-	SanitizeXSS   bool
-	SanitizeSQL   bool
-	SanitizeNoSQL bool
-	SanitizePath  bool
-	SanitizeCmd   bool // Command injection protection
-	MaxInputSize  int  // Maximum input size in bytes (default: 1MB)
+// Middleware types
+type RateLimiter = middleware.RateLimiter
+type SecurityHeaders = middleware.SecurityHeaders
+type ErrorHandler = middleware.ErrorHandler
 
-	// Rate limiter options
-	RateLimit       bool
-	RateLimitMax    int
-	RateLimitWindow time.Duration
-	RateLimitSkip   func(*http.Request) bool // Skip rate limiting for certain requests
-	RateLimitStore  RateLimitStore           // Optional external store (e.g. Redis)
+// Logging types
+type SafeLogger = logging.SafeLogger
 
-	// Security headers options
-	Headers           bool
-	CSP               string
-	FrameOptions      string // DENY, SAMEORIGIN, or empty to disable
-	HSTSMaxAge        int    // Max age in seconds, 0 to disable
-	HSTSSubdomains    bool
-	ReferrerPolicy    string
-	PermissionsPolicy string
-	CacheControl      bool   // Enable cache-control headers (default: true)
-	CacheControlValue string // Custom Cache-Control value. Empty = use secure default.
+// Validation types
+type FieldType = validation.FieldType
+type FieldRule = validation.FieldRule
+type ValidationSchema = validation.ValidationSchema
+type ValidationError = validation.ValidationError
+type Validator = validation.Validator
 
-	// Error handler options
-	IsDev bool // Show error details in development mode
-}
+// URL/Redirect types
+type ValidateURLOptions = utils.ValidateURLOptions
+type ValidateURLResult = utils.ValidateURLResult
+type ValidateRedirectOptions = utils.ValidateRedirectOptions
+type ValidateRedirectResult = utils.ValidateRedirectResult
+
+// ─── Constants (re-exported) ────────────────────────────────────────────────
+
+const Version = core.Version
+const MaxRecursionDepth = core.MaxRecursionDepth
+const DefaultMaxInputSize = core.DefaultMaxInputSize
+
+// Validation field type constants
+const (
+	TypeString  = validation.TypeString
+	TypeNumber  = validation.TypeNumber
+	TypeBoolean = validation.TypeBoolean
+	TypeEmail   = validation.TypeEmail
+	TypeURL     = validation.TypeURL
+	TypeUUID    = validation.TypeUUID
+	TypeArray   = validation.TypeArray
+	TypeObject  = validation.TypeObject
+)
+
+// ─── Constructor re-exports ─────────────────────────────────────────────────
 
 // DefaultConfig returns the default Arcis configuration.
-// All protections are enabled with sensible defaults.
-func DefaultConfig() Config {
-	return Config{
-		Sanitize:          true,
-		SanitizeXSS:       true,
-		SanitizeSQL:       true,
-		SanitizeNoSQL:     true,
-		SanitizePath:      true,
-		SanitizeCmd:       true,
-		MaxInputSize:      DefaultMaxInputSize,
-		RateLimit:         true,
-		RateLimitMax:      100,
-		RateLimitWindow:   time.Minute,
-		Headers:           true,
-		CSP:               "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; object-src 'none'; frame-ancestors 'none';",
-		FrameOptions:      "DENY",
-		HSTSMaxAge:        31536000,
-		HSTSSubdomains:    true,
-		ReferrerPolicy:    "strict-origin-when-cross-origin",
-		PermissionsPolicy: "geolocation=(), microphone=(), camera=()",
-		CacheControl:      true,
-		IsDev:             false,
-	}
-}
+var DefaultConfig = core.DefaultConfig
+
+// NewSanitizer creates a new Sanitizer with the given configuration.
+var NewSanitizer = sanitizers.NewSanitizer
+
+// NewSanitizerWithOptions creates a sanitizer with explicit options.
+var NewSanitizerWithOptions = sanitizers.NewSanitizerWithOptions
+
+// NewRateLimiter creates a new RateLimiter with the given limit and window.
+var NewRateLimiter = middleware.NewRateLimiter
+
+// NewRateLimiterWithStore creates a new RateLimiter backed by the provided store.
+var NewRateLimiterWithStore = middleware.NewRateLimiterWithStore
+
+// NewSecurityHeaders creates a new SecurityHeaders with the given configuration.
+var NewSecurityHeaders = middleware.NewSecurityHeaders
+
+// NewErrorHandler creates a new ErrorHandler.
+var NewErrorHandler = middleware.NewErrorHandler
+
+// NewErrorHandlerWithLogger creates an ErrorHandler with a custom logger.
+var NewErrorHandlerWithLogger = middleware.NewErrorHandlerWithLogger
+
+// ContainsSensitiveInfo checks if an error message contains sensitive info.
+var ContainsSensitiveInfo = middleware.ContainsSensitiveInfo
+
+// NewSafeLogger creates a new SafeLogger with default settings.
+var NewSafeLogger = logging.NewSafeLogger
+
+// NewSafeLoggerWithKeys creates a SafeLogger with custom sensitive keys.
+var NewSafeLoggerWithKeys = logging.NewSafeLoggerWithKeys
+
+// NewSafeLoggerOnlyKeys creates a SafeLogger with ONLY the specified keys.
+var NewSafeLoggerOnlyKeys = logging.NewSafeLoggerOnlyKeys
+
+// NewValidator creates a new Validator with the given schema.
+var NewValidator = validation.NewValidator
+
+// ValidateHandler creates middleware that validates request body.
+var ValidateHandler = validation.ValidateHandler
+
+// GetValidatedBody retrieves the validated body from request context.
+var GetValidatedBody = validation.GetValidatedBody
+
+// Float is a helper for creating FieldRule with Min/Max.
+var Float = validation.Float
+
+// SanitizeHeaderValue strips CRLF/null bytes from a header value.
+var SanitizeHeaderValue = sanitizers.SanitizeHeaderValue
+
+// SanitizeHeaders sanitizes a map of HTTP header key-value pairs.
+var SanitizeHeaders = sanitizers.SanitizeHeaders
+
+// DetectHeaderInjection checks if a string contains header injection patterns.
+var DetectHeaderInjection = sanitizers.DetectHeaderInjection
+
+// ValidateURL checks a URL for SSRF safety.
+var ValidateURL = utils.ValidateURL
+
+// IsURLSafe is a convenience wrapper that returns true/false.
+var IsURLSafe = utils.IsURLSafe
+
+// ValidateRedirect checks a redirect URL for open redirect attacks.
+var ValidateRedirect = utils.ValidateRedirect
+
+// IsRedirectSafe is a convenience wrapper that returns true/false.
+var IsRedirectSafe = utils.IsRedirectSafe
+
+// GetClientIP extracts the client IP address from the request.
+var GetClientIP = utils.GetClientIP
+
+// ─── Arcis main struct ──────────────────────────────────────────────────────
 
 // Arcis is the main security middleware.
 type Arcis struct {

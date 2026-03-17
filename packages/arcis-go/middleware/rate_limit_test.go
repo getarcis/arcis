@@ -1,8 +1,6 @@
-package arcis
+package middleware
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -64,25 +62,6 @@ func TestRateLimiter_DifferentIPsSeparateLimits(t *testing.T) {
 			if !result.Allowed {
 				t.Errorf("Request from %s should be allowed", key)
 			}
-		}
-	}
-}
-
-func TestRateLimiter_SkipFunction(t *testing.T) {
-	config := DefaultConfig()
-	config.RateLimitMax = 1
-	config.RateLimitSkip = func(r *http.Request) bool {
-		return true
-	}
-
-	s := NewWithConfig(config)
-	defer s.Close()
-
-	for i := 0; i < 5; i++ {
-		req := httptest.NewRequest("GET", "/", nil)
-		result := s.rateLimiter.Check(req)
-		if !result.Allowed {
-			t.Errorf("Request %d should be allowed (skipped)", i+1)
 		}
 	}
 }

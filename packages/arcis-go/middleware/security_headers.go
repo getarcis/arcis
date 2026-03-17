@@ -1,6 +1,10 @@
-package arcis
+package middleware
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/GagancM/arcis/core"
+)
 
 // SecurityHeaders handles security header configuration and application.
 type SecurityHeaders struct {
@@ -8,7 +12,7 @@ type SecurityHeaders struct {
 }
 
 // NewSecurityHeaders creates a new SecurityHeaders with the given configuration.
-func NewSecurityHeaders(config Config) *SecurityHeaders {
+func NewSecurityHeaders(config core.Config) *SecurityHeaders {
 	headers := make(map[string]string)
 
 	if config.CSP != "" {

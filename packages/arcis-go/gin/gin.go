@@ -272,14 +272,14 @@ func MiddlewareWithConfig(config Config) gin.HandlerFunc {
 			}
 		}
 
-		// Remove fingerprinting headers
-		c.Writer.Header().Del("Server")
-		c.Writer.Header().Del("X-Powered-By")
-
 		// Store sanitizer in context for use in handlers
 		c.Set("arcis_sanitizer", sanitizer)
 
 		c.Next()
+
+		// Remove fingerprinting headers after handler runs
+		c.Writer.Header().Del("Server")
+		c.Writer.Header().Del("X-Powered-By")
 	}
 }
 
@@ -307,9 +307,9 @@ func HeadersWithConfig(config Config) gin.HandlerFunc {
 		for key, value := range headers.GetHeaders() {
 			c.Header(key, value)
 		}
+		c.Next()
 		c.Writer.Header().Del("Server")
 		c.Writer.Header().Del("X-Powered-By")
-		c.Next()
 	}
 }
 

@@ -1,4 +1,4 @@
-package arcis
+package validation
 
 import (
 	"strings"

@@ -1,4 +1,4 @@
-package arcis
+package utils
 
 import (
 	"net/http/httptest"
@@ -29,7 +29,7 @@ func TestGetClientIP(t *testing.T) {
 				req.Header.Set("X-Real-IP", tt.xri)
 			}
 
-			result := getClientIP(req)
+			result := GetClientIP(req)
 			if result != tt.expected {
 				t.Errorf("Expected %q, got %q", tt.expected, result)
 			}

@@ -1,4 +1,4 @@
-package arcis
+package sanitizers
 
 import "testing"
 
@@ -30,9 +30,9 @@ func TestSanitizeHeaderValue(t *testing.T) {
 func TestSanitizeHeaders(t *testing.T) {
 	t.Run("sanitizes keys and values", func(t *testing.T) {
 		headers := map[string]string{
-			"X-Custom":       "safe",
-			"X-Bad\r\n":     "value\r\ninjected",
-			"Content-Type":   "text/html",
+			"X-Custom":     "safe",
+			"X-Bad\r\n":   "value\r\ninjected",
+			"Content-Type": "text/html",
 		}
 		result := SanitizeHeaders(headers)
 		if result["X-Custom"] != "safe" {

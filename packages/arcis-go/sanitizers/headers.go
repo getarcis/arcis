@@ -1,4 +1,4 @@
-package arcis
+package sanitizers
 
 import "regexp"
 

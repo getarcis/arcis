@@ -2,7 +2,7 @@
 Arcis Go — Integration & Middleware Tests
 
 Tests the main Arcis facade and HTTP middleware behavior.
-Unit tests for individual components are in their respective *_test.go files.
+Unit tests for individual components are in their respective subpackages.
 Run with: go test -v ./...
 */
 package arcis
@@ -130,4 +130,23 @@ func TestMiddleware_RemovesFingerprintHeaders(t *testing.T) {
 	rec.Header().Set("X-Powered-By", "PHP/7.4")
 
 	s.Handler(handler).ServeHTTP(rec, req)
+}
+
+func TestRateLimiter_SkipFunction(t *testing.T) {
+	config := DefaultConfig()
+	config.RateLimitMax = 1
+	config.RateLimitSkip = func(r *http.Request) bool {
+		return true
+	}
+
+	s := NewWithConfig(config)
+	defer s.Close()
+
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest("GET", "/", nil)
+		result := s.rateLimiter.Check(req)
+		if !result.Allowed {
+			t.Errorf("Request %d should be allowed (skipped)", i+1)
+		}
+	}
 }

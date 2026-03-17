@@ -1,43 +1,21 @@
-package arcis
+package middleware
 
 import (
 	"context"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/GagancM/arcis/core"
+	"github.com/GagancM/arcis/utils"
 )
-
-// RateLimitResult holds the result of a rate limit check.
-type RateLimitResult struct {
-	Allowed   bool
-	Limit     int
-	Remaining int
-	Reset     time.Duration
-}
-
-// RateLimitEntry holds the data for a single rate limit record.
-// Used by RateLimitStore implementations.
-type RateLimitEntry struct {
-	Count     int
-	ResetTime time.Time
-}
-
-// RateLimitStore defines the interface for pluggable rate limit store backends.
-// The default implementation is an in-memory store. Implement this interface
-// to use a distributed backend such as Redis for multi-instance deployments.
-type RateLimitStore interface {
-	Get(key string) *RateLimitEntry
-	Set(key string, entry *RateLimitEntry)
-	Increment(key string) int
-	Cleanup()
-}
 
 // RateLimiter handles rate limiting with configurable limits and windows.
 type RateLimiter struct {
 	max         int
 	window      time.Duration
 	store       map[string]*rateLimitEntry
-	customStore RateLimitStore
+	customStore core.RateLimitStore
 	mu          sync.RWMutex
 	skipFunc    func(*http.Request) bool
 	ctx         context.Context
@@ -78,7 +56,7 @@ func NewRateLimiter(max int, window time.Duration) *RateLimiter {
 }
 
 // NewRateLimiterWithStore creates a new RateLimiter backed by the provided store.
-func NewRateLimiterWithStore(max int, window time.Duration, store RateLimitStore) *RateLimiter {
+func NewRateLimiterWithStore(max int, window time.Duration, store core.RateLimitStore) *RateLimiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	rl := &RateLimiter{
 		max:         max,
@@ -110,9 +88,9 @@ func (rl *RateLimiter) SetSkipFunc(fn func(*http.Request) bool) {
 }
 
 // Check checks if a request is within the rate limit.
-func (rl *RateLimiter) Check(r *http.Request) RateLimitResult {
+func (rl *RateLimiter) Check(r *http.Request) core.RateLimitResult {
 	if rl.skipFunc != nil && rl.skipFunc(r) {
-		return RateLimitResult{
+		return core.RateLimitResult{
 			Allowed:   true,
 			Limit:     rl.max,
 			Remaining: rl.max,
@@ -120,12 +98,12 @@ func (rl *RateLimiter) Check(r *http.Request) RateLimitResult {
 		}
 	}
 
-	key := getClientIP(r)
+	key := utils.GetClientIP(r)
 	return rl.CheckKey(key)
 }
 
 // CheckKey checks rate limit for a specific key.
-func (rl *RateLimiter) CheckKey(key string) RateLimitResult {
+func (rl *RateLimiter) CheckKey(key string) core.RateLimitResult {
 	if rl.customStore != nil {
 		return rl.checkKeyWithStore(key)
 	}
@@ -141,7 +119,7 @@ func (rl *RateLimiter) CheckKey(key string) RateLimitResult {
 			count:     1,
 			resetTime: now.Add(rl.window),
 		}
-		return RateLimitResult{
+		return core.RateLimitResult{
 			Allowed:   true,
 			Limit:     rl.max,
 			Remaining: rl.max - 1,
@@ -156,7 +134,7 @@ func (rl *RateLimiter) CheckKey(key string) RateLimitResult {
 	}
 	reset := entry.resetTime.Sub(now)
 
-	return RateLimitResult{
+	return core.RateLimitResult{
 		Allowed:   entry.count <= rl.max,
 		Limit:     rl.max,
 		Remaining: remaining,
@@ -164,14 +142,14 @@ func (rl *RateLimiter) CheckKey(key string) RateLimitResult {
 	}
 }
 
-func (rl *RateLimiter) checkKeyWithStore(key string) RateLimitResult {
+func (rl *RateLimiter) checkKeyWithStore(key string) core.RateLimitResult {
 	now := time.Now()
 
 	entry := rl.customStore.Get(key)
 	if entry == nil {
 		resetTime := now.Add(rl.window)
-		rl.customStore.Set(key, &RateLimitEntry{Count: 1, ResetTime: resetTime})
-		return RateLimitResult{
+		rl.customStore.Set(key, &core.RateLimitEntry{Count: 1, ResetTime: resetTime})
+		return core.RateLimitResult{
 			Allowed:   true,
 			Limit:     rl.max,
 			Remaining: rl.max - 1,
@@ -186,7 +164,7 @@ func (rl *RateLimiter) checkKeyWithStore(key string) RateLimitResult {
 	}
 	reset := entry.ResetTime.Sub(now)
 
-	return RateLimitResult{
+	return core.RateLimitResult{
 		Allowed:   count <= rl.max,
 		Limit:     rl.max,
 		Remaining: remaining,

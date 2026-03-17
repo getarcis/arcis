@@ -1,4 +1,4 @@
-package arcis
+package utils
 
 import (
 	"net/url"
@@ -27,17 +27,6 @@ var (
 )
 
 // ValidateRedirect checks a redirect URL for open redirect attacks.
-//
-// Safe:
-//   - Relative paths: /dashboard, /users?page=2
-//   - Absolute URLs to allowed hosts
-//
-// Blocked:
-//   - Absolute URLs to unknown hosts
-//   - Protocol-relative URLs (//evil.com)
-//   - javascript:, data:, vbscript:, blob: protocols
-//   - Backslash-prefixed paths (\\evil.com)
-//   - URLs with control characters
 func ValidateRedirect(rawURL string, opts *ValidateRedirectOptions) ValidateRedirectResult {
 	if opts == nil {
 		opts = &ValidateRedirectOptions{}

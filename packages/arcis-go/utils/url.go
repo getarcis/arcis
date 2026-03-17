@@ -1,4 +1,4 @@
-package arcis
+package utils
 
 import (
 	"net/url"
@@ -33,13 +33,6 @@ var (
 )
 
 // ValidateURL checks a URL for SSRF safety.
-//
-// Blocks:
-//   - Private IPs (10.x, 172.16-31.x, 192.168.x)
-//   - Loopback (127.x.x.x, ::1, localhost)
-//   - Link-local / cloud metadata (169.254.x.x)
-//   - Dangerous protocols (file:, ftp:, gopher:, etc.)
-//   - URLs with embedded credentials (user:pass@host)
 func ValidateURL(rawURL string, opts *ValidateURLOptions) ValidateURLResult {
 	if opts == nil {
 		opts = &ValidateURLOptions{}
