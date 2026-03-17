@@ -4,7 +4,7 @@
  */
 
 import { REDACTION, INPUT } from '../core/constants';
-import type { LogOptions, LogLevel, SafeLogger } from '../core/types';
+import type { LogOptions, SafeLogger } from '../core/types';
 
 const LOG_LEVELS: Record<string, number> = {
   debug: 0,
