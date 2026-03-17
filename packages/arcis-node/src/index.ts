@@ -34,10 +34,13 @@ export { default } from './middleware/main';
 // MIDDLEWARE
 // =============================================================================
 export { createRateLimiter, rateLimit } from './middleware/rate-limit';
+export { createSlidingWindowLimiter } from './middleware/rate-limit-sliding';
+export { createTokenBucketLimiter } from './middleware/rate-limit-token';
 export { createHeaders, securityHeaders } from './middleware/headers';
 export { errorHandler, createErrorHandler } from './middleware/error-handler';
 export { safeCors, createCors } from './middleware/cors';
 export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from './middleware/cookies';
+export { botProtection, detectBot } from './middleware/bot-detection';
 
 // =============================================================================
 // SANITIZERS
@@ -63,6 +66,14 @@ export { validate, createValidator } from './validation/schema';
 export { validateUrl, isUrlSafe } from './validation/url';
 export { validateRedirect, isRedirectSafe } from './validation/redirect';
 export { validateFile, sanitizeFilename, isDangerousExtension } from './validation/file';
+export { validateEmail, verifyEmailMx, isValidEmailSyntax } from './validation/email';
+
+// =============================================================================
+// UTILITIES
+// =============================================================================
+export { parseDuration, formatDuration } from './utils/duration';
+export { detectClientIp, isPrivateIp } from './utils/ip';
+export { fingerprint } from './utils/fingerprint';
 
 // =============================================================================
 // LOGGING
@@ -120,6 +131,14 @@ export type { ValidateRedirectOptions, ValidateRedirectResult } from './validati
 
 // Redis store types
 export type { RedisClientLike, RedisStoreOptions } from './stores/redis';
+
+// Utility types
+export type { Platform, DetectIpOptions } from './utils/ip';
+export type { FingerprintOptions } from './utils/fingerprint';
+export type { EmailValidationOptions, EmailValidationResult } from './validation/email';
+export type { SlidingWindowOptions, SlidingWindowMiddleware } from './middleware/rate-limit-sliding';
+export type { TokenBucketOptions, TokenBucketMiddleware } from './middleware/rate-limit-token';
+export type { BotCategory, BotDetectionResult, BotProtectionOptions } from './middleware/bot-detection';
 
 // =============================================================================
 // ERRORS
