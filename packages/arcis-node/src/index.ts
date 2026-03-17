@@ -41,6 +41,7 @@ export { errorHandler, createErrorHandler } from './middleware/error-handler';
 export { safeCors, createCors } from './middleware/cors';
 export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from './middleware/cookies';
 export { botProtection, detectBot } from './middleware/bot-detection';
+export { csrfProtection, createCsrf, generateCsrfToken, validateCsrfToken } from './middleware/csrf';
 
 // =============================================================================
 // SANITIZERS
@@ -139,6 +140,7 @@ export type { EmailValidationOptions, EmailValidationResult } from './validation
 export type { SlidingWindowOptions, SlidingWindowMiddleware } from './middleware/rate-limit-sliding';
 export type { TokenBucketOptions, TokenBucketMiddleware } from './middleware/rate-limit-token';
 export type { BotCategory, BotDetectionResult, BotProtectionOptions } from './middleware/bot-detection';
+export type { CsrfOptions } from './middleware/csrf';
 
 // =============================================================================
 // ERRORS
