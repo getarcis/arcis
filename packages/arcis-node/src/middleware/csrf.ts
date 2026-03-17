@@ -176,7 +176,7 @@ export function csrfProtection(options: CsrfOptions = {}): RequestHandler {
     }
 
     // Expose token generation on the request for templates/views
-    (req as Record<string, unknown>).csrfToken = () => {
+    (req as unknown as Record<string, unknown>).csrfToken = () => {
       const existing = getCookieValue(req, cookieName);
       if (existing) return existing;
 
