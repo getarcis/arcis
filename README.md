@@ -189,9 +189,7 @@ import { MemoryStore } from '@arcis/node/stores';
 |-----|-------------------|----------------|--------|
 | Node.js | Express | Work with any framework | Stable |
 | Python | Flask, FastAPI, Django | Work standalone | Stable |
-| Go | net/http, Gin, Echo | Work standalone | Stable |
-| Java | Spring Boot | — | Planned |
-| C# | ASP.NET Core | — | Planned |
+| Go | net/http, Gin, Echo | Work standalone | Beta |
 
 **Node.js roadmap:** Built-in adapters for Fastify, Koa, and Hono are planned. The core functions already work with these frameworks — you just wire a short middleware wrapper (see examples above).
 

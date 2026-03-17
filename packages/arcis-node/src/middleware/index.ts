@@ -16,3 +16,4 @@ export { errorHandler, createErrorHandler } from './error-handler';
 export { safeCors, createCors } from './cors';
 export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from './cookies';
 export { botProtection, detectBot } from './bot-detection';
+export { csrfProtection, createCsrf, generateCsrfToken, validateCsrfToken } from './csrf';
