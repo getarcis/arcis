@@ -6,6 +6,7 @@ path traversal, and command injection.
 """
 
 import re
+import types
 from typing import Any, Dict, List, Set
 
 from ..core.constants import PATTERNS, DEFAULT_MAX_INPUT_SIZE, MAX_RECURSION_DEPTH
@@ -30,6 +31,7 @@ class Sanitizer:
         path: bool = True,
         command: bool = True,
         max_input_size: int = DEFAULT_MAX_INPUT_SIZE,
+        freeze: bool = False,
     ):
         self.xss = xss
         self.sql = sql
@@ -37,6 +39,7 @@ class Sanitizer:
         self.path = path
         self.command = command
         self.max_input_size = max_input_size
+        self.freeze = freeze
 
         # Compile XSS patterns (prefer ReDoS-safe variants)
         self._xss_patterns = []
@@ -159,6 +162,8 @@ class Sanitizer:
             else:
                 result[sanitized_key] = value
 
+        if self.freeze and depth == 0:
+            return types.MappingProxyType(result)
         return result
 
     def __call__(self, data: Any) -> Any:

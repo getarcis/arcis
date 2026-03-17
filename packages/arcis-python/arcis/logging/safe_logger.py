@@ -67,6 +67,11 @@ class SafeLogger:
 
     def _log(self, level: str, message: str, data: Optional[Dict] = None):
         """Internal log method."""
+        # Early exit: skip redaction work if logger won't emit at this level
+        log_level = getattr(logging, level.upper(), logging.INFO)
+        if not self.logger.isEnabledFor(log_level):
+            return
+
         import datetime
         entry = {
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),

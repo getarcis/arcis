@@ -111,6 +111,11 @@ from .sanitizers import (
     sanitize_header_value,
     sanitize_headers,
     detect_header_injection,
+    scan_pii,
+    detect_pii,
+    redact_pii,
+    scan_object_pii,
+    redact_object_pii,
 )
 
 from .validation.email import (
@@ -202,6 +207,12 @@ __all__ = [
     "BotDenied",
     "BotDetectionResult",
     "detect_bot",
+    # PII detection and redaction
+    "scan_pii",
+    "detect_pii",
+    "redact_pii",
+    "scan_object_pii",
+    "redact_object_pii",
     # Utilities
     "parse_duration",
     "format_duration",

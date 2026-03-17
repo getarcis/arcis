@@ -59,6 +59,7 @@ export { sanitizeCommand, detectCommandInjection } from './sanitizers/command';
 export { isDangerousNoSqlKey, detectNoSqlInjection } from './sanitizers/nosql';
 export { isDangerousProtoKey, detectPrototypePollution } from './sanitizers/prototype';
 export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './sanitizers/headers';
+export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from './sanitizers/pii';
 
 // =============================================================================
 // VALIDATION
@@ -141,6 +142,7 @@ export type { SlidingWindowOptions, SlidingWindowMiddleware } from './middleware
 export type { TokenBucketOptions, TokenBucketMiddleware } from './middleware/rate-limit-token';
 export type { BotCategory, BotDetectionResult, BotProtectionOptions } from './middleware/bot-detection';
 export type { CsrfOptions } from './middleware/csrf';
+export type { PiiType, PiiMatch, PiiScanOptions, PiiRedactOptions } from './sanitizers/pii';
 
 // =============================================================================
 // ERRORS
