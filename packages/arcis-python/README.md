@@ -74,13 +74,16 @@ ARCIS_CONFIG = {
 
 ## Features
 
-### 🧹 Input Sanitization
+### Input Sanitization
 Automatically sanitize user input to prevent:
 - **XSS** (Cross-Site Scripting)
 - **SQL Injection**
 - **NoSQL Injection** (MongoDB operators)
 - **Path Traversal** (`../` attacks)
 - **Prototype Pollution** (`__proto__`, `constructor`)
+- **HTTP Header Injection** (CRLF, response splitting)
+- **SSRF** (private IPs, cloud metadata, dangerous protocols)
+- **Open Redirect** (absolute URLs, `javascript:`, protocol-relative)
 
 ```python
 from arcis import sanitize_string, sanitize_dict
@@ -95,25 +98,44 @@ clean = sanitize_dict(data)
 # Result: {"name": "&lt;script&gt;..."}  ($gt key removed)
 ```
 
-### 🚦 Rate Limiting
-Protect against brute force and DDoS attacks:
+### Rate Limiting
+Protect against brute force and DDoS attacks with fixed window, sliding window, or token bucket:
 
 ```python
 from arcis import RateLimiter
+from arcis.middleware import SlidingWindowLimiter, TokenBucketLimiter
 
-limiter = RateLimiter(
-    max_requests=100,      # 100 requests
-    window_ms=60000,       # per minute
-)
+# Fixed window
+limiter = RateLimiter(max_requests=100, window_ms=60000)
 
-# In your route handler
-try:
-    limiter.check(request)
-except RateLimitExceeded as e:
-    return {"error": e.message}, 429
+# Sliding window — smoother rate enforcement
+sliding = SlidingWindowLimiter(max_requests=100, window_ms=60000)
+
+# Token bucket — burst-friendly
+bucket = TokenBucketLimiter(capacity=100, refill_rate=10)  # 10 tokens/sec
 ```
 
-### 🔒 Security Headers
+### Bot Detection
+Detect and categorize bots with 80+ patterns across 7 categories:
+
+```python
+from arcis.middleware import BotDetector
+
+detector = BotDetector()
+result = detector.detect(user_agent, request_headers)
+# result.is_bot, result.category, result.confidence
+```
+
+### CSRF Protection
+Double-submit cookie pattern with token generation and validation:
+
+```python
+from arcis.middleware import CsrfProtection
+
+csrf = CsrfProtection(secret="your-secret-key")
+```
+
+### Security Headers
 Automatically add security headers to all responses:
 - `Content-Security-Policy`
 - `X-Content-Type-Options: nosniff`
@@ -121,7 +143,7 @@ Automatically add security headers to all responses:
 - `Strict-Transport-Security`
 - `X-XSS-Protection: 1; mode=block`
 
-### ✅ Input Validation
+### Input Validation
 
 ```python
 from arcis import Validator, validate_email, validate_url
@@ -137,7 +159,7 @@ assert Validator.uuid("550e8400-e29b-41d4-a716-446655440000")  # True
 assert Validator.length("hello", min_len=3, max_len=10)  # True
 ```
 
-### 📝 Safe Logging
+### Safe Logging
 Log safely without exposing secrets:
 
 ```python
@@ -220,7 +242,11 @@ pytest tests/ --cov=arcis --cov-report=html
 |-------|-------------|
 | `Arcis` | Main class - configures all protections |
 | `Sanitizer` | Input sanitization |
-| `RateLimiter` | Rate limiting |
+| `RateLimiter` | Fixed window rate limiting |
+| `SlidingWindowLimiter` | Sliding window rate limiting |
+| `TokenBucketLimiter` | Token bucket rate limiting |
+| `BotDetector` | Bot detection with 80+ patterns |
+| `CsrfProtection` | CSRF double-submit cookie protection |
 | `SecurityHeaders` | Security headers |
 | `Validator` | Input validation |
 | `SafeLogger` | Safe logging with redaction |
@@ -242,9 +268,19 @@ pytest tests/ --cov=arcis --cov-report=html
 | `sanitize_sql(value)` | SQL injection sanitization only |
 | `sanitize_nosql(data)` | NoSQL injection sanitization only |
 | `sanitize_path(value)` | Path traversal sanitization only |
-| `validate_email(value)` | Validate email format |
+| `validate_email(value)` | Email validation with disposable blocklist, typo suggestions, MX verify |
 | `validate_url(value)` | Validate URL format |
+| `validate_url_ssrf(value)` | URL validation with SSRF protection |
+| `validate_redirect(value)` | Open redirect prevention |
 | `validate_uuid(value)` | Validate UUID format |
+
+### Utilities
+
+| Function | Description |
+|----------|-------------|
+| `parse_duration(value)` | Parse duration strings (`"5m"`, `"1h"`) to milliseconds |
+| `get_client_ip(request)` | Platform-aware IP detection (proxy headers, etc.) |
+| `fingerprint_request(request)` | Generate request fingerprint for tracking |
 
 ## License
 
@@ -252,4 +288,7 @@ MIT License - see LICENSE file for details.
 
 ## Contributing
 
-Contributions welcome! Please submit pull requests to the main Arcis repository.
+1. Fork the repo and create your branch from `nwl` (the active development branch)
+2. All PRs target `nwl` — `main` is release-only
+3. All changes must pass existing tests
+4. New features require test cases aligned with `spec/TEST_VECTORS.json`

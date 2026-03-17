@@ -1,49 +1,24 @@
-# Arcis
+# @arcis/node
 
 [![npm version](https://img.shields.io/npm/v/@arcis/node.svg)](https://www.npmjs.com/package/@arcis/node)
-[![PyPI version](https://img.shields.io/pypi/v/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
 
-One-line security middleware for Node.js, Python, and Go.
+**One-line security middleware for Node.js.**
 
-Arcis protects your code like how Dependabot protects your dependencies.
+Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
-**15 attack vectors handled. 1040+ tests. Zero dependencies.**
+**17 attack vectors handled. 970+ tests. Zero dependencies.**
 
-| Category | What it stops |
-|----------|--------------|
-| XSS | Script injection, event handlers, `javascript:` URIs, SVG/iframe payloads |
-| SQL Injection | Keywords, boolean logic, comments, time-based blind (`SLEEP`, `BENCHMARK`) |
-| NoSQL Injection | MongoDB operators (`$gt`, `$where`, `$regex`, 25+ blocked operators) |
-| Command Injection | Shell metacharacters, dangerous commands, redirections |
-| Path Traversal | `../`, encoded variants (`%2e%2e`), null byte injection |
-| Prototype Pollution | `__proto__`, `constructor`, `__defineGetter__`, 7 keys blocked (case-insensitive) |
-| HTTP Header Injection | CRLF injection, response splitting, null bytes |
-| SSRF | Private IPs, loopback, link-local, cloud metadata, dangerous protocols |
-| Open Redirect | Absolute URLs, `javascript:`, protocol-relative, backslash/control char bypass |
-| Error Leakage | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
-| CORS Misconfiguration | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
-| Cookie Security | HttpOnly, Secure, SameSite enforced on all cookies |
-| Rate Limiting | Per-IP, in-memory or Redis, `X-RateLimit-*` headers |
-| Security Headers | CSP, HSTS, X-Frame-Options, 10 headers out of the box |
-| Input Validation | Type checking, ranges, enums, mass assignment prevention, safe logging |
-
-## Install
+## Installation
 
 ```bash
-npm install @arcis/node          # Node.js
-pip install arcis                # Python
-go get github.com/GagancM/arcis  # Go
+npm install @arcis/node
 ```
 
 ## Quick Start
 
-### Node.js
-
-Arcis has two layers: **framework-agnostic core functions** that work anywhere, and **middleware adapters** for specific frameworks.
-
-#### With Express (built-in adapter)
+### With Express (built-in adapter)
 
 ```js
 import { arcis } from '@arcis/node';
@@ -52,7 +27,7 @@ app.use(arcis());
 // That's it. Sanitization, rate limiting, and security headers are on.
 ```
 
-#### With any framework (Fastify, Koa, Hono, etc.)
+### With any framework (Fastify, Koa, Hono, etc.)
 
 The core sanitization, validation, and logging functions have zero framework dependencies. Use them directly in any Node.js project:
 
@@ -116,41 +91,27 @@ app.use('*', async (c, next) => {
 });
 ```
 
-> Built-in adapters for Fastify, Koa, and Hono are on the roadmap. The core functions work today.
+## What It Protects Against
 
-### Python
-
-```python
-# Flask
-from arcis import Arcis
-Arcis(app)
-
-# FastAPI
-from arcis import ArcisMiddleware
-app.add_middleware(ArcisMiddleware)
-
-# Django — add to MIDDLEWARE in settings.py
-'arcis.django.ArcisMiddleware'
-```
-
-### Go
-
-```go
-// Gin
-r.Use(arcisgin.Middleware())
-
-// Echo
-e.Use(arcisecho.Middleware())
-```
-
-## What It Does
-
-One `app.use(arcis())` gives you all 15 categories above. Or use individual functions for fine-grained control:
-
-- **Sanitize** — `sanitizeString()`, `sanitizeObject()` strip dangerous patterns
-- **Detect** — `detectXss()`, `detectSql()`, `detectHeaderInjection()` flag threats without modifying input
-- **Validate** — `validateUrl()` blocks SSRF, `validateRedirect()` blocks open redirects
-- **Protect** — rate limiting, security headers, safe logging, error handling
+| Category | What it stops |
+|----------|--------------|
+| XSS | Script injection, event handlers, `javascript:` URIs, SVG/iframe payloads |
+| SQL Injection | Keywords, boolean logic, comments, time-based blind (`SLEEP`, `BENCHMARK`) |
+| NoSQL Injection | MongoDB operators (`$gt`, `$where`, `$regex`, 25+ blocked operators) |
+| Command Injection | Shell metacharacters, dangerous commands, redirections |
+| Path Traversal | `../`, encoded variants (`%2e%2e`), null byte injection |
+| Prototype Pollution | `__proto__`, `constructor`, `__defineGetter__`, 7 keys blocked (case-insensitive) |
+| HTTP Header Injection | CRLF injection, response splitting, null bytes |
+| SSRF | Private IPs, loopback, link-local, cloud metadata, dangerous protocols |
+| Open Redirect | Absolute URLs, `javascript:`, protocol-relative, backslash/control char bypass |
+| Error Leakage | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
+| CORS Misconfiguration | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
+| Cookie Security | HttpOnly, Secure, SameSite enforced on all cookies |
+| Rate Limiting | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
+| Bot Detection | 80+ patterns, 7 categories (crawlers, scrapers, AI bots, etc.), behavioral signals |
+| CSRF | Double-submit cookie, token generation and validation |
+| Security Headers | CSP, HSTS, X-Frame-Options, 10 headers out of the box |
+| Input Validation | Type checking, ranges, enums, email (disposable blocklist, typo suggestions, MX verify), mass assignment prevention |
 
 ## Architecture
 
@@ -179,32 +140,16 @@ import { createSafeLogger } from '@arcis/node/logging';
 import { MemoryStore } from '@arcis/node/stores';
 ```
 
-## Supported Frameworks
-
-| SDK | Built-in Adapters | Core Functions | Status |
-|-----|-------------------|----------------|--------|
-| Node.js | Express | Work with any framework | Stable |
-| Python | Flask, FastAPI, Django | Work standalone | Stable |
-| Go | net/http, Gin, Echo | Work standalone | Stable |
-| Java | Spring Boot | — | Planned |
-| C# | ASP.NET Core | — | Planned |
-
-**Node.js roadmap:** Built-in adapters for Fastify, Koa, and Hono are planned. The core functions already work with these frameworks — you just wire a short middleware wrapper (see examples above).
-
-
-## How It Works
-
-All SDKs load security patterns from a shared `patterns.json` at runtime. A shared spec (`API_SPEC.md`) and test vectors (`TEST_VECTORS.json`) enforce identical behavior across languages.
-
 ## Documentation
 
-Detailed configuration, API reference, Redis setup, granular middleware usage, and architecture docs are in the [Wiki](https://github.com/Gagancm/arcis/wiki).
+Detailed configuration, API reference, Redis setup, and architecture docs are in the [Wiki](https://github.com/Gagancm/arcis/wiki).
 
 ## Contributing
 
-1. All changes must pass existing tests
-2. New features require test cases aligned with `spec/TEST_VECTORS.json`
-3. Pattern changes in `packages/core/patterns.json` must be reflected in all SDKs
+1. Fork the repo and create your branch from `nwl` (the active development branch)
+2. All PRs target `nwl` — `main` is release-only
+3. All changes must pass existing tests
+4. New features require test cases aligned with `spec/TEST_VECTORS.json`
 
 ## License
 
