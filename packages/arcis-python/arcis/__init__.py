@@ -113,6 +113,25 @@ from .sanitizers import (
     detect_header_injection,
 )
 
+from .validation.email import (
+    validate_email_address,
+    verify_email_mx,
+    is_valid_email_syntax,
+    EmailValidationResult,
+)
+
+from .middleware.rate_limit_sliding import SlidingWindowLimiter
+from .middleware.rate_limit_token import TokenBucketLimiter
+from .middleware.bot_detection import BotProtection, BotDenied, BotDetectionResult, detect_bot
+
+from .utils import (
+    parse_duration,
+    format_duration,
+    detect_client_ip,
+    is_private_ip,
+    fingerprint,
+)
+
 # Async components (for FastAPI)
 try:
     from .fastapi import (
@@ -170,6 +189,25 @@ __all__ = [
     "validate_email",
     "validate_url",
     "validate_uuid",
+    # Email validation (advanced)
+    "validate_email_address",
+    "verify_email_mx",
+    "is_valid_email_syntax",
+    "EmailValidationResult",
+    # Rate limiters
+    "SlidingWindowLimiter",
+    "TokenBucketLimiter",
+    # Bot detection
+    "BotProtection",
+    "BotDenied",
+    "BotDetectionResult",
+    "detect_bot",
+    # Utilities
+    "parse_duration",
+    "format_duration",
+    "detect_client_ip",
+    "is_private_ip",
+    "fingerprint",
 ]
 
 # Add async exports if available
