@@ -55,11 +55,11 @@ func ValidateURL(rawURL string, opts *ValidateURLOptions) ValidateURLResult {
 	}
 
 	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Scheme == "" {
 		return ValidateURLResult{Safe: false, Reason: "invalid URL: failed to parse"}
 	}
 
-	// Check protocol
+	// Check protocol first (before host check, since file:// URLs have empty host)
 	protoAllowed := false
 	for _, p := range allowedProtocols {
 		if parsed.Scheme == p {
@@ -69,6 +69,11 @@ func ValidateURL(rawURL string, opts *ValidateURLOptions) ValidateURLResult {
 	}
 	if !protoAllowed {
 		return ValidateURLResult{Safe: false, Reason: "disallowed protocol: " + parsed.Scheme + ":"}
+	}
+
+	// Require a host for allowed protocols
+	if parsed.Host == "" {
+		return ValidateURLResult{Safe: false, Reason: "invalid URL: failed to parse"}
 	}
 
 	// Check for credentials

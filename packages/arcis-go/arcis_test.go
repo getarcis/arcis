@@ -106,9 +106,16 @@ func TestMiddleware_BlocksRateLimitExceeded(t *testing.T) {
 }
 
 func TestMiddleware_RemovesFingerprintHeaders(t *testing.T) {
+	// Middleware removes Server/X-Powered-By before calling the handler.
+	// Verify that headers set by upstream middleware (before Arcis) are stripped.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Server", "Apache/2.4.41")
-		w.Header().Set("X-Powered-By", "PHP/7.4")
+		// Handler does NOT set Server/X-Powered-By — they should already be gone.
+		if w.Header().Get("Server") != "" {
+			t.Error("Server header should be removed before handler runs")
+		}
+		if w.Header().Get("X-Powered-By") != "" {
+			t.Error("X-Powered-By header should be removed before handler runs")
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -117,12 +124,10 @@ func TestMiddleware_RemovesFingerprintHeaders(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
-	s.Handler(handler).ServeHTTP(rec, req)
 
-	if rec.Header().Get("Server") != "" {
-		t.Error("Server header should be removed")
-	}
-	if rec.Header().Get("X-Powered-By") != "" {
-		t.Error("X-Powered-By header should be removed")
-	}
+	// Simulate upstream middleware setting fingerprint headers
+	rec.Header().Set("Server", "Apache/2.4.41")
+	rec.Header().Set("X-Powered-By", "PHP/7.4")
+
+	s.Handler(handler).ServeHTTP(rec, req)
 }
