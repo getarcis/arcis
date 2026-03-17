@@ -280,14 +280,16 @@ func MiddlewareWithConfig(config Config) echo.MiddlewareFunc {
 				}
 			}
 
-			// Remove fingerprinting headers
-			c.Response().Header().Del("Server")
-			c.Response().Header().Del("X-Powered-By")
-
 			// Store sanitizer in context for use in handlers
 			c.Set(SanitizerKey, sanitizer)
 
-			return next(c)
+			err := next(c)
+
+			// Remove fingerprinting headers after handler runs
+			c.Response().Header().Del("Server")
+			c.Response().Header().Del("X-Powered-By")
+
+			return err
 		}
 	}
 }
@@ -317,9 +319,10 @@ func HeadersWithConfig(config Config) echo.MiddlewareFunc {
 			for key, value := range headers.GetHeaders() {
 				c.Response().Header().Set(key, value)
 			}
+			err := next(c)
 			c.Response().Header().Del("Server")
 			c.Response().Header().Del("X-Powered-By")
-			return next(c)
+			return err
 		}
 	}
 }
