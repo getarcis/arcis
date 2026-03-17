@@ -21,5 +21,8 @@ export { isDangerousProtoKey, detectPrototypePollution, getDangerousProtoKeys } 
 // HTTP Header Injection protection
 export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './headers';
 
+// PII detection and redaction
+export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from './pii';
+
 // Utilities
 export { encodeHtmlEntities, isPlainObject } from './utils';

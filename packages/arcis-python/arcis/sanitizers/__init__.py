@@ -6,6 +6,11 @@ Provides the Sanitizer class and per-type convenience functions.
 
 from .sanitize import Sanitizer
 from .headers import sanitize_header_value, sanitize_headers, detect_header_injection
+from .pii import (
+    scan_pii, detect_pii, redact_pii,
+    scan_object_pii, redact_object_pii,
+    PiiMatch, PiiObjectMatch,
+)
 from typing import Dict
 
 
@@ -50,4 +55,11 @@ __all__ = [
     "sanitize_header_value",
     "sanitize_headers",
     "detect_header_injection",
+    "scan_pii",
+    "detect_pii",
+    "redact_pii",
+    "scan_object_pii",
+    "redact_object_pii",
+    "PiiMatch",
+    "PiiObjectMatch",
 ]
