@@ -71,6 +71,15 @@ type Sanitizer = sanitizers.Sanitizer
 type RateLimiter = middleware.RateLimiter
 type SecurityHeaders = middleware.SecurityHeaders
 type ErrorHandler = middleware.ErrorHandler
+type SafeCors = middleware.SafeCors
+type CorsOptions = middleware.CorsOptions
+type CorsOrigin = middleware.CorsOrigin
+type CorsHeaders = middleware.CorsHeaders
+type SecureCookieDefaults = middleware.SecureCookieDefaults
+type SecureCookieOptions = middleware.SecureCookieOptions
+type CsrfProtection = middleware.CsrfProtection
+type CsrfOptions = middleware.CsrfOptions
+type CsrfCookieOptions = middleware.CsrfCookieOptions
 
 // Logging types
 type SafeLogger = logging.SafeLogger
@@ -134,6 +143,33 @@ var NewErrorHandlerWithLogger = middleware.NewErrorHandlerWithLogger
 
 // ContainsSensitiveInfo checks if an error message contains sensitive info.
 var ContainsSensitiveInfo = middleware.ContainsSensitiveInfo
+
+// NewSafeCors creates a SafeCors instance with the given options.
+var NewSafeCors = middleware.NewSafeCors
+
+// SafeCorsMiddleware creates a CORS http.Handler middleware from options.
+var SafeCorsMiddleware = middleware.SafeCorsMiddleware
+
+// NewSecureCookieDefaults creates a SecureCookieDefaults with the given options.
+var NewSecureCookieDefaults = middleware.NewSecureCookieDefaults
+
+// EnforceSecureCookie enforces secure defaults on a Set-Cookie header value.
+var EnforceSecureCookie = middleware.EnforceSecureCookie
+
+// SecureCookieMiddleware creates a secure cookie middleware from options.
+var SecureCookieMiddleware = middleware.SecureCookieMiddleware
+
+// NewCsrfProtection creates a CsrfProtection with the given options.
+var NewCsrfProtection = middleware.NewCsrfProtection
+
+// GenerateCsrfToken generates a cryptographically random CSRF token.
+var GenerateCsrfToken = middleware.GenerateCsrfToken
+
+// ValidateCsrfToken compares two CSRF tokens using constant-time comparison.
+var ValidateCsrfToken = middleware.ValidateCsrfToken
+
+// CsrfMiddleware creates a CSRF protection middleware from options.
+var CsrfMiddleware = middleware.CsrfMiddleware
 
 // NewSafeLogger creates a new SafeLogger with default settings.
 var NewSafeLogger = logging.NewSafeLogger
