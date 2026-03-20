@@ -80,6 +80,11 @@ type SecureCookieOptions = middleware.SecureCookieOptions
 type CsrfProtection = middleware.CsrfProtection
 type CsrfOptions = middleware.CsrfOptions
 type CsrfCookieOptions = middleware.CsrfCookieOptions
+type SlidingWindowLimiter = middleware.SlidingWindowLimiter
+type TokenBucketLimiter = middleware.TokenBucketLimiter
+type BotCategory = middleware.BotCategory
+type BotDetectionResult = middleware.BotDetectionResult
+type BotProtectionOptions = middleware.BotProtectionOptions
 
 // Logging types
 type SafeLogger = logging.SafeLogger
@@ -96,12 +101,63 @@ type ValidateURLOptions = utils.ValidateURLOptions
 type ValidateURLResult = utils.ValidateURLResult
 type ValidateRedirectOptions = utils.ValidateRedirectOptions
 type ValidateRedirectResult = utils.ValidateRedirectResult
+type Platform = utils.Platform
+type DetectIPOptions = utils.DetectIPOptions
+type FingerprintOptions = utils.FingerprintOptions
+
+// Sanitizer PII types
+type PiiType = sanitizers.PiiType
+type PiiMatch = sanitizers.PiiMatch
+type PiiScanOptions = sanitizers.PiiScanOptions
+type PiiRedactOptions = sanitizers.PiiRedactOptions
+
+// Email validation types
+type EmailValidationResult = validation.EmailValidationResult
+type EmailValidationOptions = validation.EmailValidationOptions
+
+// File validation types
+type ValidateFileOptions = validation.ValidateFileOptions
+type FileInput = validation.FileInput
+type ValidateFileResult = validation.ValidateFileResult
 
 // ─── Constants (re-exported) ────────────────────────────────────────────────
 
 const Version = core.Version
 const MaxRecursionDepth = core.MaxRecursionDepth
 const DefaultMaxInputSize = core.DefaultMaxInputSize
+
+// Platform constants
+const (
+	PlatformAuto       = utils.PlatformAuto
+	PlatformGeneric    = utils.PlatformGeneric
+	PlatformCloudflare = utils.PlatformCloudflare
+	PlatformVercel     = utils.PlatformVercel
+	PlatformFlyio      = utils.PlatformFlyio
+	PlatformRender     = utils.PlatformRender
+	PlatformFirebase   = utils.PlatformFirebase
+	PlatformAWSALB     = utils.PlatformAWSALB
+)
+
+// Bot category constants
+const (
+	BotCategorySearchEngine = middleware.BotCategorySearchEngine
+	BotCategorySocial       = middleware.BotCategorySocial
+	BotCategoryMonitoring   = middleware.BotCategoryMonitoring
+	BotCategoryAICrawler    = middleware.BotCategoryAICrawler
+	BotCategoryScraper      = middleware.BotCategoryScraper
+	BotCategoryAutomated    = middleware.BotCategoryAutomated
+	BotCategoryUnknown      = middleware.BotCategoryUnknown
+	BotCategoryHuman        = middleware.BotCategoryHuman
+)
+
+// PII type constants
+const (
+	PiiEmail      = sanitizers.PiiEmail
+	PiiPhone      = sanitizers.PiiPhone
+	PiiCreditCard = sanitizers.PiiCreditCard
+	PiiSSN        = sanitizers.PiiSSN
+	PiiIPAddress  = sanitizers.PiiIPAddress
+)
 
 // Validation field type constants
 const (
@@ -215,6 +271,85 @@ var IsRedirectSafe = utils.IsRedirectSafe
 
 // GetClientIP extracts the client IP address from the request.
 var GetClientIP = utils.GetClientIP
+
+// ─── Tier 2: Rate Limiter Variants ──────────────────────────────────────────
+
+// NewSlidingWindowLimiter creates a weighted sliding window rate limiter.
+var NewSlidingWindowLimiter = middleware.NewSlidingWindowLimiter
+
+// NewTokenBucketLimiter creates a token bucket rate limiter.
+var NewTokenBucketLimiter = middleware.NewTokenBucketLimiter
+
+// NewTokenBucketLimiterWithCost creates a token bucket limiter with custom per-request cost.
+var NewTokenBucketLimiterWithCost = middleware.NewTokenBucketLimiterWithCost
+
+// ─── Tier 2: Platform-Aware IP Detection ────────────────────────────────────
+
+// DetectClientIP extracts the client IP using platform-aware header detection.
+var DetectClientIP = utils.DetectClientIP
+
+// IsPrivateIP checks if an IP address is in a private/reserved range.
+var IsPrivateIP = utils.IsPrivateIP
+
+// ─── Tier 2: Request Fingerprinting ─────────────────────────────────────────
+
+// Fingerprint generates a SHA-256 hash fingerprint of the request.
+var Fingerprint = utils.Fingerprint
+
+// ─── Tier 2: Duration Parsing ───────────────────────────────────────────────
+
+// ParseDuration parses human-readable durations like "5m", "1h", "30s", "1d".
+var ParseDuration = utils.ParseDuration
+
+// FormatDuration formats a time.Duration into a human-readable string.
+var FormatDuration = utils.FormatDuration
+
+// ─── Tier 2: Email Validation ───────────────────────────────────────────────
+
+// ValidateEmail validates an email address with disposable detection and typo suggestions.
+var ValidateEmail = validation.ValidateEmail
+
+// VerifyEmailMX performs a DNS MX record lookup for the email's domain.
+var VerifyEmailMX = validation.VerifyEmailMX
+
+// IsValidEmailSyntax performs a syntax-only email validation.
+var IsValidEmailSyntax = validation.IsValidEmailSyntax
+
+// ─── Tier 2: Bot Detection ─────────────────────────────────────────────────
+
+// DetectBot analyzes a request to determine if it's from a bot.
+var DetectBot = middleware.DetectBot
+
+// BotProtection creates an http.Handler middleware for bot detection.
+var BotProtection = middleware.BotProtection
+
+// ─── Tier 2: PII Scanning/Redaction ─────────────────────────────────────────
+
+// ScanPii finds all PII occurrences in a string.
+var ScanPii = sanitizers.ScanPii
+
+// DetectPii checks if a string contains any PII.
+var DetectPii = sanitizers.DetectPii
+
+// RedactPii replaces all PII in a string with placeholders.
+var RedactPii = sanitizers.RedactPii
+
+// ScanObjectPii recursively scans a map for PII in string values.
+var ScanObjectPii = sanitizers.ScanObjectPii
+
+// RedactObjectPii recursively redacts PII in a map.
+var RedactObjectPii = sanitizers.RedactObjectPii
+
+// ─── Tier 2: File Upload Validation ─────────────────────────────────────────
+
+// ValidateFile validates a file upload for security.
+var ValidateFile = validation.ValidateFile
+
+// SanitizeFilename sanitizes a filename for safe storage.
+var SanitizeFilename = validation.SanitizeFilename
+
+// IsDangerousExtension checks if a file extension is dangerous/executable.
+var IsDangerousExtension = validation.IsDangerousExtension
 
 // ─── Arcis main struct ──────────────────────────────────────────────────────
 
