@@ -51,6 +51,7 @@ import (
 	"github.com/GagancM/arcis/logging"
 	"github.com/GagancM/arcis/middleware"
 	"github.com/GagancM/arcis/sanitizers"
+	"github.com/GagancM/arcis/stores"
 	"github.com/GagancM/arcis/utils"
 	"github.com/GagancM/arcis/validation"
 )
@@ -119,6 +120,11 @@ type EmailValidationOptions = validation.EmailValidationOptions
 type ValidateFileOptions = validation.ValidateFileOptions
 type FileInput = validation.FileInput
 type ValidateFileResult = validation.ValidateFileResult
+
+// Store types
+type RedisClient = stores.RedisClient
+type RedisStoreOptions = stores.RedisStoreOptions
+type RedisRateLimitStore = stores.RedisRateLimitStore
 
 // ─── Constants (re-exported) ────────────────────────────────────────────────
 
@@ -339,6 +345,62 @@ var ScanObjectPii = sanitizers.ScanObjectPii
 
 // RedactObjectPii recursively redacts PII in a map.
 var RedactObjectPii = sanitizers.RedactObjectPii
+
+// ─── Redis Store ─────────────────────────────────────────────────────────────
+
+// NewRedisRateLimitStore creates a new Redis-backed rate limit store.
+var NewRedisRateLimitStore = stores.NewRedisRateLimitStore
+
+// ─── Standalone Sanitize Functions ───────────────────────────────────────────
+
+// SanitizeXSS removes XSS patterns and HTML-encodes dangerous characters.
+var SanitizeXSS = sanitizers.SanitizeXSS
+
+// SanitizeSQL removes SQL injection patterns from input.
+var SanitizeSQL = sanitizers.SanitizeSQL
+
+// SanitizePath removes path traversal patterns from input.
+var SanitizePath = sanitizers.SanitizePath
+
+// SanitizeCommand removes command injection patterns from input.
+var SanitizeCommand = sanitizers.SanitizeCommand
+
+// ─── Detect Functions ────────────────────────────────────────────────────────
+
+// DetectXSS checks if a string contains XSS patterns.
+var DetectXSS = sanitizers.DetectXSS
+
+// DetectSQL checks if a string contains SQL injection patterns.
+var DetectSQL = sanitizers.DetectSQL
+
+// DetectPathTraversal checks if a string contains path traversal patterns.
+var DetectPathTraversal = sanitizers.DetectPathTraversal
+
+// DetectCommandInjection checks if a string contains command injection patterns.
+var DetectCommandInjection = sanitizers.DetectCommandInjection
+
+// DetectNoSQLInjection checks if a map contains NoSQL injection operators.
+var DetectNoSQLInjection = sanitizers.DetectNoSQLInjection
+
+// DetectPrototypePollution checks if a map contains prototype pollution keys.
+var DetectPrototypePollution = sanitizers.DetectPrototypePollution
+
+// ─── Helper Functions ────────────────────────────────────────────────────────
+
+// IsDangerousNoSQLKey checks if a key is a dangerous NoSQL operator.
+var IsDangerousNoSQLKey = sanitizers.IsDangerousNoSQLKey
+
+// IsDangerousProtoKey checks if a key is a dangerous prototype pollution key.
+var IsDangerousProtoKey = sanitizers.IsDangerousProtoKey
+
+// GetDangerousOperators returns all blocked NoSQL operators.
+var GetDangerousOperators = sanitizers.GetDangerousOperators
+
+// GetDangerousProtoKeys returns all blocked prototype pollution keys.
+var GetDangerousProtoKeys = sanitizers.GetDangerousProtoKeys
+
+// EncodeHTMLEntities encodes HTML special characters in a string.
+var EncodeHTMLEntities = sanitizers.EncodeHTMLEntities
 
 // ─── Tier 2: File Upload Validation ─────────────────────────────────────────
 
