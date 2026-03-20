@@ -118,6 +118,22 @@ export function validateUrl(url: string, options: ValidateUrlOptions = {}): Vali
     }
   }
 
+  // Check decimal IP (e.g., 2130706433 = 127.0.0.1)
+  if (!allowLocalhost || !allowPrivate) {
+    const decimalCheck = checkDecimalIp(hostname, allowLocalhost, allowPrivate);
+    if (decimalCheck) {
+      return { safe: false, reason: decimalCheck };
+    }
+  }
+
+  // Check octal IP (e.g., 0177.0.0.1 = 127.0.0.1)
+  if (!allowLocalhost || !allowPrivate) {
+    const octalCheck = checkOctalIp(hostname, allowLocalhost, allowPrivate);
+    if (octalCheck) {
+      return { safe: false, reason: octalCheck };
+    }
+  }
+
   // Check private/internal IPs
   if (!allowPrivate) {
     const privateCheck = checkPrivateIp(hostname);
@@ -178,7 +194,8 @@ function checkPrivateIp(hostname: string): string | null {
   // Cloud metadata hostnames
   if (
     hostname === 'metadata.google.internal' ||
-    hostname === 'metadata.internal'
+    hostname === 'metadata.internal' ||
+    hostname === 'metadata.azure.internal'
   ) {
     return 'cloud metadata endpoint';
   }
@@ -193,6 +210,119 @@ function checkPrivateIp(hostname: string): string | null {
     ipv6.startsWith('fe80')
   ) {
     return 'private IPv6 address';
+  }
+
+  // IPv6-mapped IPv4 — dotted form (::ffff:127.0.0.1)
+  const mappedDotted = ipv6.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
+  if (mappedDotted) {
+    const mappedIp = mappedDotted[1];
+    if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(mappedIp)) {
+      return 'IPv6-mapped loopback address';
+    }
+    const mappedCheck = checkPrivateIp(mappedIp);
+    if (mappedCheck) {
+      return `IPv6-mapped ${mappedCheck}`;
+    }
+  }
+
+  // IPv6-mapped IPv4 — hex form (::ffff:7f00:1 = 127.0.0.1)
+  // Node's URL parser normalizes ::ffff:a.b.c.d to ::ffff:XXYY:ZZWW
+  const mappedHex = ipv6.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (mappedHex) {
+    const hi = parseInt(mappedHex[1], 16);
+    const lo = parseInt(mappedHex[2], 16);
+    const a = (hi >> 8) & 0xFF;
+    const b = hi & 0xFF;
+    const c = (lo >> 8) & 0xFF;
+    const d = lo & 0xFF;
+    const dotted = `${a}.${b}.${c}.${d}`;
+    if (a === 127) {
+      return 'IPv6-mapped loopback address';
+    }
+    const hexCheck = checkPrivateIp(dotted);
+    if (hexCheck) {
+      return `IPv6-mapped ${hexCheck}`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parse a decimal integer as an IPv4 address and check if it's private/loopback.
+ * e.g., 2130706433 = 127.0.0.1, 167772160 = 10.0.0.0
+ */
+function checkDecimalIp(hostname: string, allowLocalhost: boolean, allowPrivate: boolean): string | null {
+  // Must be a pure decimal integer
+  if (!/^\d+$/.test(hostname)) return null;
+
+  const num = parseInt(hostname, 10);
+  if (isNaN(num) || num < 0 || num > 0xFFFFFFFF) return null;
+
+  const a = (num >>> 24) & 0xFF;
+  const b = (num >>> 16) & 0xFF;
+  const c = (num >>> 8) & 0xFF;
+  const d = num & 0xFF;
+  const dotted = `${a}.${b}.${c}.${d}`;
+
+  // Check loopback
+  if (!allowLocalhost && a === 127) {
+    return `loopback address (decimal IP: ${dotted})`;
+  }
+
+  // Check private ranges
+  if (!allowPrivate) {
+    const privateCheck = checkPrivateIp(dotted);
+    if (privateCheck) {
+      return `${privateCheck} (decimal IP: ${dotted})`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parse octal-notation IPv4 address and check if it's private/loopback.
+ * e.g., 0177.0.0.1 = 127.0.0.1, 0x7f.0.0.1 = 127.0.0.1
+ */
+function checkOctalIp(hostname: string, allowLocalhost: boolean, allowPrivate: boolean): string | null {
+  // Must look like a dotted quad where at least one octet has a leading zero or 0x prefix
+  const parts = hostname.split('.');
+  if (parts.length !== 4) return null;
+
+  // Check if any part uses octal (leading 0) or hex (0x) notation
+  const hasAlternateNotation = parts.some(p => /^0[0-7]+$/.test(p) || /^0x[0-9a-fA-F]+$/i.test(p));
+  if (!hasAlternateNotation) return null;
+
+  const octets: number[] = [];
+  for (const part of parts) {
+    let val: number;
+    if (/^0x[0-9a-fA-F]+$/i.test(part)) {
+      val = parseInt(part, 16);
+    } else if (/^0[0-7]*$/.test(part)) {
+      val = parseInt(part, 8);
+    } else if (/^\d+$/.test(part)) {
+      val = parseInt(part, 10);
+    } else {
+      return null;
+    }
+    if (val < 0 || val > 255) return null;
+    octets.push(val);
+  }
+
+  const dotted = octets.join('.');
+
+  // Check loopback
+  if (!allowLocalhost && octets[0] === 127) {
+    return `loopback address (octal IP: ${dotted})`;
+  }
+
+  // Check private ranges
+  if (!allowPrivate) {
+    const privateCheck = checkPrivateIp(dotted);
+    if (privateCheck) {
+      return `${privateCheck} (octal IP: ${dotted})`;
+    }
   }
 
   return null;

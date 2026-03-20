@@ -86,7 +86,7 @@ def _check_private_ip(hostname: str) -> Optional[str]:
         return "current network address (0.0.0.0/8)"
 
     # Cloud metadata hostnames
-    if hostname in ("metadata.google.internal", "metadata.internal"):
+    if hostname in ("metadata.google.internal", "metadata.internal", "metadata.azure.internal"):
         return "cloud metadata endpoint"
 
     # IPv6 private ranges
@@ -95,6 +95,88 @@ def _check_private_ip(hostname: str) -> Optional[str]:
         return "private IPv6 address"
     if ipv6.startswith(("fc", "fd", "fe80")):
         return "private IPv6 address"
+
+    # IPv6-mapped IPv4 (::ffff:127.0.0.1, ::ffff:10.0.0.1, etc.)
+    mapped_match = re.match(r"^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$", ipv6, re.IGNORECASE)
+    if mapped_match:
+        mapped_ip = mapped_match.group(1)
+        mapped_reason = _check_private_ip(mapped_ip)
+        if mapped_reason:
+            return f"IPv6-mapped {mapped_reason}"
+        if _RE_LOOPBACK.match(mapped_ip):
+            return "IPv6-mapped loopback address"
+
+    return None
+
+
+_RE_DECIMAL_IP = re.compile(r"^\d+$")
+_RE_OCTAL_PART = re.compile(r"^0[0-7]+$")
+_RE_HEX_PART = re.compile(r"^0x[0-9a-fA-F]+$", re.IGNORECASE)
+
+
+def _check_decimal_ip(hostname: str, allow_localhost: bool, allow_private: bool) -> Optional[str]:
+    """Parse a decimal integer as IPv4 and check if it's private/loopback."""
+    if not _RE_DECIMAL_IP.match(hostname):
+        return None
+
+    try:
+        num = int(hostname)
+    except ValueError:
+        return None
+
+    if num < 0 or num > 0xFFFFFFFF:
+        return None
+
+    a = (num >> 24) & 0xFF
+    b = (num >> 16) & 0xFF
+    c = (num >> 8) & 0xFF
+    d = num & 0xFF
+    dotted = f"{a}.{b}.{c}.{d}"
+
+    if not allow_localhost and a == 127:
+        return f"loopback address (decimal IP: {dotted})"
+
+    if not allow_private:
+        reason = _check_private_ip(dotted)
+        if reason:
+            return f"{reason} (decimal IP: {dotted})"
+
+    return None
+
+
+def _check_octal_ip(hostname: str, allow_localhost: bool, allow_private: bool) -> Optional[str]:
+    """Parse octal-notation IPv4 and check if it's private/loopback."""
+    parts = hostname.split(".")
+    if len(parts) != 4:
+        return None
+
+    has_alt = any(_RE_OCTAL_PART.match(p) or _RE_HEX_PART.match(p) for p in parts)
+    if not has_alt:
+        return None
+
+    octets = []
+    for part in parts:
+        if _RE_HEX_PART.match(part):
+            val = int(part, 16)
+        elif _RE_OCTAL_PART.match(part):
+            val = int(part, 8)
+        elif re.match(r"^\d+$", part):
+            val = int(part)
+        else:
+            return None
+        if val < 0 or val > 255:
+            return None
+        octets.append(val)
+
+    dotted = ".".join(str(o) for o in octets)
+
+    if not allow_localhost and octets[0] == 127:
+        return f"loopback address (octal IP: {dotted})"
+
+    if not allow_private:
+        reason = _check_private_ip(dotted)
+        if reason:
+            return f"{reason} (octal IP: {dotted})"
 
     return None
 
@@ -168,6 +250,18 @@ def validate_url_ssrf(
             return ValidateUrlResult(safe=False, reason="loopback address")
         if _RE_LOOPBACK.match(hostname):
             return ValidateUrlResult(safe=False, reason="loopback address")
+
+    # Check decimal IP (e.g., 2130706433 = 127.0.0.1)
+    if not options.allow_localhost or not options.allow_private:
+        decimal_reason = _check_decimal_ip(hostname, options.allow_localhost, options.allow_private)
+        if decimal_reason:
+            return ValidateUrlResult(safe=False, reason=decimal_reason)
+
+    # Check octal IP (e.g., 0177.0.0.1 = 127.0.0.1)
+    if not options.allow_localhost or not options.allow_private:
+        octal_reason = _check_octal_ip(hostname, options.allow_localhost, options.allow_private)
+        if octal_reason:
+            return ValidateUrlResult(safe=False, reason=octal_reason)
 
     # Check private IPs
     if not options.allow_private:

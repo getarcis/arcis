@@ -69,6 +69,7 @@ package echo
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -280,14 +281,16 @@ func MiddlewareWithConfig(config Config) echo.MiddlewareFunc {
 				}
 			}
 
-			// Remove fingerprinting headers
-			c.Response().Header().Del("Server")
-			c.Response().Header().Del("X-Powered-By")
-
 			// Store sanitizer in context for use in handlers
 			c.Set(SanitizerKey, sanitizer)
 
-			return next(c)
+			err := next(c)
+
+			// Remove fingerprinting headers after handler runs
+			c.Response().Header().Del("Server")
+			c.Response().Header().Del("X-Powered-By")
+
+			return err
 		}
 	}
 }
@@ -317,9 +320,10 @@ func HeadersWithConfig(config Config) echo.MiddlewareFunc {
 			for key, value := range headers.GetHeaders() {
 				c.Response().Header().Set(key, value)
 			}
+			err := next(c)
 			c.Response().Header().Del("Server")
 			c.Response().Header().Del("X-Powered-By")
-			return next(c)
+			return err
 		}
 	}
 }
@@ -482,6 +486,140 @@ func GetValidatedBody(c echo.Context) map[string]interface{} {
 		return v.(map[string]interface{})
 	}
 	return nil
+}
+
+// CsrfProtection returns an Echo middleware for CSRF protection using double-submit cookie.
+func CsrfProtection(opts arcis.CsrfOptions) echo.MiddlewareFunc {
+	csrf := arcis.NewCsrfProtection(opts)
+
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			// Use the Check method directly
+			method := c.Request().Method
+
+			// Check excluded paths
+			if csrf.Check(method, c.Request().URL.Path, "", "") && method != "POST" && method != "PUT" && method != "PATCH" && method != "DELETE" {
+				// Safe method — ensure cookie exists
+				if cookie, err := c.Request().Cookie("_csrf"); err != nil || cookie.Value == "" {
+					token, err := arcis.GenerateCsrfToken(32)
+					if err == nil {
+						c.Response().Header().Add("Set-Cookie", buildEchoCsrfCookie(opts, token))
+					}
+				}
+				return next(c)
+			}
+
+			// Protected method — validate
+			cookieToken := ""
+			if cookie, err := c.Request().Cookie(csrfCookieName(opts)); err == nil {
+				cookieToken = cookie.Value
+			}
+
+			headerName := opts.HeaderName
+			if headerName == "" {
+				headerName = "X-Csrf-Token"
+			}
+			requestToken := c.Request().Header.Get(headerName)
+			if requestToken == "" {
+				fieldName := opts.FieldName
+				if fieldName == "" {
+					fieldName = "_csrf"
+				}
+				requestToken = c.QueryParam(fieldName)
+			}
+
+			if !csrf.Check(method, c.Request().URL.Path, cookieToken, requestToken) {
+				return c.JSON(http.StatusForbidden, map[string]string{
+					"error":   "CSRF token validation failed",
+					"message": "Invalid or missing CSRF token. Include the token from the cookie in the X-CSRF-Token header.",
+				})
+			}
+
+			return next(c)
+		}
+	}
+}
+
+func csrfCookieName(opts arcis.CsrfOptions) string {
+	if opts.CookieName != "" {
+		return opts.CookieName
+	}
+	return "_csrf"
+}
+
+func buildEchoCsrfCookie(opts arcis.CsrfOptions, token string) string {
+	name := csrfCookieName(opts)
+	path := opts.Cookie.Path
+	if path == "" {
+		path = "/"
+	}
+	sameSite := opts.Cookie.SameSite
+	if sameSite == "" {
+		sameSite = "Lax"
+	}
+	parts := []string{name + "=" + token, "Path=" + path}
+	if opts.Cookie.HttpOnly {
+		parts = append(parts, "HttpOnly")
+	}
+	secure := true
+	if opts.Cookie.Secure != nil {
+		secure = *opts.Cookie.Secure
+	}
+	if secure {
+		parts = append(parts, "Secure")
+	}
+	parts = append(parts, "SameSite="+sameSite)
+	if opts.Cookie.Domain != "" {
+		parts = append(parts, "Domain="+opts.Cookie.Domain)
+	}
+	return strings.Join(parts, "; ")
+}
+
+// SecureCookies returns an Echo middleware that enforces secure cookie defaults.
+func SecureCookies(opts arcis.SecureCookieOptions) echo.MiddlewareFunc {
+	sc := arcis.NewSecureCookieDefaults(opts)
+
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			err := next(c)
+
+			// Enforce on all Set-Cookie headers after handler runs
+			cookies := c.Response().Header().Values("Set-Cookie")
+			if len(cookies) > 0 {
+				c.Response().Header().Del("Set-Cookie")
+				for _, cookie := range cookies {
+					c.Response().Header().Add("Set-Cookie", sc.Enforce(cookie))
+				}
+			}
+
+			return err
+		}
+	}
+}
+
+// Cors returns an Echo middleware for safe CORS handling.
+func Cors(opts arcis.CorsOptions) echo.MiddlewareFunc {
+	cors := arcis.NewSafeCors(opts)
+
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			origin := c.Request().Header.Get("Origin")
+			headers := cors.GetHeaders(origin, c.Request().Method)
+
+			for key, value := range headers {
+				c.Response().Header().Set(key, value)
+			}
+
+			// Handle preflight
+			if c.Request().Method == http.MethodOptions && origin != "" {
+				if _, ok := headers["Access-Control-Allow-Origin"]; ok {
+					return c.NoContent(http.StatusNoContent)
+				}
+			}
+
+			return next(c)
+		}
+	}
 }
 
 // ErrorHandler returns an Echo error handler function.

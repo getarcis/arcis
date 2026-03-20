@@ -10,7 +10,7 @@ One-line security middleware for Node.js, Python, and Go.
 
 Arcis protects your code like how Dependabot protects your dependencies.
 
-**15 attack vectors handled. 1040+ tests. Zero dependencies.**
+**17 attack vectors handled. 1700+ tests. Zero dependencies.**
 
 | Category | What it stops |
 |----------|--------------|
@@ -26,9 +26,11 @@ Arcis protects your code like how Dependabot protects your dependencies.
 | Error Leakage | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
 | CORS Misconfiguration | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
 | Cookie Security | HttpOnly, Secure, SameSite enforced on all cookies |
-| Rate Limiting | Per-IP, in-memory or Redis, `X-RateLimit-*` headers |
+| Rate Limiting | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
+| Bot Detection | 80+ patterns, 7 categories (crawlers, scrapers, AI bots, etc.), behavioral signals |
+| CSRF | Double-submit cookie, token generation and validation |
 | Security Headers | CSP, HSTS, X-Frame-Options, 10 headers out of the box |
-| Input Validation | Type checking, ranges, enums, mass assignment prevention, safe logging |
+| Input Validation | Type checking, ranges, enums, email (disposable blocklist, typo suggestions, MX verify), mass assignment prevention |
 
 ## Install
 
@@ -146,12 +148,13 @@ e.Use(arcisecho.Middleware())
 
 ## What It Does
 
-One `app.use(arcis())` gives you all 15 categories above. Or use individual functions for fine-grained control:
+One `app.use(arcis())` gives you all 17 categories above. Or use individual functions for fine-grained control:
 
 - **Sanitize** — `sanitizeString()`, `sanitizeObject()` strip dangerous patterns
 - **Detect** — `detectXss()`, `detectSql()`, `detectHeaderInjection()` flag threats without modifying input
-- **Validate** — `validateUrl()` blocks SSRF, `validateRedirect()` blocks open redirects
-- **Protect** — rate limiting, security headers, safe logging, error handling
+- **Validate** — `validateUrl()` blocks SSRF, `validateRedirect()` blocks open redirects, `validateEmail()` with disposable blocklist and typo suggestions
+- **Protect** — sliding window + token bucket rate limiting, bot detection, CSRF, security headers, safe logging, error handling
+- **Utilities** — platform-aware IP detection, request fingerprinting, duration parsing (`"5m"` -> ms)
 
 ## Architecture
 
@@ -186,9 +189,7 @@ import { MemoryStore } from '@arcis/node/stores';
 |-----|-------------------|----------------|--------|
 | Node.js | Express | Work with any framework | Stable |
 | Python | Flask, FastAPI, Django | Work standalone | Stable |
-| Go | net/http, Gin, Echo | Work standalone | Stable |
-| Java | Spring Boot | — | Planned |
-| C# | ASP.NET Core | — | Planned |
+| Go | net/http, Gin, Echo | Work standalone | Beta |
 
 **Node.js roadmap:** Built-in adapters for Fastify, Koa, and Hono are planned. The core functions already work with these frameworks — you just wire a short middleware wrapper (see examples above).
 
@@ -203,9 +204,11 @@ Detailed configuration, API reference, Redis setup, granular middleware usage, a
 
 ## Contributing
 
-1. All changes must pass existing tests
-2. New features require test cases aligned with `spec/TEST_VECTORS.json`
-3. Pattern changes in `packages/core/patterns.json` must be reflected in all SDKs
+1. Fork the repo and create your branch from `nwl` (the active development branch)
+2. All PRs target `nwl` — `main` is release-only
+3. All changes must pass existing tests (CI runs automatically on PRs)
+4. New features require test cases aligned with `spec/TEST_VECTORS.json`
+5. Pattern changes in `packages/core/patterns.json` must be reflected in all SDKs
 
 ## License
 

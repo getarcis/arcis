@@ -18,8 +18,20 @@ export { isDangerousNoSqlKey, detectNoSqlInjection, getDangerousOperators } from
 // Prototype pollution protection
 export { isDangerousProtoKey, detectPrototypePollution, getDangerousProtoKeys } from './prototype';
 
+// SSTI (Server-Side Template Injection) protection
+export { sanitizeSsti, detectSsti } from './ssti';
+
+// XXE (XML External Entity) protection
+export { sanitizeXxe, detectXxe } from './xxe';
+
+// JSONP callback sanitization
+export { sanitizeJsonpCallback, detectJsonpInjection } from './jsonp';
+
 // HTTP Header Injection protection
 export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './headers';
+
+// PII detection and redaction
+export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from './pii';
 
 // Utilities
 export { encodeHtmlEntities, isPlainObject } from './utils';

@@ -272,14 +272,14 @@ func MiddlewareWithConfig(config Config) gin.HandlerFunc {
 			}
 		}
 
-		// Remove fingerprinting headers
-		c.Writer.Header().Del("Server")
-		c.Writer.Header().Del("X-Powered-By")
-
 		// Store sanitizer in context for use in handlers
 		c.Set("arcis_sanitizer", sanitizer)
 
 		c.Next()
+
+		// Remove fingerprinting headers after handler runs
+		c.Writer.Header().Del("Server")
+		c.Writer.Header().Del("X-Powered-By")
 	}
 }
 
@@ -307,9 +307,9 @@ func HeadersWithConfig(config Config) gin.HandlerFunc {
 		for key, value := range headers.GetHeaders() {
 			c.Header(key, value)
 		}
+		c.Next()
 		c.Writer.Header().Del("Server")
 		c.Writer.Header().Del("X-Powered-By")
-		c.Next()
 	}
 }
 
@@ -469,6 +469,105 @@ func GetValidatedBody(c *gin.Context) map[string]interface{} {
 		return v.(map[string]interface{})
 	}
 	return nil
+}
+
+// CsrfProtection returns a Gin middleware for CSRF protection using double-submit cookie.
+func CsrfProtection(opts arcis.CsrfOptions) gin.HandlerFunc {
+	csrf := arcis.NewCsrfProtection(opts)
+
+	return func(c *gin.Context) {
+		method := c.Request.Method
+
+		// Wrap the handler
+		handler := csrf.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Copy headers set by CSRF middleware to gin response
+			for key, values := range w.Header() {
+				for _, v := range values {
+					c.Writer.Header().Add(key, v)
+				}
+			}
+			c.Next()
+		}))
+
+		rec := &ginResponseCapture{header: http.Header{}}
+		handler.ServeHTTP(rec, c.Request)
+
+		if rec.status == http.StatusForbidden {
+			// CSRF validation failed
+			for key, values := range rec.header {
+				for _, v := range values {
+					c.Writer.Header().Set(key, v)
+				}
+			}
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "CSRF token validation failed",
+				"message": "Invalid or missing CSRF token. Include the token from the cookie in the X-CSRF-Token header.",
+			})
+			return
+		}
+
+		// Copy Set-Cookie headers from CSRF middleware
+		for _, cookie := range rec.header.Values("Set-Cookie") {
+			c.Writer.Header().Add("Set-Cookie", cookie)
+		}
+
+		// Only proceed if not a safe method that was already handled
+		if method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions {
+			c.Next()
+		}
+	}
+}
+
+// ginResponseCapture captures response status/headers from net/http handlers.
+type ginResponseCapture struct {
+	header http.Header
+	status int
+}
+
+func (g *ginResponseCapture) Header() http.Header          { return g.header }
+func (g *ginResponseCapture) Write(b []byte) (int, error)  { return len(b), nil }
+func (g *ginResponseCapture) WriteHeader(statusCode int)   { g.status = statusCode }
+
+// SecureCookies returns a Gin middleware that enforces secure cookie defaults.
+func SecureCookies(opts arcis.SecureCookieOptions) gin.HandlerFunc {
+	sc := arcis.NewSecureCookieDefaults(opts)
+
+	return func(c *gin.Context) {
+		c.Next()
+
+		// Enforce on all Set-Cookie headers after handler runs
+		cookies := c.Writer.Header().Values("Set-Cookie")
+		if len(cookies) > 0 {
+			c.Writer.Header().Del("Set-Cookie")
+			for _, cookie := range cookies {
+				c.Writer.Header().Add("Set-Cookie", sc.Enforce(cookie))
+			}
+		}
+	}
+}
+
+// Cors returns a Gin middleware for safe CORS handling.
+func Cors(opts arcis.CorsOptions) gin.HandlerFunc {
+	cors := arcis.NewSafeCors(opts)
+
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		headers := cors.GetHeaders(origin, c.Request.Method)
+
+		for key, value := range headers {
+			c.Header(key, value)
+		}
+
+		// Handle preflight
+		if c.Request.Method == http.MethodOptions && origin != "" {
+			if _, ok := headers["Access-Control-Allow-Origin"]; ok {
+				c.AbortWithStatus(http.StatusNoContent)
+				return
+			}
+		}
+
+		c.Next()
+	}
 }
 
 // ErrorHandler returns a Gin error handler middleware.

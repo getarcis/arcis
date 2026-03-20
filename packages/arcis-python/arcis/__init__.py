@@ -108,9 +108,20 @@ from .sanitizers import (
     sanitize_nosql,
     sanitize_path,
     sanitize_command,
+    sanitize_ssti,
+    detect_ssti,
+    sanitize_xxe,
+    detect_xxe,
+    sanitize_jsonp_callback,
+    detect_jsonp_injection,
     sanitize_header_value,
     sanitize_headers,
     detect_header_injection,
+    scan_pii,
+    detect_pii,
+    redact_pii,
+    scan_object_pii,
+    redact_object_pii,
 )
 
 from .validation.email import (
@@ -145,7 +156,7 @@ try:
 except ImportError:
     _HAS_ASYNC = False
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __all__ = [
     # Main class
     "Arcis",
@@ -175,6 +186,8 @@ __all__ = [
     "sanitize_nosql",
     "sanitize_path",
     "sanitize_command",
+    "sanitize_ssti",
+    "detect_ssti",
     "sanitize_header_value",
     "sanitize_headers",
     "detect_header_injection",
@@ -202,6 +215,12 @@ __all__ = [
     "BotDenied",
     "BotDetectionResult",
     "detect_bot",
+    # PII detection and redaction
+    "scan_pii",
+    "detect_pii",
+    "redact_pii",
+    "scan_object_pii",
+    "redact_object_pii",
     # Utilities
     "parse_duration",
     "format_duration",

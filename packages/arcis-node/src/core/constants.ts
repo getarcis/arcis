@@ -148,6 +148,10 @@ export const SQL_PATTERNS = [
   /\bSLEEP\s*\(\s*\d+\s*\)/gi,
   /** Time-based blind: BENCHMARK() */
   /\bBENCHMARK\s*\(/gi,
+  /** Time-based blind: PostgreSQL pg_sleep() */
+  /\bpg_sleep\s*\(/gi,
+  /** Time-based blind: MSSQL WAITFOR DELAY */
+  /\bWAITFOR\s+DELAY\b/gi,
 ] as const;
 
 // =============================================================================
@@ -169,6 +173,10 @@ export const PATH_PATTERNS = [
   /\.%2e[\\/]/gi,
   /** Fully URL-encoded: %2e%2e%2f */
   /%2e%2e%2f/gi,
+  /** Double URL-encoded forward slash: %252f */
+  /%252f/gi,
+  /** Dotdotslash bypass: ....// or ....\\ */
+  /\.{2,}[/\\]{2,}/g,
   /** Null byte injection in paths */
   /\0/g,
 ] as const;
@@ -189,6 +197,8 @@ export const COMMAND_PATTERNS = [
   /[;&|`]/g,
   /** Command substitution: $( ... ) — matched as a pair to reduce false positives */
   /\$\(/g,
+  /** URL-encoded newline/carriage-return injection (%0a, %0d) */
+  /%0[ad]/gi,
 ] as const;
 
 // =============================================================================
@@ -223,7 +233,7 @@ export const NOSQL_DANGEROUS_KEYS = new Set([
   // Logical
   '$and', '$or', '$not', '$nor',
   // Element / evaluation
-  '$exists', '$type', '$regex', '$where', '$expr', '$mod', '$text',
+  '$exists', '$type', '$regex', '$where', '$expr', '$mod', '$text', '$jsonSchema',
   // Array
   '$elemMatch', '$all', '$size',
   // JavaScript execution (critical)

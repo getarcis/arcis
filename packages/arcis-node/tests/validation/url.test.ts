@@ -244,6 +244,95 @@ describe('validateUrl', () => {
     });
   });
 
+  describe('Decimal IP Bypass', () => {
+    // Note: Node's URL parser auto-resolves decimal IPs to dotted notation,
+    // so the existing loopback/private checks catch these automatically.
+    it('should block 127.0.0.1 as decimal (2130706433)', () => {
+      const result = validateUrl('http://2130706433/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('loopback');
+    });
+
+    it('should block 10.0.0.1 as decimal (167772161)', () => {
+      const result = validateUrl('http://167772161/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('private');
+    });
+
+    it('should block 192.168.1.1 as decimal (3232235777)', () => {
+      const result = validateUrl('http://3232235777/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('private');
+    });
+
+    it('should block 169.254.169.254 as decimal (2852039166)', () => {
+      const result = validateUrl('http://2852039166/');
+      expect(result.safe).toBe(false);
+    });
+
+    it('should allow safe decimal IPs', () => {
+      // 8.8.8.8 = 134744072
+      const result = validateUrl('http://134744072/');
+      expect(result.safe).toBe(true);
+    });
+  });
+
+  describe('Octal IP Bypass', () => {
+    // Note: Node's URL parser auto-resolves octal IPs to dotted notation.
+    it('should block 0177.0.0.1 (octal 127.0.0.1)', () => {
+      const result = validateUrl('http://0177.0.0.1/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('loopback');
+    });
+
+    it('should block 012.0.0.1 (octal 10.0.0.1)', () => {
+      const result = validateUrl('http://012.0.0.1/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('private');
+    });
+
+    it('should block 0300.0250.01.01 (octal 192.168.1.1)', () => {
+      const result = validateUrl('http://0300.0250.01.01/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('private');
+    });
+
+    it('should block hex notation 0x7f.0.0.1 (127.0.0.1)', () => {
+      const result = validateUrl('http://0x7f.0.0.1/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('loopback');
+    });
+  });
+
+  describe('IPv6-Mapped IPv4', () => {
+    // Node normalizes ::ffff:127.0.0.1 to ::ffff:7f00:1 (hex form)
+    it('should block ::ffff:127.0.0.1', () => {
+      const result = validateUrl('http://[::ffff:127.0.0.1]/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('IPv6-mapped');
+    });
+
+    it('should block ::ffff:10.0.0.1', () => {
+      const result = validateUrl('http://[::ffff:10.0.0.1]/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('IPv6-mapped');
+    });
+
+    it('should block ::ffff:169.254.169.254', () => {
+      const result = validateUrl('http://[::ffff:169.254.169.254]/');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('IPv6-mapped');
+    });
+  });
+
+  describe('Azure Metadata', () => {
+    it('should block Azure metadata hostname', () => {
+      const result = validateUrl('http://metadata.azure.internal/metadata/instance');
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('cloud metadata');
+    });
+  });
+
   describe('URL Credentials', () => {
     it('should block URL with username', () => {
       const result = validateUrl('http://admin@internal.server/');

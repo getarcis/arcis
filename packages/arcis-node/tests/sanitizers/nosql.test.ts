@@ -54,10 +54,12 @@ describe('isDangerousNoSqlKey', () => {
       expect(isDangerousNoSqlKey('$not')).toBe(true);
     });
 
-    // $nor IS in NOSQL_DANGEROUS_KEYS (added with expanded operator coverage)
+    it('should detect $nor operator', () => {
+      expect(isDangerousNoSqlKey('$nor')).toBe(true);
+    });
   });
 
-  describe('Dangerous Operators', () => {
+  describe('Evaluation Operators', () => {
     it('should detect $where operator', () => {
       expect(isDangerousNoSqlKey('$where')).toBe(true);
     });
@@ -68,6 +70,68 @@ describe('isDangerousNoSqlKey', () => {
 
     it('should detect $expr operator', () => {
       expect(isDangerousNoSqlKey('$expr')).toBe(true);
+    });
+
+    it('should detect $jsonSchema operator', () => {
+      expect(isDangerousNoSqlKey('$jsonSchema')).toBe(true);
+    });
+
+    it('should detect $mod operator', () => {
+      expect(isDangerousNoSqlKey('$mod')).toBe(true);
+    });
+
+    it('should detect $text operator', () => {
+      expect(isDangerousNoSqlKey('$text')).toBe(true);
+    });
+  });
+
+  describe('JS Execution Operators', () => {
+    it('should detect $function operator', () => {
+      expect(isDangerousNoSqlKey('$function')).toBe(true);
+    });
+
+    it('should detect $accumulator operator', () => {
+      expect(isDangerousNoSqlKey('$accumulator')).toBe(true);
+    });
+  });
+
+  describe('Array Operators', () => {
+    it('should detect $elemMatch operator', () => {
+      expect(isDangerousNoSqlKey('$elemMatch')).toBe(true);
+    });
+
+    it('should detect $all operator', () => {
+      expect(isDangerousNoSqlKey('$all')).toBe(true);
+    });
+
+    it('should detect $size operator', () => {
+      expect(isDangerousNoSqlKey('$size')).toBe(true);
+    });
+  });
+
+  describe('Aggregation Pipeline Operators', () => {
+    it('should detect $lookup operator', () => {
+      expect(isDangerousNoSqlKey('$lookup')).toBe(true);
+    });
+
+    it('should detect $match operator', () => {
+      expect(isDangerousNoSqlKey('$match')).toBe(true);
+    });
+
+    it('should detect $project operator', () => {
+      expect(isDangerousNoSqlKey('$project')).toBe(true);
+    });
+
+    it('should detect $group operator', () => {
+      expect(isDangerousNoSqlKey('$group')).toBe(true);
+    });
+
+    it('should detect $addFields operator', () => {
+      expect(isDangerousNoSqlKey('$addFields')).toBe(true);
+    });
+
+    it('should detect $replaceRoot operator', () => {
+      expect(isDangerousNoSqlKey('$replaceRoot')).toBe(true);
     });
   });
 

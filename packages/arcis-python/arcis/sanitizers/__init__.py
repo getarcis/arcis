@@ -5,7 +5,15 @@ Provides the Sanitizer class and per-type convenience functions.
 """
 
 from .sanitize import Sanitizer
+from .ssti import detect_ssti, sanitize_ssti
+from .xxe import detect_xxe, sanitize_xxe
+from .jsonp import sanitize_jsonp_callback, detect_jsonp_injection
 from .headers import sanitize_header_value, sanitize_headers, detect_header_injection
+from .pii import (
+    scan_pii, detect_pii, redact_pii,
+    scan_object_pii, redact_object_pii,
+    PiiMatch, PiiObjectMatch,
+)
 from typing import Dict
 
 
@@ -47,7 +55,20 @@ __all__ = [
     "sanitize_nosql",
     "sanitize_path",
     "sanitize_command",
+    "sanitize_ssti",
+    "detect_ssti",
+    "sanitize_xxe",
+    "detect_xxe",
+    "sanitize_jsonp_callback",
+    "detect_jsonp_injection",
     "sanitize_header_value",
     "sanitize_headers",
     "detect_header_injection",
+    "scan_pii",
+    "detect_pii",
+    "redact_pii",
+    "scan_object_pii",
+    "redact_object_pii",
+    "PiiMatch",
+    "PiiObjectMatch",
 ]
