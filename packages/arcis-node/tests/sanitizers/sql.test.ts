@@ -60,6 +60,28 @@ describe('sanitizeSql', () => {
     });
   });
 
+  describe('Time-based Blind Injection', () => {
+    it('should block SLEEP(5)', () => {
+      const result = sanitizeSql("1 AND SLEEP(5)");
+      expect(result.toUpperCase()).not.toMatch(/SLEEP/);
+    });
+
+    it('should block pg_sleep(5)', () => {
+      const result = sanitizeSql("1; SELECT pg_sleep(5)");
+      expect(result).not.toMatch(/pg_sleep/i);
+    });
+
+    it('should block WAITFOR DELAY', () => {
+      const result = sanitizeSql("1; WAITFOR DELAY '0:0:5'");
+      expect(result.toUpperCase()).not.toMatch(/WAITFOR/);
+    });
+
+    it('should block BENCHMARK()', () => {
+      const result = sanitizeSql("1 AND BENCHMARK(10000000, SHA1('test'))");
+      expect(result.toUpperCase()).not.toMatch(/BENCHMARK/);
+    });
+  });
+
   describe('Boolean-based Injection', () => {
     it('should block OR 1=1 pattern', () => {
       const result = sanitizeSql('1 OR 1=1');
@@ -125,6 +147,22 @@ describe('detectSql', () => {
 
   it('should detect UNION keyword', () => {
     expect(detectSql('UNION SELECT')).toBe(true);
+  });
+
+  it('should detect SLEEP()', () => {
+    expect(detectSql('1 AND SLEEP(5)')).toBe(true);
+  });
+
+  it('should detect pg_sleep()', () => {
+    expect(detectSql('SELECT pg_sleep(10)')).toBe(true);
+  });
+
+  it('should detect WAITFOR DELAY', () => {
+    expect(detectSql("WAITFOR DELAY '0:0:5'")).toBe(true);
+  });
+
+  it('should detect BENCHMARK()', () => {
+    expect(detectSql("BENCHMARK(10000000, SHA1('test'))")).toBe(true);
   });
 
   it('should return false for safe input', () => {

@@ -65,6 +65,26 @@ class TestSanitizeStringSQL:
         assert 'UNION' not in result.upper()
 
 
+class TestSanitizeStringTimingSQL:
+    """Test time-based blind SQL injection prevention."""
+
+    def test_removes_sleep(self):
+        result = sanitize_string("1 AND SLEEP(5)")
+        assert "SLEEP" not in result.upper()
+
+    def test_removes_pg_sleep(self):
+        result = sanitize_string("1; SELECT pg_sleep(5)")
+        assert "pg_sleep" not in result
+
+    def test_removes_waitfor_delay(self):
+        result = sanitize_string("1; WAITFOR DELAY '0:0:5'")
+        assert "WAITFOR" not in result.upper()
+
+    def test_removes_benchmark(self):
+        result = sanitize_string("1 AND BENCHMARK(10000000, SHA1('test'))")
+        assert "BENCHMARK" not in result.upper()
+
+
 class TestSanitizeStringPathTraversal:
     """Test path traversal prevention in sanitize_string."""
 
@@ -83,6 +103,18 @@ class TestSanitizeStringPathTraversal:
     def test_safe_input_unchanged(self):
         result = sanitize_string("file.txt")
         assert result == "file.txt"
+
+    def test_removes_dotdotslash_bypass(self):
+        result = sanitize_string("....//etc/passwd")
+        assert "..//" not in result
+
+    def test_removes_double_encoded_slash(self):
+        result = sanitize_string("..%252f..%252f")
+        assert "%252f" not in result.lower()
+
+    def test_removes_double_encoded_dot(self):
+        result = sanitize_string("%252e%252e/etc/passwd")
+        assert "%252e" not in result.lower()
 
 
 class TestSanitizeStringCommandInjection:
@@ -112,6 +144,14 @@ class TestSanitizeStringCommandInjection:
         result = sanitize_string("node -e 'malicious' && powershell evil")
         assert 'node' not in result.lower()
         assert 'powershell' not in result.lower()
+
+    def test_removes_url_encoded_newline(self):
+        result = sanitize_string("file.txt%0aid")
+        assert "%0a" not in result.lower()
+
+    def test_removes_url_encoded_carriage_return(self):
+        result = sanitize_string("file.txt%0dwhoami")
+        assert "%0d" not in result.lower()
 
     def test_safe_input_unchanged(self):
         from arcis.sanitizers.sanitize import Sanitizer
@@ -236,6 +276,58 @@ class TestSanitizeObjectNoSQLInjection:
         if "username" in result and isinstance(result["username"], dict):
             assert "$regex" not in result["username"]
         assert "password" in result
+
+
+class TestSanitizeObjectNoSQLNewOperators:
+    """Test newly added NoSQL operator coverage ($jsonSchema, $nor, $function, etc.)."""
+
+    def test_blocks_jsonschema_operator(self):
+        sanitizer = Sanitizer()
+        data = {"$jsonSchema": {"required": ["name"]}, "name": "test"}
+        result = sanitizer.sanitize_dict(data)
+        assert "$jsonSchema" not in result
+
+    def test_blocks_nor_operator(self):
+        sanitizer = Sanitizer()
+        data = {"$nor": [{"age": 5}], "name": "test"}
+        result = sanitizer.sanitize_dict(data)
+        assert "$nor" not in result
+
+    def test_blocks_function_operator(self):
+        sanitizer = Sanitizer()
+        data = {"$function": {"body": "return true;"}, "name": "test"}
+        result = sanitizer.sanitize_dict(data)
+        assert "$function" not in result
+
+    def test_blocks_accumulator_operator(self):
+        sanitizer = Sanitizer()
+        data = {"$accumulator": {}, "name": "test"}
+        result = sanitizer.sanitize_dict(data)
+        assert "$accumulator" not in result
+
+    def test_blocks_expr_operator(self):
+        sanitizer = Sanitizer()
+        data = {"$expr": {"$gt": ["$a", "$b"]}, "name": "test"}
+        result = sanitizer.sanitize_dict(data)
+        assert "$expr" not in result
+
+    def test_blocks_elemMatch_operator(self):
+        sanitizer = Sanitizer()
+        data = {"$elemMatch": {"score": 5}, "name": "test"}
+        result = sanitizer.sanitize_dict(data)
+        assert "$elemMatch" not in result
+
+    def test_blocks_lookup_pipeline_operator(self):
+        sanitizer = Sanitizer()
+        data = {"$lookup": {"from": "users"}, "name": "test"}
+        result = sanitizer.sanitize_dict(data)
+        assert "$lookup" not in result
+
+    def test_blocks_replaceRoot_operator(self):
+        sanitizer = Sanitizer()
+        data = {"$replaceRoot": {"newRoot": "$doc"}, "name": "test"}
+        result = sanitizer.sanitize_dict(data)
+        assert "$replaceRoot" not in result
 
 
 class TestSanitizeObjectNested:

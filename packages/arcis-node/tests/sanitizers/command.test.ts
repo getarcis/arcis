@@ -33,9 +33,20 @@ describe('sanitizeCommand', () => {
       expect(result).not.toContain('$(');
     });
 
-    // Note: Redirects (> <) are NOT in current COMMAND_PATTERNS
-    // The pattern only includes: [;&|`$()]
-    // Add /[<>]/g to COMMAND_PATTERNS in constants.ts if needed
+    it('should block %0a (URL-encoded newline)', () => {
+      const result = sanitizeCommand('file.txt%0aid');
+      expect(result.toLowerCase()).not.toMatch(/%0a/);
+    });
+
+    it('should block %0d (URL-encoded carriage return)', () => {
+      const result = sanitizeCommand('file.txt%0dwhoami');
+      expect(result.toLowerCase()).not.toMatch(/%0d/);
+    });
+
+    it('should block %0A (uppercase)', () => {
+      const result = sanitizeCommand('file.txt%0Aid');
+      expect(result).not.toMatch(/%0[aA]/);
+    });
   });
 
   describe('Command Chaining and Substitution', () => {
