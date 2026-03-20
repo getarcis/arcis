@@ -87,7 +87,9 @@ export type ThreatType =
   | 'path_traversal'
   | 'command_injection'
   | 'prototype_pollution'
-  | 'header_injection';
+  | 'header_injection'
+  | 'ssti'
+  | 'xxe';
 
 // =============================================================================
 // RATE LIMITING

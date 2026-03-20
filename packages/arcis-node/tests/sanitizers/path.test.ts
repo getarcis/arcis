@@ -61,6 +61,28 @@ describe('sanitizePath', () => {
     });
   });
 
+  describe('Bypass Variants', () => {
+    it('should remove ....// (dotdotslash bypass)', () => {
+      const result = sanitizePath('....//etc/passwd');
+      expect(result).not.toMatch(/\.{2,}\/\//);
+    });
+
+    it('should remove ....\\\\ (dotdotbackslash bypass)', () => {
+      const result = sanitizePath('....\\\\windows\\system32');
+      expect(result).not.toMatch(/\.{2,}\\\\/);
+    });
+
+    it('should remove %252f (double-encoded slash)', () => {
+      const result = sanitizePath('..%252f..%252f');
+      expect(result.toLowerCase()).not.toContain('%252f');
+    });
+
+    it('should remove %252e (double-encoded dot)', () => {
+      const result = sanitizePath('%252e%252e/etc/passwd');
+      expect(result.toLowerCase()).not.toContain('%252e');
+    });
+  });
+
   describe('Safe Paths', () => {
     it('should preserve normal file paths', () => {
       const result = sanitizePath('documents/file.txt');
@@ -137,6 +159,14 @@ describe('detectPathTraversal', () => {
 
   it('should detect URL-encoded traversal', () => {
     expect(detectPathTraversal('%2e%2e%2f')).toBe(true);
+  });
+
+  it('should detect ....// bypass', () => {
+    expect(detectPathTraversal('....//etc/passwd')).toBe(true);
+  });
+
+  it('should detect %252f double-encoded slash', () => {
+    expect(detectPathTraversal('..%252f..')).toBe(true);
   });
 
   it('should return false for safe paths', () => {

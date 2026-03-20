@@ -166,6 +166,20 @@
           "flags": "gi",
           "description": "Detects time-based blind SQLi via BENCHMARK",
           "redos_safe": true
+        },
+        {
+          "id": "sqli-pg-sleep",
+          "pattern": "\\bpg_sleep\\s*\\(",
+          "flags": "gi",
+          "description": "Detects time-based blind SQLi via PostgreSQL pg_sleep",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-waitfor-delay",
+          "pattern": "\\bWAITFOR\\s+DELAY\\b",
+          "flags": "gi",
+          "description": "Detects time-based blind SQLi via MSSQL WAITFOR DELAY",
+          "redos_safe": true
         }
       ]
     },
@@ -176,13 +190,13 @@
       "rules": [
         {
           "id": "nosql-operators",
-          "pattern": "\\$(?:gt|gte|lt|lte|ne|eq|in|nin|and|or|not|exists|type|regex|where|expr)",
+          "pattern": "\\$(?:gt|gte|lt|lte|ne|eq|in|nin|and|or|not|nor|exists|type|regex|where|expr|mod|text|jsonSchema|function|accumulator|elemMatch|all|size|lookup|match|project|group|sort|limit|skip|unwind|addFields|replaceRoot)",
           "flags": "i",
           "description": "Detects MongoDB operators",
           "redos_safe": true
         }
       ],
-      "dangerous_keys": ["$gt", "$gte", "$lt", "$lte", "$ne", "$eq", "$in", "$nin", "$and", "$or", "$not", "$exists", "$type", "$regex", "$where", "$expr"]
+      "dangerous_keys": ["$gt", "$gte", "$lt", "$lte", "$ne", "$eq", "$in", "$nin", "$and", "$or", "$not", "$nor", "$exists", "$type", "$regex", "$where", "$expr", "$mod", "$text", "$jsonSchema", "$function", "$accumulator", "$elemMatch", "$all", "$size", "$lookup", "$match", "$project", "$group", "$sort", "$limit", "$skip", "$unwind", "$addFields", "$replaceRoot"]
     },
     "command_injection": {
       "name": "Command Injection",
@@ -201,6 +215,13 @@
           "pattern": "\\b(cat|ls|rm|mv|cp|wget|curl|nc|bash|sh|python|perl|ruby|php|node|powershell|cmd)\\b",
           "flags": "gi",
           "description": "Detects common shell commands",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-newline",
+          "pattern": "%0[aAdD]",
+          "flags": "gi",
+          "description": "Detects URL-encoded newline/carriage-return injection",
           "redos_safe": true
         },
         {
@@ -246,6 +267,20 @@
           "redos_safe": true
         },
         {
+          "id": "path-double-encoded-slash",
+          "pattern": "%252f",
+          "flags": "gi",
+          "description": "Detects double URL-encoded forward slash",
+          "redos_safe": true
+        },
+        {
+          "id": "path-dotdotslash-bypass",
+          "pattern": "\\.{2,}[/\\\\]{2,}",
+          "flags": "g",
+          "description": "Detects ....// and ....\\\\ bypass variants",
+          "redos_safe": true
+        },
+        {
           "id": "path-null-byte",
           "pattern": "%00",
           "flags": "gi",
@@ -271,6 +306,62 @@
           "pattern": "[()\\\\*]",
           "flags": "g",
           "description": "Detects LDAP special characters",
+          "redos_safe": true
+        }
+      ]
+    },
+    "ssti": {
+      "name": "Server-Side Template Injection (SSTI)",
+      "severity": "critical",
+      "owasp": "A03:2021",
+      "rules": [
+        {
+          "id": "ssti-jinja2-twig",
+          "pattern": "\\{\\{.*?\\}\\}",
+          "flags": "g",
+          "description": "Detects Jinja2/Twig/Nunjucks template expressions ({{ ... }})",
+          "redos_safe": true
+        },
+        {
+          "id": "ssti-freemarker-spring",
+          "pattern": "\\$\\{.*?\\}",
+          "flags": "g",
+          "description": "Detects Freemarker/Thymeleaf/Spring EL expressions (${ ... })",
+          "redos_safe": true
+        },
+        {
+          "id": "ssti-erb-ejs",
+          "pattern": "<%[=\\-]?.*?%>",
+          "flags": "gs",
+          "description": "Detects ERB/EJS template tags (<%= ... %>, <% ... %>)",
+          "redos_safe": true
+        },
+        {
+          "id": "ssti-pug-jade",
+          "pattern": "#\\{.*?\\}",
+          "flags": "g",
+          "description": "Detects Pug/Jade/Slim template expressions (#{ ... })",
+          "redos_safe": true
+        },
+        {
+          "id": "ssti-python-class-chain",
+          "pattern": "__(?:class|mro|subclasses|globals|builtins|import)__",
+          "flags": "gi",
+          "description": "Detects Python sandbox escape via dunder attributes",
+          "redos_safe": true
+        },
+        {
+          "id": "ssti-config-leak",
+          "pattern": "\\{\\{\\s*config[.\\[]",
+          "flags": "gi",
+          "description": "Detects Jinja2 config/settings leak attempts",
+          "redos_safe": true
+        },
+        {
+          "id": "ssti-jinja2-functions",
+          "pattern": "\\{\\{\\s*(?:self|request|lipsum|cycler|joiner|namespace|range)\\b",
+          "flags": "gi",
+          "description": "Detects Jinja2 built-in object/function access",
           "redos_safe": true
         }
       ]

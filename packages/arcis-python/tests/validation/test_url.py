@@ -260,6 +260,102 @@ class TestValidateUrlAllowedHosts:
         assert result.safe is True
 
 
+class TestValidateUrlDecimalIP:
+    """Test decimal IP bypass detection."""
+
+    def test_blocks_loopback_decimal(self):
+        # 127.0.0.1 = 2130706433
+        result = validate_url_ssrf("http://2130706433/")
+        assert result.safe is False
+        assert "loopback" in result.reason
+        assert "decimal" in result.reason
+
+    def test_blocks_private_10_decimal(self):
+        # 10.0.0.1 = 167772161
+        result = validate_url_ssrf("http://167772161/")
+        assert result.safe is False
+        assert "private" in result.reason
+        assert "decimal" in result.reason
+
+    def test_blocks_private_192_decimal(self):
+        # 192.168.1.1 = 3232235777
+        result = validate_url_ssrf("http://3232235777/")
+        assert result.safe is False
+        assert "private" in result.reason
+        assert "decimal" in result.reason
+
+    def test_blocks_link_local_decimal(self):
+        # 169.254.169.254 = 2852039166
+        result = validate_url_ssrf("http://2852039166/")
+        assert result.safe is False
+        assert "decimal" in result.reason
+
+    def test_allows_safe_decimal(self):
+        # 8.8.8.8 = 134744072
+        result = validate_url_ssrf("http://134744072/")
+        assert result.safe is True
+
+
+class TestValidateUrlOctalIP:
+    """Test octal IP bypass detection."""
+
+    def test_blocks_loopback_octal(self):
+        # 0177.0.0.1 = 127.0.0.1
+        result = validate_url_ssrf("http://0177.0.0.1/")
+        assert result.safe is False
+        assert "loopback" in result.reason
+        assert "octal" in result.reason
+
+    def test_blocks_private_10_octal(self):
+        # 012.0.0.1 = 10.0.0.1
+        result = validate_url_ssrf("http://012.0.0.1/")
+        assert result.safe is False
+        assert "private" in result.reason
+        assert "octal" in result.reason
+
+    def test_blocks_private_192_octal(self):
+        # 0300.0250.01.01 = 192.168.1.1
+        result = validate_url_ssrf("http://0300.0250.01.01/")
+        assert result.safe is False
+        assert "private" in result.reason
+        assert "octal" in result.reason
+
+    def test_blocks_hex_notation(self):
+        # 0x7f.0.0.1 = 127.0.0.1
+        result = validate_url_ssrf("http://0x7f.0.0.1/")
+        assert result.safe is False
+        assert "loopback" in result.reason
+        assert "octal" in result.reason
+
+
+class TestValidateUrlIPv6MappedIPv4:
+    """Test IPv6-mapped IPv4 bypass detection."""
+
+    def test_blocks_mapped_loopback(self):
+        result = validate_url_ssrf("http://[::ffff:127.0.0.1]/")
+        assert result.safe is False
+        assert "IPv6-mapped" in result.reason
+
+    def test_blocks_mapped_private(self):
+        result = validate_url_ssrf("http://[::ffff:10.0.0.1]/")
+        assert result.safe is False
+        assert "IPv6-mapped" in result.reason
+
+    def test_blocks_mapped_link_local(self):
+        result = validate_url_ssrf("http://[::ffff:169.254.169.254]/")
+        assert result.safe is False
+        assert "IPv6-mapped" in result.reason
+
+
+class TestValidateUrlAzureMetadata:
+    """Test Azure metadata endpoint blocking."""
+
+    def test_blocks_azure_metadata(self):
+        result = validate_url_ssrf("http://metadata.azure.internal/metadata/instance")
+        assert result.safe is False
+        assert "cloud metadata" in result.reason
+
+
 class TestIsUrlSafe:
     """Test is_url_safe convenience function."""
 
