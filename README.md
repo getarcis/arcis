@@ -1,27 +1,30 @@
-
 # Arcis
 
 [![npm version](https://img.shields.io/npm/v/@arcis/node.svg)](https://www.npmjs.com/package/@arcis/node)
 [![PyPI version](https://img.shields.io/pypi/v/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
+[![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg?branch=nwl)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-2700%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
 
 One-line security middleware for Node.js, Python, and Go.
 
-Arcis protects your code like how Dependabot protects your dependencies.
+Runtime security middleware that handles sanitization, validation, rate limiting, and security headers — so you don't wire together 8 separate packages.
 
-**17 attack vectors handled. 1700+ tests. Zero dependencies.**
+**20 attack vectors handled. 2700+ tests. Zero dependencies.**
 
 | Category | What it stops |
 |----------|--------------|
 | XSS | Script injection, event handlers, `javascript:` URIs, SVG/iframe payloads |
-| SQL Injection | Keywords, boolean logic, comments, time-based blind (`SLEEP`, `BENCHMARK`) |
-| NoSQL Injection | MongoDB operators (`$gt`, `$where`, `$regex`, 25+ blocked operators) |
-| Command Injection | Shell metacharacters, dangerous commands, redirections |
-| Path Traversal | `../`, encoded variants (`%2e%2e`), null byte injection |
+| SQL Injection | Keywords, boolean logic, comments, time-based blind (`SLEEP`, `BENCHMARK`, `pg_sleep`, `WAITFOR DELAY`) |
+| NoSQL Injection | MongoDB operators (`$gt`, `$where`, `$regex`, `$function`, 35 blocked operators) |
+| Command Injection | Shell metacharacters, dangerous commands, redirections, newline injection |
+| Path Traversal | `../`, encoded variants (`%2e%2e`), double-encoding (`%252f`), null byte injection |
 | Prototype Pollution | `__proto__`, `constructor`, `__defineGetter__`, 7 keys blocked (case-insensitive) |
+| SSTI | Jinja2 `{{`, Twig, Freemarker, ERB/EJS, Pug/Jade, Python dunder chains |
+| XXE | DOCTYPE, ENTITY, SYSTEM/PUBLIC references, CDATA, parameter entities |
+| JSONP Injection | Callback whitelist validation, blocks XSS in JSONP responses |
 | HTTP Header Injection | CRLF injection, response splitting, null bytes |
-| SSRF | Private IPs, loopback, link-local, cloud metadata, dangerous protocols |
+| SSRF | Private IPs, loopback, link-local, cloud metadata, decimal/octal/IPv6-mapped bypass detection |
 | Open Redirect | Absolute URLs, `javascript:`, protocol-relative, backslash/control char bypass |
 | Error Leakage | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
 | CORS Misconfiguration | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
@@ -148,12 +151,14 @@ e.Use(arcisecho.Middleware())
 
 ## What It Does
 
-One `app.use(arcis())` gives you all 17 categories above. Or use individual functions for fine-grained control:
+One `app.use(arcis())` gives you all 20 categories above. Or use individual functions for fine-grained control:
 
-- **Sanitize** — `sanitizeString()`, `sanitizeObject()` strip dangerous patterns
-- **Detect** — `detectXss()`, `detectSql()`, `detectHeaderInjection()` flag threats without modifying input
+- **Sanitize** — `sanitizeString()`, `sanitizeObject()`, `sanitizeSsti()`, `sanitizeXxe()`, `sanitizeJsonpCallback()` strip dangerous patterns
+- **Detect** — `detectXss()`, `detectSql()`, `detectSsti()`, `detectXxe()`, `detectHeaderInjection()` flag threats without modifying input
 - **Validate** — `validateUrl()` blocks SSRF, `validateRedirect()` blocks open redirects, `validateEmail()` with disposable blocklist and typo suggestions
 - **Protect** — sliding window + token bucket rate limiting, bot detection, CSRF, security headers, safe logging, error handling
+- **PII** — `scanPii()`, `redactPii()` detect and redact emails, phone numbers, SSNs, credit cards in any string or object
+- **Audit** — `arcis audit` CLI scans source code for unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, `yaml.load()` without SafeLoader, and more)
 - **Utilities** — platform-aware IP detection, request fingerprinting, duration parsing (`"5m"` -> ms)
 
 ## Architecture
