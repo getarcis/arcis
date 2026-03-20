@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arcis"
-version = "1.1.0"
+version = "1.2.0"
 description = "One-line security for Python web applications"
 readme = "README.md"
 license = {text = "MIT"}
