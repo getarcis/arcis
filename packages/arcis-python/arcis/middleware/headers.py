@@ -32,6 +32,11 @@ class SecurityHeaders:
         referrer_policy: str = "strict-origin-when-cross-origin",
         permissions_policy: str = "geolocation=(), microphone=(), camera=()",
         cache_control: Union[bool, str] = True,
+        cross_origin_opener_policy: Union[str, bool] = "same-origin",
+        cross_origin_resource_policy: Union[str, bool] = "same-origin",
+        cross_origin_embedder_policy: Union[str, bool] = "require-corp",
+        origin_agent_cluster: bool = True,
+        dns_prefetch_control: bool = True,
         custom_headers: Optional[Dict[str, str]] = None,
     ):
         self.headers = dict(self.DEFAULT_HEADERS)
@@ -45,8 +50,10 @@ class SecurityHeaders:
         if x_content_type_options:
             self.headers["X-Content-Type-Options"] = x_content_type_options
 
+        # X-XSS-Protection: 0 disables the legacy XSS auditor which was itself
+        # an attack vector (could be abused to selectively block legitimate scripts)
         if xss_filter:
-            self.headers["X-XSS-Protection"] = "1; mode=block"
+            self.headers["X-XSS-Protection"] = "0"
 
         if hsts:
             hsts_value = f"max-age={hsts_max_age}"
@@ -72,6 +79,27 @@ class SecurityHeaders:
             self.headers["Expires"] = "0"
 
         self.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+
+        # Cross-origin isolation headers (Spectre mitigation)
+        if cross_origin_opener_policy:
+            value = cross_origin_opener_policy if isinstance(cross_origin_opener_policy, str) else "same-origin"
+            self.headers["Cross-Origin-Opener-Policy"] = value
+
+        if cross_origin_resource_policy:
+            value = cross_origin_resource_policy if isinstance(cross_origin_resource_policy, str) else "same-origin"
+            self.headers["Cross-Origin-Resource-Policy"] = value
+
+        if cross_origin_embedder_policy:
+            value = cross_origin_embedder_policy if isinstance(cross_origin_embedder_policy, str) else "require-corp"
+            self.headers["Cross-Origin-Embedder-Policy"] = value
+
+        # Request origin-keyed process isolation
+        if origin_agent_cluster:
+            self.headers["Origin-Agent-Cluster"] = "?1"
+
+        # Prevent DNS prefetching (privacy leak vector)
+        if dns_prefetch_control:
+            self.headers["X-DNS-Prefetch-Control"] = "off"
 
         if custom_headers:
             self.headers.update(custom_headers)

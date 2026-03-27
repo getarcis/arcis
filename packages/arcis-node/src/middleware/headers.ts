@@ -33,6 +33,11 @@ export function createHeaders(options: HeaderOptions = {}): RequestHandler {
     referrerPolicy = HEADERS.REFERRER_POLICY,
     permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
     cacheControl = true,
+    crossOriginOpenerPolicy = 'same-origin',
+    crossOriginResourcePolicy = 'same-origin',
+    crossOriginEmbedderPolicy = 'require-corp',
+    originAgentCluster = true,
+    dnsPrefetchControl = true,
   } = options;
 
   return (req: Request, res: Response, next: NextFunction) => {
@@ -44,9 +49,10 @@ export function createHeaders(options: HeaderOptions = {}): RequestHandler {
       res.setHeader('Content-Security-Policy', csp);
     }
 
-    // X-XSS-Protection (legacy but still useful for older browsers)
+    // X-XSS-Protection: 0 disables the legacy XSS auditor which was itself
+    // an attack vector (could be abused to selectively block legitimate scripts)
     if (xssFilter) {
-      res.setHeader('X-XSS-Protection', '1; mode=block');
+      res.setHeader('X-XSS-Protection', '0');
     }
 
     // Prevent MIME type sniffing
@@ -94,6 +100,29 @@ export function createHeaders(options: HeaderOptions = {}): RequestHandler {
     // Permissions Policy
     if (permissionsPolicy) {
       res.setHeader('Permissions-Policy', permissionsPolicy);
+    }
+
+    // Cross-origin isolation headers (Spectre mitigation)
+    if (crossOriginOpenerPolicy) {
+      res.setHeader('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
+    }
+
+    if (crossOriginResourcePolicy) {
+      res.setHeader('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
+    }
+
+    if (crossOriginEmbedderPolicy) {
+      res.setHeader('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
+    }
+
+    // Request origin-keyed process isolation
+    if (originAgentCluster) {
+      res.setHeader('Origin-Agent-Cluster', '?1');
+    }
+
+    // Prevent DNS prefetching (privacy leak vector)
+    if (dnsPrefetchControl) {
+      res.setHeader('X-DNS-Prefetch-Control', 'off');
     }
 
     // Additional security headers

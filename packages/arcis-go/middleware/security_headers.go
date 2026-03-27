@@ -25,7 +25,9 @@ func NewSecurityHeaders(config core.Config) *SecurityHeaders {
 		headers["X-Frame-Options"] = config.FrameOptions
 	}
 
-	headers["X-XSS-Protection"] = "1; mode=block"
+	// X-XSS-Protection: 0 disables the legacy XSS auditor which was itself
+	// an attack vector (could be abused to selectively block legitimate scripts)
+	headers["X-XSS-Protection"] = "0"
 
 	if config.HSTSMaxAge > 0 {
 		hsts := fmt.Sprintf("max-age=%d", config.HSTSMaxAge)
@@ -44,6 +46,29 @@ func NewSecurityHeaders(config core.Config) *SecurityHeaders {
 	}
 
 	headers["X-Permitted-Cross-Domain-Policies"] = "none"
+
+	// Cross-origin isolation headers (Spectre mitigation)
+	if config.CrossOriginOpenerPolicy != "" {
+		headers["Cross-Origin-Opener-Policy"] = config.CrossOriginOpenerPolicy
+	}
+
+	if config.CrossOriginResourcePolicy != "" {
+		headers["Cross-Origin-Resource-Policy"] = config.CrossOriginResourcePolicy
+	}
+
+	if config.CrossOriginEmbedderPolicy != "" {
+		headers["Cross-Origin-Embedder-Policy"] = config.CrossOriginEmbedderPolicy
+	}
+
+	// Request origin-keyed process isolation
+	if config.OriginAgentCluster {
+		headers["Origin-Agent-Cluster"] = "?1"
+	}
+
+	// Prevent DNS prefetching (privacy leak vector)
+	if config.DNSPrefetchControl {
+		headers["X-DNS-Prefetch-Control"] = "off"
+	}
 
 	if config.CacheControl {
 		cacheControlValue := config.CacheControlValue

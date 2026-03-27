@@ -169,7 +169,7 @@
   "security_headers": {
     "required_headers_default": {
       "Content-Security-Policy": "must be set",
-      "X-XSS-Protection": "1; mode=block",
+      "X-XSS-Protection": "0",
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Strict-Transport-Security": "must contain 'max-age='",
@@ -291,6 +291,101 @@
     ]
   },
   
+  "context_encoding": {
+    "encode_for_html": [
+      {
+        "input": "<script>alert('xss')</script>",
+        "expected": "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
+      },
+      {
+        "input": "Hello & goodbye",
+        "expected": "Hello &amp; goodbye"
+      },
+      {
+        "input": "\"quotes\" & <tags>",
+        "expected": "&quot;quotes&quot; &amp; &lt;tags&gt;"
+      },
+      {
+        "input": "safe text 123",
+        "expected": "safe text 123",
+        "comment": "Alphanumeric + spaces pass through"
+      },
+      {
+        "input": "",
+        "expected": "",
+        "comment": "Empty string returns empty"
+      }
+    ],
+    "encode_for_attribute": [
+      {
+        "input": "onclick=alert(1)",
+        "expected_behavior": "all non-alphanumeric chars encoded as &#xHH;"
+      },
+      {
+        "input": "safe",
+        "expected": "safe",
+        "comment": "Pure alphanumeric passes through"
+      },
+      {
+        "input": "",
+        "expected": ""
+      }
+    ],
+    "encode_for_js": [
+      {
+        "input": "alert('xss')",
+        "expected_behavior": "quotes and parens encoded as \\xHH"
+      },
+      {
+        "input": "safe123",
+        "expected": "safe123",
+        "comment": "Alphanumeric passes through"
+      },
+      {
+        "input": "</script>",
+        "expected_behavior": "< > / must be hex-escaped"
+      },
+      {
+        "input": "",
+        "expected": ""
+      }
+    ],
+    "encode_for_url": [
+      {
+        "input": "hello world&foo=bar",
+        "expected": "hello%20world%26foo%3Dbar"
+      },
+      {
+        "input": "safe123",
+        "expected": "safe123",
+        "comment": "Alphanumeric passes through"
+      },
+      {
+        "input": "a/b?c=d#e",
+        "expected_behavior": "/ ? = # must be percent-encoded"
+      },
+      {
+        "input": "",
+        "expected": ""
+      }
+    ],
+    "encode_for_css": [
+      {
+        "input": "expression(alert(1))",
+        "expected_behavior": "parens and other non-alphanumeric chars hex-escaped with \\HH"
+      },
+      {
+        "input": "red",
+        "expected": "red",
+        "comment": "Safe alphanumeric passes through"
+      },
+      {
+        "input": "",
+        "expected": ""
+      }
+    ]
+  },
+
   "error_handler": {
     "production_mode": [
       {

@@ -402,6 +402,23 @@ var GetDangerousProtoKeys = sanitizers.GetDangerousProtoKeys
 // EncodeHTMLEntities encodes HTML special characters in a string.
 var EncodeHTMLEntities = sanitizers.EncodeHTMLEntities
 
+// ─── Context-Aware Encoding ────────────────────────────────────────────────
+
+// EncodeForHTML encodes for HTML body context (entity-encodes & < > " ').
+var EncodeForHTML = sanitizers.EncodeForHTML
+
+// EncodeForAttribute encodes for HTML attribute context (&#xHH; entities).
+var EncodeForAttribute = sanitizers.EncodeForAttribute
+
+// EncodeForJS encodes for JavaScript string context (\xHH / \uHHHH escaping).
+var EncodeForJS = sanitizers.EncodeForJS
+
+// EncodeForURL encodes for URL parameter context (percent encoding).
+var EncodeForURL = sanitizers.EncodeForURL
+
+// EncodeForCSS encodes for CSS value context (\HH hex escaping).
+var EncodeForCSS = sanitizers.EncodeForCSS
+
 // ─── Tier 2: File Upload Validation ─────────────────────────────────────────
 
 // ValidateFile validates a file upload for security.

@@ -56,7 +56,7 @@ describe('Integration: Full Arcis Middleware', () => {
     expect(res.headers.get('Content-Security-Policy')).toBeTruthy();
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(res.headers.get('X-Frame-Options')).toBe('DENY');
-    expect(res.headers.get('X-XSS-Protection')).toBe('1; mode=block');
+    expect(res.headers.get('X-XSS-Protection')).toBe('0');
     expect(res.headers.get('Strict-Transport-Security')).toContain('max-age=');
     expect(res.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
     expect(res.headers.get('X-Powered-By')).toBeNull();
@@ -346,7 +346,7 @@ describe('Integration: Security Headers Middleware', () => {
     expect(csp).toContain("default-src 'self'");
     
     // XSS Protection
-    expect(res.headers.get('X-XSS-Protection')).toBe('1; mode=block');
+    expect(res.headers.get('X-XSS-Protection')).toBe('0');
     
     // Content Type Options
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');

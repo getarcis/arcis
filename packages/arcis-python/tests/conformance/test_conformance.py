@@ -254,7 +254,7 @@ class TestConformanceSecurityHeaders:
         headers = SecurityHeaders()
         h = headers.get_headers()
         assert "Content-Security-Policy" in h
-        assert h["X-XSS-Protection"] == "1; mode=block"
+        assert h["X-XSS-Protection"] == "0"
         assert h["X-Content-Type-Options"] == "nosniff"
         assert h["X-Frame-Options"] == "DENY"
         assert "max-age=" in h["Strict-Transport-Security"]
