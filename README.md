@@ -4,13 +4,13 @@
 [![PyPI version](https://img.shields.io/pypi/v/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg?branch=nwl)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-2700%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
+[![Tests](https://img.shields.io/badge/tests-2800%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
 
 One-line security middleware for Node.js, Python, and Go.
 
 Runtime security middleware that handles sanitization, validation, rate limiting, and security headers — so you don't wire together 8 separate packages.
 
-**20 attack vectors handled. 2700+ tests. Zero dependencies.**
+**42+ security flaws handled. 2,800+ tests. Zero dependencies.**
 
 | Category | What it stops |
 |----------|--------------|
@@ -32,8 +32,9 @@ Runtime security middleware that handles sanitization, validation, rate limiting
 | Rate Limiting | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
 | Bot Detection | 80+ patterns, 7 categories (crawlers, scrapers, AI bots, etc.), behavioral signals |
 | CSRF | Double-submit cookie, token generation and validation |
-| Security Headers | CSP, HSTS, X-Frame-Options, 10 headers out of the box |
+| Security Headers | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control — 15 headers out of the box |
 | Input Validation | Type checking, ranges, enums, email (disposable blocklist, typo suggestions, MX verify), mass assignment prevention |
+| Context-Aware Encoding | `encodeForHtml()`, `encodeForAttribute()`, `encodeForJs()`, `encodeForUrl()`, `encodeForCss()` — right encoding for every output context |
 
 ## Install
 
@@ -68,10 +69,10 @@ import {
   sanitizeObject,
   detectXss,
   detectSql,
-  detectCommandInjection,
-  detectPathTraversal,
+  encodeForHtml,
+  encodeForJs,
+  encodeForUrl,
   createSafeLogger,
-  createRedactor,
 } from '@arcis/node';
 
 // Sanitize user input — works anywhere
@@ -81,6 +82,11 @@ const cleanBody = sanitizeObject(requestBody);
 // Detect threats without sanitizing
 if (detectXss(value)) { /* reject */ }
 if (detectSql(value)) { /* reject */ }
+
+// Context-aware encoding — right encoding for every output context
+const htmlSafe = encodeForHtml(userInput);       // HTML body
+const jsSafe = encodeForJs(userInput);           // inside JS strings
+const urlSafe = encodeForUrl(userInput);         // URL parameters
 
 // Safe logging — no framework needed
 const logger = createSafeLogger();
@@ -151,12 +157,13 @@ e.Use(arcisecho.Middleware())
 
 ## What It Does
 
-One `app.use(arcis())` gives you all 20 categories above. Or use individual functions for fine-grained control:
+One `app.use(arcis())` gives you all of the above. Or use individual functions for fine-grained control:
 
 - **Sanitize** — `sanitizeString()`, `sanitizeObject()`, `sanitizeSsti()`, `sanitizeXxe()`, `sanitizeJsonpCallback()` strip dangerous patterns
 - **Detect** — `detectXss()`, `detectSql()`, `detectSsti()`, `detectXxe()`, `detectHeaderInjection()` flag threats without modifying input
+- **Encode** — `encodeForHtml()`, `encodeForAttribute()`, `encodeForJs()`, `encodeForUrl()`, `encodeForCss()` — context-aware output encoding to prevent XSS bypasses
 - **Validate** — `validateUrl()` blocks SSRF, `validateRedirect()` blocks open redirects, `validateEmail()` with disposable blocklist and typo suggestions
-- **Protect** — sliding window + token bucket rate limiting, bot detection, CSRF, security headers, safe logging, error handling
+- **Protect** — sliding window + token bucket rate limiting, bot detection, CSRF, 15 security headers, safe logging, error handling
 - **PII** — `scanPii()`, `redactPii()` detect and redact emails, phone numbers, SSNs, credit cards in any string or object
 - **Audit** — `arcis audit` CLI scans source code for unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, `yaml.load()` without SafeLoader, and more)
 - **Utilities** — platform-aware IP detection, request fingerprinting, duration parsing (`"5m"` -> ms)
@@ -170,6 +177,7 @@ Arcis separates **core security logic** from **framework adapters**:
 ├── Core (framework-agnostic)
 │   ├── sanitizeString / sanitizeObject   — clean any input
 │   ├── detectXss / detectSql / ...       — threat detection
+│   ├── encodeForHtml / Js / Css / ...    — context-aware output encoding
 │   ├── createSafeLogger / createRedactor — safe logging
 │   ├── MemoryStore / RedisStore          — rate limit backends
 │   └── Error classes and constants
@@ -183,7 +191,7 @@ The core functions are pure — no `req`, `res`, or `next`. They take values in 
 Subpath imports are available for tree-shaking:
 
 ```js
-import { sanitizeString } from '@arcis/node/sanitizers';
+import { sanitizeString, encodeForHtml } from '@arcis/node/sanitizers';
 import { createSafeLogger } from '@arcis/node/logging';
 import { MemoryStore } from '@arcis/node/stores';
 ```
