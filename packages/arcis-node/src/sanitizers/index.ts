@@ -33,5 +33,8 @@ export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './h
 // PII detection and redaction
 export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from './pii';
 
+// Context-aware encoding (XSS prevention by output context)
+export { encodeForHtml, encodeForAttribute, encodeForJs, encodeForUrl, encodeForCss } from './encode';
+
 // Utilities
 export { encodeHtmlEntities, isPlainObject } from './utils';

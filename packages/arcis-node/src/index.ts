@@ -63,6 +63,7 @@ export { isDangerousNoSqlKey, detectNoSqlInjection } from './sanitizers/nosql';
 export { isDangerousProtoKey, detectPrototypePollution } from './sanitizers/prototype';
 export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './sanitizers/headers';
 export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from './sanitizers/pii';
+export { encodeForHtml, encodeForAttribute, encodeForJs, encodeForUrl, encodeForCss } from './sanitizers/encode';
 
 // =============================================================================
 // VALIDATION

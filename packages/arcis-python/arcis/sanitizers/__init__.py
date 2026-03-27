@@ -14,6 +14,13 @@ from .pii import (
     scan_object_pii, redact_object_pii,
     PiiMatch, PiiObjectMatch,
 )
+from .encode import (
+    encode_for_html,
+    encode_for_attribute,
+    encode_for_js,
+    encode_for_url,
+    encode_for_css,
+)
 from typing import Dict
 
 
@@ -71,4 +78,9 @@ __all__ = [
     "redact_object_pii",
     "PiiMatch",
     "PiiObjectMatch",
+    "encode_for_html",
+    "encode_for_attribute",
+    "encode_for_js",
+    "encode_for_url",
+    "encode_for_css",
 ]
