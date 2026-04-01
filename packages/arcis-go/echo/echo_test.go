@@ -69,8 +69,8 @@ func TestMiddleware_SetsSecurityHeaders(t *testing.T) {
 	if rec.Header().Get("X-Frame-Options") != "DENY" {
 		t.Error("X-Frame-Options should be DENY")
 	}
-	if rec.Header().Get("X-XSS-Protection") != "1; mode=block" {
-		t.Error("X-XSS-Protection should be set")
+	if rec.Header().Get("X-XSS-Protection") != "0" {
+		t.Error("X-XSS-Protection should be 0")
 	}
 	if rec.Header().Get("Content-Security-Policy") == "" {
 		t.Error("Content-Security-Policy should be set")

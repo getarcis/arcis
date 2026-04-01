@@ -119,7 +119,7 @@ class TestFlaskSecurityHeaders:
     
     def test_x_xss_protection_present(self, client):
         response = client.get('/')
-        assert response.headers.get('X-XSS-Protection') == '1; mode=block'
+        assert response.headers.get('X-XSS-Protection') == '0'
     
     def test_hsts_header_present(self, client):
         response = client.get('/')

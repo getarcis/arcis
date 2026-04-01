@@ -122,6 +122,11 @@ from .sanitizers import (
     redact_pii,
     scan_object_pii,
     redact_object_pii,
+    encode_for_html,
+    encode_for_attribute,
+    encode_for_js,
+    encode_for_url,
+    encode_for_css,
 )
 
 from .validation.email import (
@@ -156,7 +161,7 @@ try:
 except ImportError:
     _HAS_ASYNC = False
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __all__ = [
     # Main class
     "Arcis",
@@ -221,6 +226,12 @@ __all__ = [
     "redact_pii",
     "scan_object_pii",
     "redact_object_pii",
+    # Context-aware encoding
+    "encode_for_html",
+    "encode_for_attribute",
+    "encode_for_js",
+    "encode_for_url",
+    "encode_for_css",
     # Utilities
     "parse_duration",
     "format_duration",

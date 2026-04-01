@@ -141,7 +141,7 @@ Automatically add security headers to all responses:
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Strict-Transport-Security`
-- `X-XSS-Protection: 1; mode=block`
+- `X-XSS-Protection: 0`
 
 ### Input Validation
 

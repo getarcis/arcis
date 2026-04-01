@@ -31,7 +31,7 @@ describe('createHeaders', () => {
 
       headers(req as Request, res as Response, mockNext);
 
-      expect(res.setHeader).toHaveBeenCalledWith('X-XSS-Protection', '1; mode=block');
+      expect(res.setHeader).toHaveBeenCalledWith('X-XSS-Protection', '0');
     });
 
     it('should set X-Content-Type-Options', () => {
@@ -241,6 +241,121 @@ describe('createHeaders', () => {
       expect(calls).not.toContain('Referrer-Policy');
     });
   });
+
+  describe('Cross-Origin Isolation Headers', () => {
+    it('should set Cross-Origin-Opener-Policy to same-origin by default', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders();
+      headers(req as Request, res as Response, mockNext);
+      expect(res.setHeader).toHaveBeenCalledWith('Cross-Origin-Opener-Policy', 'same-origin');
+    });
+
+    it('should set Cross-Origin-Resource-Policy to same-origin by default', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders();
+      headers(req as Request, res as Response, mockNext);
+      expect(res.setHeader).toHaveBeenCalledWith('Cross-Origin-Resource-Policy', 'same-origin');
+    });
+
+    it('should set Cross-Origin-Embedder-Policy to require-corp by default', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders();
+      headers(req as Request, res as Response, mockNext);
+      expect(res.setHeader).toHaveBeenCalledWith('Cross-Origin-Embedder-Policy', 'require-corp');
+    });
+
+    it('should allow custom COOP value', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders({ crossOriginOpenerPolicy: 'same-origin-allow-popups' });
+      headers(req as Request, res as Response, mockNext);
+      expect(res.setHeader).toHaveBeenCalledWith('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    });
+
+    it('should allow custom CORP value', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders({ crossOriginResourcePolicy: 'cross-origin' });
+      headers(req as Request, res as Response, mockNext);
+      expect(res.setHeader).toHaveBeenCalledWith('Cross-Origin-Resource-Policy', 'cross-origin');
+    });
+
+    it('should allow custom COEP value', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders({ crossOriginEmbedderPolicy: 'credentialless' });
+      headers(req as Request, res as Response, mockNext);
+      expect(res.setHeader).toHaveBeenCalledWith('Cross-Origin-Embedder-Policy', 'credentialless');
+    });
+
+    it('should allow disabling COOP', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders({ crossOriginOpenerPolicy: false });
+      headers(req as Request, res as Response, mockNext);
+      const calls = res.setHeader.mock.calls.map((c: unknown[]) => c[0]);
+      expect(calls).not.toContain('Cross-Origin-Opener-Policy');
+    });
+
+    it('should allow disabling CORP', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders({ crossOriginResourcePolicy: false });
+      headers(req as Request, res as Response, mockNext);
+      const calls = res.setHeader.mock.calls.map((c: unknown[]) => c[0]);
+      expect(calls).not.toContain('Cross-Origin-Resource-Policy');
+    });
+
+    it('should allow disabling COEP', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders({ crossOriginEmbedderPolicy: false });
+      headers(req as Request, res as Response, mockNext);
+      const calls = res.setHeader.mock.calls.map((c: unknown[]) => c[0]);
+      expect(calls).not.toContain('Cross-Origin-Embedder-Policy');
+    });
+  });
+
+  describe('Origin-Agent-Cluster', () => {
+    it('should set Origin-Agent-Cluster to ?1 by default', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders();
+      headers(req as Request, res as Response, mockNext);
+      expect(res.setHeader).toHaveBeenCalledWith('Origin-Agent-Cluster', '?1');
+    });
+
+    it('should allow disabling Origin-Agent-Cluster', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders({ originAgentCluster: false });
+      headers(req as Request, res as Response, mockNext);
+      const calls = res.setHeader.mock.calls.map((c: unknown[]) => c[0]);
+      expect(calls).not.toContain('Origin-Agent-Cluster');
+    });
+  });
+
+  describe('X-DNS-Prefetch-Control', () => {
+    it('should set X-DNS-Prefetch-Control to off by default', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders();
+      headers(req as Request, res as Response, mockNext);
+      expect(res.setHeader).toHaveBeenCalledWith('X-DNS-Prefetch-Control', 'off');
+    });
+
+    it('should allow disabling X-DNS-Prefetch-Control', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+      const headers = createHeaders({ dnsPrefetchControl: false });
+      headers(req as Request, res as Response, mockNext);
+      const calls = res.setHeader.mock.calls.map((c: unknown[]) => c[0]);
+      expect(calls).not.toContain('X-DNS-Prefetch-Control');
+    });
+  });
 });
 
 describe('securityHeaders', () => {
@@ -264,7 +379,7 @@ describe('Integration: Security Headers', () => {
     });
 
     expect(res.headers.get('Content-Security-Policy')).toBeTruthy();
-    expect(res.headers.get('X-XSS-Protection')).toBe('1; mode=block');
+    expect(res.headers.get('X-XSS-Protection')).toBe('0');
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(res.headers.get('X-Frame-Options')).toBe('DENY');
     expect(res.headers.get('Strict-Transport-Security')).toContain('max-age=');

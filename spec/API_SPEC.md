@@ -116,7 +116,7 @@ HeaderOptions {
 
 **Headers Set (defaults):**
 - `Content-Security-Policy: default-src 'self'; script-src 'self'; ...`
-- `X-XSS-Protection: 1; mode=block`
+- `X-XSS-Protection: 0`
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
@@ -268,6 +268,51 @@ __proto__
 constructor
 prototype
 ```
+
+---
+
+## 8. Context-Aware Encoding
+
+### Purpose
+Encode untrusted input for safe output in specific rendering contexts. A single `sanitize()` is not enough — output embedded in JavaScript, CSS, or HTML attributes requires context-specific encoding to prevent XSS.
+
+### Functions
+
+#### `encode_for_html(value: string) -> string`
+HTML body context. Entity-encodes characters that have special meaning in HTML.
+
+**Characters encoded:** `& < > " '`
+**Use when:** Outputting to HTML element content (e.g., `<p>{output}</p>`)
+
+#### `encode_for_attribute(value: string) -> string`
+HTML attribute context. Encodes all non-alphanumeric characters as hex entities.
+
+**Encoding:** Non-alphanumeric characters → `&#xHH;`
+**Use when:** Outputting to HTML attributes (e.g., `<div title="{output}">`)
+
+#### `encode_for_js(value: string) -> string`
+JavaScript string context. Escapes characters using `\xHH` or `\uHHHH` notation.
+
+**Encoding:** Non-alphanumeric characters → `\xHH` (ASCII) or `\uHHHH` (Unicode)
+**Use when:** Embedding in JS string literals (e.g., `var x = '{output}';`)
+
+#### `encode_for_url(value: string) -> string`
+URL parameter context. Percent-encodes characters unsafe for URL components.
+
+**Encoding:** Non-unreserved characters → `%HH`
+**Use when:** Building query strings or URL path segments
+
+#### `encode_for_css(value: string) -> string`
+CSS value context. Hex-encodes non-alphanumeric characters with CSS escape syntax.
+
+**Encoding:** Non-alphanumeric characters → `\HH `  (trailing space per CSS spec)
+**Use when:** Embedding in CSS values (e.g., `content: '{output}';`)
+
+### Guarantees
+
+- All functions are **idempotent** for safe input (alphanumeric strings pass through unchanged)
+- Empty string input returns empty string
+- All functions work on plain strings — no framework dependencies
 
 ---
 

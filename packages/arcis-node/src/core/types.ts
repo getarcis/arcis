@@ -159,7 +159,7 @@ export interface RateLimiterMiddleware extends RequestHandler {
 export interface HeaderOptions {
   /** Content Security Policy. true = default, string = custom, false = disabled */
   contentSecurityPolicy?: boolean | string;
-  /** Enable X-XSS-Protection header. Default: true */
+  /** Enable X-XSS-Protection header. Default: true (sends '0' to disable legacy XSS auditor) */
   xssFilter?: boolean;
   /** Enable X-Content-Type-Options: nosniff. Default: true */
   noSniff?: boolean;
@@ -173,6 +173,16 @@ export interface HeaderOptions {
   permissionsPolicy?: string | false;
   /** Cache-Control configuration. Default: true (no-cache) */
   cacheControl?: boolean | string;
+  /** Cross-Origin-Opener-Policy value. Default: 'same-origin'. false to disable. */
+  crossOriginOpenerPolicy?: string | false;
+  /** Cross-Origin-Resource-Policy value. Default: 'same-origin'. false to disable. */
+  crossOriginResourcePolicy?: string | false;
+  /** Cross-Origin-Embedder-Policy value. Default: 'require-corp'. false to disable. */
+  crossOriginEmbedderPolicy?: string | false;
+  /** Origin-Agent-Cluster header. Default: true (sends '?1'). false to disable. */
+  originAgentCluster?: boolean;
+  /** X-DNS-Prefetch-Control value. Default: true (sends 'off'). false to disable. */
+  dnsPrefetchControl?: boolean;
 }
 
 /** HSTS (HTTP Strict Transport Security) options */

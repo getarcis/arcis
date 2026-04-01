@@ -334,15 +334,15 @@ describe('Conformance: Security Headers', () => {
     await testServer.close();
   });
 
-  it('should set X-XSS-Protection to "1; mode=block"', async () => {
+  it('should set X-XSS-Protection to "0" (disabled - legacy auditor was itself an attack vector)', async () => {
     const testServer = await createTestServer((app) => {
       app.use(createHeaders());
       app.get('/', (_req, res) => res.json({ ok: true }));
     });
 
     const res = await fetch(`${testServer.url}/`);
-    expect(res.headers.get('X-XSS-Protection')).toBe('1; mode=block');
-    
+    expect(res.headers.get('X-XSS-Protection')).toBe('0');
+
     await testServer.close();
   });
 

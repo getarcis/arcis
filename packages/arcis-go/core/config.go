@@ -44,6 +44,13 @@ type Config struct {
 	CacheControl      bool   // Enable cache-control headers (default: true)
 	CacheControlValue string // Custom Cache-Control value. Empty = use secure default.
 
+	// Cross-origin isolation headers
+	CrossOriginOpenerPolicy   string // COOP value. Default: "same-origin". Empty to disable.
+	CrossOriginResourcePolicy string // CORP value. Default: "same-origin". Empty to disable.
+	CrossOriginEmbedderPolicy string // COEP value. Default: "require-corp". Empty to disable.
+	OriginAgentCluster        bool   // Send Origin-Agent-Cluster: ?1 (default: true)
+	DNSPrefetchControl        bool   // Send X-DNS-Prefetch-Control: off (default: true)
+
 	// Error handler options
 	IsDev bool // Show error details in development mode
 }
@@ -69,8 +76,13 @@ func DefaultConfig() Config {
 		HSTSSubdomains:    true,
 		ReferrerPolicy:    "strict-origin-when-cross-origin",
 		PermissionsPolicy: "geolocation=(), microphone=(), camera=()",
-		CacheControl:      true,
-		IsDev:             false,
+		CacheControl:              true,
+		CrossOriginOpenerPolicy:   "same-origin",
+		CrossOriginResourcePolicy: "same-origin",
+		CrossOriginEmbedderPolicy: "require-corp",
+		OriginAgentCluster:        true,
+		DNSPrefetchControl:        true,
+		IsDev:                     false,
 	}
 }
 
