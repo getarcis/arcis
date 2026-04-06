@@ -1,0 +1,43 @@
+{
+  "schema_version": "1",
+  "last_updated": "2026-04-01",
+  "maintained_by": "Arcis Security",
+  "repository": "https://github.com/Gagancm/arcis",
+  "contribute": "New supply chain attacks can be reported via GitHub Issues. Each entry is reviewed and sourced before inclusion.",
+  "threats": [
+    {
+      "ecosystem": "npm",
+      "name": "axios",
+      "malicious_versions": ["1.14.1", "0.30.4"],
+      "attack_vector": "Trojanized dependency plain-crypto-js@4.2.1 deploys a remote access trojan (RAT) via postinstall script",
+      "severity": "critical",
+      "cve": "CVE-2026-XXXX",
+      "disclosure_date": "2026-03-31",
+      "source": "npm Security Advisory",
+      "references": [
+        "https://github.com/axios/axios/security/advisories",
+        "https://github.com/advisories"
+      ],
+      "trojanized_deps": ["plain-crypto-js"],
+      "persistence_artifacts": [],
+      "remediation": "1. Run: npm uninstall axios && npm install axios@1.14.0\n2. Delete node_modules and reinstall: rm -rf node_modules && npm install\n3. Search for 'plain-crypto-js' in node_modules — if present, your system may be compromised\n4. Rotate any credentials/tokens accessible from the affected machine"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "litellm",
+      "malicious_versions": ["1.82.7", "1.82.8"],
+      "attack_vector": "Credential harvester exfiltrates environment variables and API keys. Installs persistent .pth backdoor in site-packages that survives pip uninstall",
+      "severity": "critical",
+      "cve": "CVE-2026-XXXX",
+      "disclosure_date": "2026-03-24",
+      "source": "PyPI Security Advisory",
+      "references": [
+        "https://github.com/BerriAI/litellm/security/advisories",
+        "https://pypi.org/project/litellm/#history"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": ["*.pth"],
+      "remediation": "1. Run: pip uninstall litellm && pip install litellm==1.82.6\n2. Check site-packages for suspicious .pth files:\n   python -c \"import site; print(site.getsitepackages())\"\n   Look for .pth files you don't recognize — the backdoor survives uninstall\n3. Rotate ALL API keys, tokens, and credentials from environment variables\n4. Check ~/.local/lib and conda envs for the same .pth artifacts"
+    }
+  ]
+}

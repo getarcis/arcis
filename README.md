@@ -14,7 +14,7 @@
 [![Tests](https://img.shields.io/badge/tests-2800%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
 
 Arcis is a unified, zero-dependency security middleware for Node.js, Python, and Go. <br />
-One line of code protects your application against 42+ security flaws at runtime — XSS, SQL injection, SSRF, CSRF, and more.
+One line of code protects your application against 45+ security flaws at runtime — XSS, SQL injection, SSRF, CSRF, HPP, and more.
 
 **Install once. Protect everything.**
 
@@ -63,7 +63,7 @@ At the checkpoint, Arcis:
 - **Contract-First Design**: Every feature starts as a specification (`API_SPEC.md` + `TEST_VECTORS.json`), not code. If two SDKs produce different output for the same input, one has a bug.
 - **Context-Aware Output Encoding**: `encodeForHtml()`, `encodeForJs()`, `encodeForUrl()`, `encodeForCss()`, `encodeForAttribute()` — the right encoding for every output context.
 - **Supply Chain Attack Detection**: `arcis sca` detects compromised packages from known supply chain attacks (axios, litellm) — checks lockfiles, `node_modules`, and Python environments for malicious versions and backdoor artifacts.
-- **Static Analysis CLI**: `arcis scan` and `arcis audit` detect unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, weak crypto) in your source code before runtime.
+- **Static Analysis CLI**: `arcis scan` and `arcis audit` detect unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, path traversal sinks, unsafe deserializers, weak crypto) — 14 rules across Python, JS, and TypeScript.
 
 ## Threat Coverage
 
@@ -88,6 +88,7 @@ At the checkpoint, Arcis:
 | **Error Leakage** | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
 | **CORS** | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
 | **Cookie Security** | HttpOnly, Secure, SameSite enforced on all cookies |
+| **HTTP Parameter Pollution** | Normalizes duplicate query/body params (`?role=user&role=admin` → `role=admin`). Originals preserved in `queryPolluted` for auditing |
 | **Input Validation** | Type checking, ranges, enums, email (disposable blocklist, typo suggestions, MX verify), mass assignment prevention |
 | **PII Detection** | `scanPii()`, `redactPii()` detect and redact emails, phone numbers, SSNs, credit cards |
 
@@ -165,7 +166,7 @@ r.Use(arcisgin.Middleware())
 e.Use(arcisecho.Middleware())
 ```
 
-That's it. Your application is now protected against 42+ security flaws.
+That's it. Your application is now protected against 45+ security flaws.
 
 ---
 
@@ -259,14 +260,17 @@ arcis sca /path/to/project
 
 # Also check globally installed packages and .pth backdoors
 arcis sca --system
+
+# List all threats in the database with sources and references
+arcis sca --list-threats
 ```
 
 **Currently detects:**
 
-| Attack | Malicious Versions | Vector |
-|--------|-------------------|--------|
-| **axios (npm)** — March 2026 | 1.14.1, 0.30.4 | Trojanized dependency `plain-crypto-js` deploys a RAT via postinstall |
-| **litellm (PyPI)** — March 2026 | 1.82.7, 1.82.8 | Credential harvester + persistent `.pth` backdoor that survives `pip uninstall` |
+| Attack | Malicious Versions | Vector | Source |
+|--------|-------------------|--------|--------|
+| **axios (npm)** — March 2026 | 1.14.1, 0.30.4 | Trojanized dependency `plain-crypto-js` deploys a RAT via postinstall | [npm Security Advisory](https://github.com/axios/axios/security/advisories) |
+| **litellm (PyPI)** — March 2026 | 1.82.7, 1.82.8 | Credential harvester + persistent `.pth` backdoor that survives `pip uninstall` | [PyPI Security Advisory](https://github.com/BerriAI/litellm/security/advisories) |
 
 **What it checks:**
 - `package-lock.json` (v1 and v3), `yarn.lock`, `node_modules/` on disk
@@ -274,7 +278,9 @@ arcis sca --system
 - Currently installed pip packages (`--system`)
 - Python `site-packages` for suspicious `.pth` backdoor files (`--system`)
 
-Exit code 1 if compromised (CI-friendly). The threat database is extensible — new supply chain attacks are added as they're disclosed.
+Exit code 1 if compromised (CI-friendly).
+
+**Offline by design** — no network calls, no telemetry, no external requests. The scanner reads your local files only. You can audit every detection in [`arcis/data/threat-db.json`](packages/arcis-python/arcis/data/threat-db.json). New supply chain attacks are added as they're publicly disclosed, each with a source advisory link.
 
 ---
 

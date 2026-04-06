@@ -7,9 +7,13 @@ Scans Python and JavaScript/TypeScript files for dangerous patterns:
 - innerHTML / document.write sinks
 - JSONP callback endpoints
 - Angular security trust bypass
-- Pickle on user input
+- Pickle / marshal / shelve deserialization on user input
 - JWT without algorithm enforcement
 - eval() / exec() on request data
+- SQL query string concatenation
+- ORM raw queries (Prisma $queryRaw, Sequelize, knex.raw)
+- File system operations with user-controlled paths
+- HTTP requests (fetch, axios, requests) with user-controlled URLs
 
 Usage:
     arcis audit .
@@ -122,6 +126,54 @@ RULES: List[Rule] = [
         message="JSONP callback parameter detected — validate callback names with sanitizeJsonpCallback()",
         pattern=re.compile(r"""(?:request\.(?:args|query|GET)\.get\s*\(\s*["']callback["']|req\.query\.callback|params\[["']callback["']\])"""),
         languages=("python", "javascript", "typescript"),
+    ),
+
+    # ── New rules (v1.4.0) ──
+
+    Rule(
+        id="SQL-CONCAT",
+        severity="critical",
+        message="SQL query built with string concatenation — use parameterized queries to prevent SQL injection",
+        pattern=re.compile(
+            r"""(?:cursor\.execute|db\.execute|connection\.execute|conn\.execute|query\.execute)\s*\(\s*(?:f["']|["'][^"']*["']\s*\+|["'][^"']*\+|["'][^"']*%\s*(?:request|req|params|data|input|user))"""
+        ),
+        languages=("python",),
+    ),
+    Rule(
+        id="ORM-RAW",
+        severity="high",
+        message="Raw ORM query detected — verify no user input is interpolated into this query",
+        pattern=re.compile(
+            r"""(?:\$queryRaw|\.query\s*\(\s*["'`]|\bsequelize\.query\s*\(|typeorm.*\.query\s*\(|knex\.raw\s*\()"""
+        ),
+        languages=("javascript", "typescript"),
+    ),
+    Rule(
+        id="FS-USER-PATH",
+        severity="high",
+        message="File system operation with potentially user-controlled path — use path.resolve() and validate against allowed directories",
+        pattern=re.compile(
+            r"""(?:fs\.(?:readFile|writeFile|appendFile|readFileSync|writeFileSync|unlink|unlinkSync|stat|statSync)\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.)|open\s*\(\s*(?:request\.|req\.|f["'].*\+))"""
+        ),
+        languages=("javascript", "typescript", "python"),
+    ),
+    Rule(
+        id="FETCH-USER-URL",
+        severity="high",
+        message="HTTP request with potentially user-controlled URL — validate with validateUrl() to prevent SSRF",
+        pattern=re.compile(
+            r"""(?:fetch\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.|`[^`]*\$\{)|(?:http|https|axios|got|superagent)\.(?:get|post|request)\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.)|requests\.(?:get|post|request)\s*\(\s*(?:request\.|req\.))"""
+        ),
+        languages=("javascript", "typescript", "python"),
+    ),
+    Rule(
+        id="UNSAFE-DESERIALIZE",
+        severity="critical",
+        message="Unsafe deserialization detected — never deserialize untrusted data with marshal, shelve, or jsonpickle",
+        pattern=re.compile(
+            r"""\b(?:marshal\.loads?\s*\(|shelve\.open\s*\(|jsonpickle\.decode\s*\()"""
+        ),
+        languages=("python",),
     ),
 ]
 

@@ -360,6 +360,189 @@ class TestScanDirectory:
 
 # ── Finding dataclass ────────────────────────────────────────────────────────
 
+# ── New rules (v1.4.0) ───────────────────────────────────────────────────────
+
+class TestSqlConcat:
+    """Test SQL-CONCAT rule."""
+
+    def test_detects_fstring_execute(self):
+        path = _write_temp('cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")\n', ".py")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "SQL-CONCAT" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_detects_string_concat_execute(self):
+        path = _write_temp('db.execute("SELECT * FROM users WHERE id = " + user_id)\n', ".py")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "SQL-CONCAT" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_allows_parameterized_query(self):
+        path = _write_temp('cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))\n', ".py")
+        try:
+            findings = scan_file(path)
+            assert not any(f.rule_id == "SQL-CONCAT" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_only_python_language(self):
+        path = _write_temp('cursor.execute(f"SELECT * FROM users WHERE id = {id}")\n', ".js")
+        try:
+            findings = scan_file(path)
+            assert not any(f.rule_id == "SQL-CONCAT" for f in findings)
+        finally:
+            os.unlink(path)
+
+
+class TestOrmRaw:
+    """Test ORM-RAW rule."""
+
+    def test_detects_prisma_queryraw(self):
+        path = _write_temp("const users = await prisma.$queryRaw`SELECT * FROM users`;\n", ".ts")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "ORM-RAW" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_detects_knex_raw(self):
+        path = _write_temp('const result = await knex.raw("SELECT * FROM users WHERE id = ?", [id]);\n', ".ts")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "ORM-RAW" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_detects_sequelize_query(self):
+        path = _write_temp('const result = await sequelize.query("SELECT * FROM users");\n', ".js")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "ORM-RAW" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_only_js_ts(self):
+        path = _write_temp('sequelize.query("SELECT * FROM users")\n', ".py")
+        try:
+            findings = scan_file(path)
+            assert not any(f.rule_id == "ORM-RAW" for f in findings)
+        finally:
+            os.unlink(path)
+
+
+class TestFsUserPath:
+    """Test FS-USER-PATH rule."""
+
+    def test_detects_fs_readfile_with_req(self):
+        path = _write_temp("fs.readFile(req.query.filename, 'utf8', callback);\n", ".js")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "FS-USER-PATH" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_detects_fs_writefile_with_req_body(self):
+        path = _write_temp("fs.writeFile(req.body.path, data, callback);\n", ".ts")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "FS-USER-PATH" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_allows_safe_path(self):
+        path = _write_temp("fs.readFile('/etc/config.json', 'utf8', callback);\n", ".js")
+        try:
+            findings = scan_file(path)
+            assert not any(f.rule_id == "FS-USER-PATH" for f in findings)
+        finally:
+            os.unlink(path)
+
+
+class TestFetchUserUrl:
+    """Test FETCH-USER-URL rule."""
+
+    def test_detects_fetch_with_req_query(self):
+        path = _write_temp("const res = await fetch(req.query.url);\n", ".js")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "FETCH-USER-URL" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_detects_fetch_with_template_literal(self):
+        path = _write_temp("const res = await fetch(`https://api.example.com/${req.params.id}`);\n", ".ts")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "FETCH-USER-URL" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_detects_requests_get_with_request(self):
+        path = _write_temp("resp = requests.get(request.args.get('url'))\n", ".py")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "FETCH-USER-URL" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_allows_hardcoded_url(self):
+        path = _write_temp('const res = await fetch("https://api.example.com/data");\n', ".js")
+        try:
+            findings = scan_file(path)
+            assert not any(f.rule_id == "FETCH-USER-URL" for f in findings)
+        finally:
+            os.unlink(path)
+
+
+class TestUnsafeDeserialize:
+    """Test UNSAFE-DESERIALIZE rule."""
+
+    def test_detects_marshal_loads(self):
+        path = _write_temp("import marshal\ndata = marshal.loads(raw)\n", ".py")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "UNSAFE-DESERIALIZE" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_detects_shelve_open(self):
+        path = _write_temp("db = shelve.open(filename)\n", ".py")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "UNSAFE-DESERIALIZE" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_detects_jsonpickle_decode(self):
+        path = _write_temp("obj = jsonpickle.decode(user_data)\n", ".py")
+        try:
+            findings = scan_file(path)
+            assert any(f.rule_id == "UNSAFE-DESERIALIZE" for f in findings)
+        finally:
+            os.unlink(path)
+
+    def test_only_python_language(self):
+        path = _write_temp("const obj = jsonpickle.decode(userData);\n", ".js")
+        try:
+            findings = scan_file(path)
+            assert not any(f.rule_id == "UNSAFE-DESERIALIZE" for f in findings)
+        finally:
+            os.unlink(path)
+
+
+class TestRuleCount:
+    """Verify expected number of rules is present."""
+
+    def test_total_rules_count(self):
+        assert len(RULES) == 14
+
+
+# ── Finding dataclass ────────────────────────────────────────────────────────
+
 class TestFinding:
     """Test Finding data structure."""
 

@@ -53,6 +53,18 @@ type CsrfOptions struct {
 	Cookie CsrfCookieOptions
 	// OnError custom handler when CSRF validation fails. If nil, returns 403 JSON.
 	OnError func(w http.ResponseWriter, r *http.Request)
+	// SkipCsrf is a per-request function. If it returns true, CSRF check is
+	// skipped for that request. Useful for API key auth or signed webhooks.
+	//
+	// Example:
+	//   SkipCsrf: func(r *http.Request) bool {
+	//       return r.Header.Get("X-Api-Key") != ""
+	//   }
+	SkipCsrf func(r *http.Request) bool
+	// UseHostPrefix applies the __Host- cookie prefix, forcing the browser to
+	// enforce Secure=true, no Domain, and Path=/ on the CSRF cookie.
+	// This prevents CSRF cookie theft across subdomains. Default: false
+	UseHostPrefix bool
 }
 
 // CsrfProtection provides CSRF protection using double-submit cookie pattern.
@@ -65,6 +77,7 @@ type CsrfProtection struct {
 	excludePaths     []string
 	cookie           CsrfCookieOptions
 	onError          func(w http.ResponseWriter, r *http.Request)
+	skipCsrf         func(r *http.Request) bool
 }
 
 // GenerateCsrfToken generates a cryptographically random CSRF token.
@@ -92,6 +105,10 @@ func NewCsrfProtection(opts CsrfOptions) *CsrfProtection {
 	cookieName := opts.CookieName
 	if cookieName == "" {
 		cookieName = DefaultCsrfCookieName
+	}
+	// __Host- prefix: forces browser to enforce Secure + no Domain + Path=/
+	if opts.UseHostPrefix {
+		cookieName = "__Host-" + cookieName
 	}
 
 	headerName := opts.HeaderName
@@ -144,6 +161,7 @@ func NewCsrfProtection(opts CsrfOptions) *CsrfProtection {
 		excludePaths:     excludePaths,
 		cookie:           cookie,
 		onError:          opts.OnError,
+		skipCsrf:         opts.SkipCsrf,
 	}
 }
 
@@ -246,6 +264,12 @@ func (cp *CsrfProtection) GenerateToken() (string, error) {
 func (cp *CsrfProtection) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method := strings.ToUpper(r.Method)
+
+		// Per-request skip callback (API keys, signed webhooks, etc.)
+		if cp.skipCsrf != nil && cp.skipCsrf(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		// Check if path is excluded
 		if cp.isExcluded(r.URL.Path) {

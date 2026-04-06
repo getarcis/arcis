@@ -22,6 +22,7 @@ DEFAULT_HEADER_NAME = "x-csrf-token"
 DEFAULT_FIELD_NAME = "_csrf"
 DEFAULT_TOKEN_LENGTH = 32
 DEFAULT_PROTECTED_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+HOST_PREFIX = "__Host-"
 
 
 def generate_csrf_token(length: int = DEFAULT_TOKEN_LENGTH) -> str:
@@ -119,8 +120,13 @@ class CsrfProtection:
         exclude_paths: Optional[List[str]] = None,
         cookie: Optional[CsrfCookieOptions] = None,
         on_error: Optional[Callable] = None,
+        use_host_prefix: bool = False,
+        skip_csrf: Optional[Callable] = None,
     ):
-        self.cookie_name = cookie_name
+        # __Host- prefix: forces browser to enforce Secure + no Domain + Path=/
+        self.cookie_name = f"{HOST_PREFIX}{cookie_name}" if use_host_prefix else cookie_name
+        self.use_host_prefix = use_host_prefix
+        self.skip_csrf = skip_csrf
         self.header_name = header_name
         self.field_name = field_name
         self.token_length = token_length
@@ -171,6 +177,10 @@ class CsrfProtection:
                     return error
         """
         from flask import request
+
+        # Per-request skip callback (API keys, signed webhooks, etc.)
+        if self.skip_csrf and self.skip_csrf(request):
+            return None
 
         if self._is_excluded(request.path):
             return None
@@ -302,6 +312,8 @@ def create_csrf(
     exclude_paths: Optional[List[str]] = None,
     cookie: Optional[CsrfCookieOptions] = None,
     on_error: Optional[Callable] = None,
+    use_host_prefix: bool = False,
+    skip_csrf: Optional[Callable] = None,
 ) -> CsrfProtection:
     """
     Create a CSRF protection handler.
@@ -318,4 +330,6 @@ def create_csrf(
         exclude_paths=exclude_paths,
         cookie=cookie,
         on_error=on_error,
+        use_host_prefix=use_host_prefix,
+        skip_csrf=skip_csrf,
     )
