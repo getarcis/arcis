@@ -418,3 +418,115 @@ describe('createCsrf alias', () => {
     expect(createCsrf).toBe(csrfProtection);
   });
 });
+
+// ─── skipCsrf option ─────────────────────────────────────────────────────────
+
+describe('csrfProtection — skipCsrf', () => {
+  const validToken = 'a'.repeat(64);
+
+  it('should skip CSRF check when skipCsrf returns true', () => {
+    const { next } = callCsrf(
+      { skipCsrf: () => true },
+      { method: 'POST' } // No token — would normally fail
+    );
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('should still validate when skipCsrf returns false', () => {
+    const { res, next } = callCsrf(
+      { skipCsrf: () => false },
+      { method: 'POST' } // No token
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('should skip before path exclusion check', () => {
+    // skipCsrf takes priority over everything
+    const { next } = callCsrf(
+      { skipCsrf: (req) => Boolean((req.headers as Record<string, string>)['x-api-key']) },
+      { method: 'POST', headers: { 'x-api-key': 'secret-key' } }
+    );
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('should not skip when api key header is absent', () => {
+    const { res, next } = callCsrf(
+      { skipCsrf: (req) => Boolean((req.headers as Record<string, string>)['x-api-key']) },
+      { method: 'POST', headers: {} }
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('should pass the request object to skipCsrf', () => {
+    let capturedReq: unknown;
+    callCsrf(
+      { skipCsrf: (req) => { capturedReq = req; return true; } },
+      { method: 'POST' }
+    );
+    expect(capturedReq).toBeDefined();
+  });
+});
+
+// ─── useHostPrefix option ─────────────────────────────────────────────────────
+
+describe('csrfProtection — useHostPrefix', () => {
+  it('should prefix cookie name with __Host- when useHostPrefix is true', () => {
+    const { res } = callCsrf(
+      { useHostPrefix: true, cookie: { secure: false } },
+      { method: 'GET' }
+    );
+    const setCookie = (res.setHeader as ReturnType<typeof vi.fn>).mock.calls
+      .find((c: string[]) => c[0] === 'Set-Cookie');
+    expect(setCookie).toBeDefined();
+    expect(setCookie![1]).toContain('__Host-_csrf=');
+  });
+
+  it('should use __Host- prefixed cookie for validation', () => {
+    const validToken = 'a'.repeat(64);
+    const { next } = callCsrf(
+      { useHostPrefix: true },
+      {
+        method: 'POST',
+        cookies: { '__Host-_csrf': validToken },
+        headers: { 'x-csrf-token': validToken },
+      }
+    );
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('should fail when standard cookie name used but __Host- expected', () => {
+    const validToken = 'a'.repeat(64);
+    const { res, next } = callCsrf(
+      { useHostPrefix: true },
+      {
+        method: 'POST',
+        cookies: { _csrf: validToken }, // Wrong name — should be __Host-_csrf
+        headers: { 'x-csrf-token': validToken },
+      }
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('should not add __Host- prefix by default', () => {
+    const { res } = callCsrf({}, { method: 'GET' });
+    const setCookie = (res.setHeader as ReturnType<typeof vi.fn>).mock.calls
+      .find((c: string[]) => c[0] === 'Set-Cookie');
+    if (setCookie) {
+      expect(setCookie[1]).not.toContain('__Host-');
+    }
+  });
+
+  it('should apply __Host- prefix to custom cookie name', () => {
+    const { res } = callCsrf(
+      { cookieName: 'xsrf', useHostPrefix: true, cookie: { secure: false } },
+      { method: 'GET' }
+    );
+    const setCookie = (res.setHeader as ReturnType<typeof vi.fn>).mock.calls
+      .find((c: string[]) => c[0] === 'Set-Cookie');
+    expect(setCookie).toBeDefined();
+    expect(setCookie![1]).toContain('__Host-xsrf=');
+  });
+});

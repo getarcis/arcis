@@ -42,6 +42,7 @@ export { safeCors, createCors } from './middleware/cors';
 export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from './middleware/cookies';
 export { botProtection, detectBot } from './middleware/bot-detection';
 export { csrfProtection, createCsrf, generateCsrfToken, validateCsrfToken } from './middleware/csrf';
+export { hpp, createHpp } from './middleware/hpp';
 
 // =============================================================================
 // SANITIZERS
@@ -146,6 +147,7 @@ export type { SlidingWindowOptions, SlidingWindowMiddleware } from './middleware
 export type { TokenBucketOptions, TokenBucketMiddleware } from './middleware/rate-limit-token';
 export type { BotCategory, BotDetectionResult, BotProtectionOptions } from './middleware/bot-detection';
 export type { CsrfOptions } from './middleware/csrf';
+export type { HppOptions } from './middleware/hpp';
 export type { PiiType, PiiMatch, PiiScanOptions, PiiRedactOptions } from './sanitizers/pii';
 
 // =============================================================================

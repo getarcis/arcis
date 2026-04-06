@@ -5,9 +5,9 @@ Detects compromised packages from known supply chain attacks.
 Scans local projects and environments for malicious package versions,
 trojanized dependencies, and persistence artifacts (backdoors).
 
-Currently covers:
-  - axios npm (March 2026) — trojanized versions 1.14.1, 0.30.4
-  - litellm PyPI (March 2026) — credential harvester versions 1.82.7, 1.82.8
+Threat database: arcis/data/threat-db.json
+All detections are sourced from public security advisories.
+This scanner runs entirely offline — no network calls, no telemetry.
 """
 
 from __future__ import annotations
@@ -52,68 +52,61 @@ def _c(*codes: str, text: str, no_color: bool = False) -> str:
     return "".join(codes) + text + RESET
 
 
-# ── Threat database ─────────────────────────────────────────────────────────
+# ── Threat database ──────────────────────────────────────────────────────────
+
+_DATA_DIR = Path(__file__).parent.parent / "data"
+_THREAT_DB_PATH = _DATA_DIR / "threat-db.json"
+
 
 @dataclass
 class CompromisedPackage:
     """A known compromised package version."""
 
-    ecosystem: str  # "npm" or "pypi"
+    ecosystem: str          # "npm" or "pypi"
     name: str
     malicious_versions: List[str]
     attack_vector: str
-    severity: str  # "critical" or "high"
+    severity: str           # "critical" or "high"
     cve: str
     disclosure_date: str
+    source: str             # e.g. "npm Security Advisory"
+    references: List[str]   # advisory and disclosure URLs
     trojanized_deps: List[str] = field(default_factory=list)
     persistence_artifacts: List[str] = field(default_factory=list)
     remediation: str = ""
 
 
-THREAT_DB: List[CompromisedPackage] = [
-    CompromisedPackage(
-        ecosystem="npm",
-        name="axios",
-        malicious_versions=["1.14.1", "0.30.4"],
-        attack_vector=(
-            "Trojanized dependency plain-crypto-js@4.2.1 deploys a "
-            "remote access trojan (RAT) via postinstall script"
-        ),
-        severity="critical",
-        cve="CVE-2026-XXXX",
-        disclosure_date="2026-03-31",
-        trojanized_deps=["plain-crypto-js"],
-        persistence_artifacts=[],
-        remediation=(
-            "1. Run: npm uninstall axios && npm install axios@1.14.0\n"
-            "   2. Delete node_modules and reinstall: rm -rf node_modules && npm install\n"
-            "   3. Search for 'plain-crypto-js' in node_modules — if present, your system may be compromised\n"
-            "   4. Rotate any credentials/tokens accessible from the affected machine"
-        ),
-    ),
-    CompromisedPackage(
-        ecosystem="pypi",
-        name="litellm",
-        malicious_versions=["1.82.7", "1.82.8"],
-        attack_vector=(
-            "Credential harvester exfiltrates environment variables and API keys. "
-            "Installs persistent .pth backdoor in site-packages that survives pip uninstall"
-        ),
-        severity="critical",
-        cve="CVE-2026-XXXX",
-        disclosure_date="2026-03-24",
-        trojanized_deps=[],
-        persistence_artifacts=["*.pth"],
-        remediation=(
-            "1. Run: pip uninstall litellm && pip install litellm==1.82.6\n"
-            "   2. Check site-packages for suspicious .pth files:\n"
-            "      python -c \"import site; print(site.getsitepackages())\"\n"
-            "      Look for .pth files you don't recognize — the backdoor survives uninstall\n"
-            "   3. Rotate ALL API keys, tokens, and credentials from environment variables\n"
-            "   4. Check ~/.local/lib and conda envs for the same .pth artifacts"
-        ),
-    ),
-]
+def _load_threat_db() -> List[CompromisedPackage]:
+    """Load the threat database from arcis/data/threat-db.json."""
+    try:
+        with open(_THREAT_DB_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        # Fall back to empty DB rather than crashing — scanner should degrade
+        # gracefully if the data file is missing or malformed.
+        sys.stderr.write(f"arcis sca: warning: could not load threat-db.json: {exc}\n")
+        return []
+
+    threats = []
+    for entry in data.get("threats", []):
+        threats.append(CompromisedPackage(
+            ecosystem=entry["ecosystem"],
+            name=entry["name"],
+            malicious_versions=entry["malicious_versions"],
+            attack_vector=entry["attack_vector"],
+            severity=entry["severity"],
+            cve=entry.get("cve", ""),
+            disclosure_date=entry.get("disclosure_date", ""),
+            source=entry.get("source", ""),
+            references=entry.get("references", []),
+            trojanized_deps=entry.get("trojanized_deps", []),
+            persistence_artifacts=entry.get("persistence_artifacts", []),
+            remediation=entry.get("remediation", ""),
+        ))
+    return threats
+
+
+THREAT_DB: List[CompromisedPackage] = _load_threat_db()
 
 
 # ── Data models ──────────────────────────────────────────────────────────────
@@ -129,6 +122,8 @@ class Finding:
     location: str
     attack_vector: str
     remediation: str
+    source: str
+    references: List[str]
     finding_type: str = "compromised_version"  # or "trojanized_dep", "persistence_artifact"
 
 
@@ -171,9 +166,10 @@ def _scan_package_lock(path: str) -> List[Finding]:
                     location=lockfile,
                     attack_vector=threat.attack_vector,
                     remediation=threat.remediation,
+                    source=threat.source,
+                    references=threat.references,
                 ))
 
-            # Check for trojanized dependencies
             for dep_name in threat.trojanized_deps:
                 if pkg_name == dep_name:
                     findings.append(Finding(
@@ -184,6 +180,8 @@ def _scan_package_lock(path: str) -> List[Finding]:
                         location=lockfile,
                         attack_vector=f"Trojanized dependency of {threat.name}: {threat.attack_vector}",
                         remediation=threat.remediation,
+                        source=threat.source,
+                        references=threat.references,
                         finding_type="trojanized_dep",
                     ))
 
@@ -199,6 +197,8 @@ def _scan_package_lock(path: str) -> List[Finding]:
                     location=lockfile,
                     attack_vector=threat.attack_vector,
                     remediation=threat.remediation,
+                    source=threat.source,
+                    references=threat.references,
                 ))
 
     return findings
@@ -221,9 +221,7 @@ def _scan_yarn_lock(path: str) -> List[Finding]:
         if threat.ecosystem != "npm":
             continue
 
-        # yarn.lock format: "package@version": \n  version "x.y.z"
         for mal_ver in threat.malicious_versions:
-            # Match both yarn v1 and v2+ formats
             pattern = rf'"{re.escape(threat.name)}@[^"]*".*?version\s+"({re.escape(mal_ver)})"'
             if re.search(pattern, content, re.DOTALL):
                 findings.append(Finding(
@@ -234,6 +232,8 @@ def _scan_yarn_lock(path: str) -> List[Finding]:
                     location=lockfile,
                     attack_vector=threat.attack_vector,
                     remediation=threat.remediation,
+                    source=threat.source,
+                    references=threat.references,
                 ))
 
         for dep_name in threat.trojanized_deps:
@@ -246,6 +246,8 @@ def _scan_yarn_lock(path: str) -> List[Finding]:
                     location=lockfile,
                     attack_vector=f"Trojanized dependency of {threat.name}: {threat.attack_vector}",
                     remediation=threat.remediation,
+                    source=threat.source,
+                    references=threat.references,
                     finding_type="trojanized_dep",
                 ))
 
@@ -278,11 +280,12 @@ def _scan_node_modules(path: str) -> List[Finding]:
                         location=pkg_json,
                         attack_vector=threat.attack_vector,
                         remediation=threat.remediation,
+                        source=threat.source,
+                        references=threat.references,
                     ))
             except (json.JSONDecodeError, OSError):
                 pass
 
-        # Check for trojanized deps on disk
         for dep_name in threat.trojanized_deps:
             dep_json = os.path.join(nm_dir, dep_name, "package.json")
             if os.path.isfile(dep_json):
@@ -294,6 +297,8 @@ def _scan_node_modules(path: str) -> List[Finding]:
                     location=dep_json,
                     attack_vector=f"Trojanized dependency of {threat.name}: {threat.attack_vector}",
                     remediation=threat.remediation,
+                    source=threat.source,
+                    references=threat.references,
                     finding_type="trojanized_dep",
                 ))
 
@@ -307,7 +312,6 @@ def _scan_requirements(path: str) -> List[Finding]:
     """Scan requirements.txt, Pipfile.lock, poetry.lock for compromised versions."""
     findings: List[Finding] = []
 
-    # requirements.txt variants
     for req_name in ["requirements.txt", "requirements-dev.txt", "requirements-prod.txt"]:
         req_file = os.path.join(path, req_name)
         if not os.path.isfile(req_file):
@@ -333,6 +337,8 @@ def _scan_requirements(path: str) -> List[Finding]:
                                     location=req_file,
                                     attack_vector=threat.attack_vector,
                                     remediation=threat.remediation,
+                                    source=threat.source,
+                                    references=threat.references,
                                 ))
         except OSError:
             pass
@@ -360,6 +366,8 @@ def _scan_requirements(path: str) -> List[Finding]:
                             location=poetry_lock,
                             attack_vector=threat.attack_vector,
                             remediation=threat.remediation,
+                            source=threat.source,
+                            references=threat.references,
                         ))
         except OSError:
             pass
@@ -386,6 +394,8 @@ def _scan_requirements(path: str) -> List[Finding]:
                             location=pipfile_lock,
                             attack_vector=threat.attack_vector,
                             remediation=threat.remediation,
+                            source=threat.source,
+                            references=threat.references,
                         ))
         except (json.JSONDecodeError, OSError):
             pass
@@ -424,6 +434,8 @@ def _scan_pip_installed() -> List[Finding]:
                     location="pip (currently installed)",
                     attack_vector=threat.attack_vector,
                     remediation=threat.remediation,
+                    source=threat.source,
+                    references=threat.references,
                 ))
 
     return findings
@@ -476,9 +488,13 @@ def _scan_pth_backdoors() -> List[Finding]:
                             ),
                             remediation=(
                                 f"1. Inspect the file: {pth_file}\n"
-                                f"   2. If you don't recognize it, delete it immediately\n"
-                                "   3. Rotate all credentials accessible from this machine"
+                                f"2. If you don't recognize it, delete it immediately\n"
+                                "3. Rotate all credentials accessible from this machine"
                             ),
+                            source="Arcis Security Research",
+                            references=[
+                                "https://github.com/BerriAI/litellm/security/advisories",
+                            ],
                             finding_type="persistence_artifact",
                         ))
                         break  # one finding per file is enough
@@ -502,21 +518,17 @@ def scan_project(path: str, check_system: bool = False) -> List[Finding]:
     """
     findings: List[Finding] = []
 
-    # npm / Node.js checks
     findings.extend(_scan_package_lock(path))
     findings.extend(_scan_yarn_lock(path))
     findings.extend(_scan_node_modules(path))
-
-    # Python / PyPI checks
     findings.extend(_scan_requirements(path))
 
-    # System-level checks
     if check_system:
         findings.extend(_scan_pip_installed())
         findings.extend(_scan_pth_backdoors())
 
     # Deduplicate by (package, version, location)
-    seen = set()
+    seen: set = set()
     unique: List[Finding] = []
     for f in findings:
         key = (f.package, f.version, f.location)
@@ -541,7 +553,9 @@ def print_sca_report(
 
     print()
     print(c("  Arcis Supply Chain Scanner", BOLD, CYAN))
-    print(c(f"  Target: {path}", DIM))
+    print(c(f"  Target:  {path}", DIM))
+    print(c(f"  DB:      {len(THREAT_DB)} known attack{'s' if len(THREAT_DB) != 1 else ''} · {_THREAT_DB_PATH}", DIM))
+    print(c(f"  Mode:    Offline — reads files only, no network calls, no telemetry", DIM))
     print(c(line, DIM))
 
     if not findings:
@@ -554,7 +568,6 @@ def print_sca_report(
         print()
         return
 
-    # Group findings by ecosystem
     npm_findings = [f for f in findings if f.ecosystem == "npm"]
     pypi_findings = [f for f in findings if f.ecosystem == "pypi"]
 
@@ -579,19 +592,23 @@ def print_sca_report(
 
             print()
             print(c(f"    {CROSS}  [{sev_label}] {type_label}", sev_col, BOLD))
-            print(f"       Package:  {f.package}@{f.version}")
-            print(c(f"       Location: {f.location}", DIM))
+            print(f"       Package:   {f.package}@{f.version}")
+            print(c(f"       Location:  {f.location}", DIM))
             print()
-            # Wrap attack vector text
             print(c("       Attack:", BOLD, WHITE))
             for av_line in _wrap(f.attack_vector, 55):
                 print(f"         {av_line}")
+            print()
+            print(c("       Source:", BOLD, WHITE))
+            print(f"         {f.source}")
+            if f.references:
+                for ref in f.references:
+                    print(c(f"         {ref}", DIM))
             print()
             print(c("       Fix:", BOLD, GREEN))
             for rem_line in f.remediation.split("\n"):
                 print(f"         {rem_line.strip()}")
 
-    # Summary
     print()
     print(c(line, DIM))
     print()
@@ -606,13 +623,41 @@ def print_sca_report(
         print(f"  High              {c(str(high), YELLOW, BOLD)}")
     print(f"  Duration          {duration:.1f}s")
     print()
-    print(
-        c(
-            f"  {CROSS}  Supply chain compromise detected — follow remediation steps above",
-            RED,
-            BOLD,
-        )
-    )
+    print(c(f"  {CROSS}  Supply chain compromise detected — follow remediation steps above", RED, BOLD))
+    print()
+    print(c(line, DIM))
+    print()
+
+
+def print_threat_list(no_color: bool = False) -> None:
+    """Print all threats in the database — for transparency and auditing."""
+    line = LINE_CHAR * WIDTH
+    c = lambda text, *codes: _c(*codes, text=text, no_color=no_color)
+
+    print()
+    print(c("  Arcis SCA — Threat Database", BOLD, CYAN))
+    print(c(f"  {len(THREAT_DB)} known supply chain attack{'s' if len(THREAT_DB) != 1 else ''}", DIM))
+    print(c(f"  Source: {_THREAT_DB_PATH}", DIM))
+    print(c(line, DIM))
+
+    for threat in THREAT_DB:
+        sev_col = RED if threat.severity == "critical" else YELLOW
+        print()
+        print(c(f"  {threat.name} ({threat.ecosystem})", BOLD, WHITE))
+        print(f"    Severity:    {c(threat.severity.upper(), sev_col, BOLD)}")
+        print(f"    CVE:         {threat.cve}")
+        print(f"    Disclosed:   {threat.disclosure_date}")
+        print(f"    Versions:    {', '.join(threat.malicious_versions)}")
+        print()
+        print(c("    Attack:", BOLD))
+        for line_text in _wrap(threat.attack_vector, 56):
+            print(f"      {line_text}")
+        if threat.references:
+            print()
+            print(c("    References:", BOLD))
+            for ref in threat.references:
+                print(c(f"      {ref}", DIM))
+
     print()
     print(c(line, DIM))
     print()
@@ -642,8 +687,11 @@ def main() -> None:
         prog="arcis sca",
         description=(
             "Supply Chain Attack Scanner — detect compromised packages "
-            "from known supply chain attacks (axios, litellm, and more)."
+            "from known supply chain attacks.\n\n"
+            "Runs entirely offline. Reads lockfiles and installed packages only.\n"
+            "No network calls. No telemetry. Threat database: arcis/data/threat-db.json"
         ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "path",
@@ -657,12 +705,22 @@ def main() -> None:
         help="Also scan globally installed packages and site-packages for backdoor artifacts",
     )
     parser.add_argument(
+        "--list-threats",
+        action="store_true",
+        help="List all threats in the database and exit",
+    )
+    parser.add_argument(
         "--no-color",
         action="store_true",
         help="Disable colored output",
     )
 
     args = parser.parse_args()
+
+    if args.list_threats:
+        print_threat_list(no_color=args.no_color)
+        sys.exit(0)
+
     path = os.path.abspath(args.path)
 
     if not os.path.isdir(path):

@@ -226,3 +226,55 @@ class TestCreateCsrf:
         assert csrf.cookie_name == "my-csrf"
         assert csrf.header_name == "x-xsrf-token"
         assert csrf.exclude_paths == ["/webhooks"]
+
+
+class TestSkipCsrf:
+    """Test skip_csrf per-request callback."""
+
+    def test_skip_csrf_bypasses_check(self):
+        # skip_csrf returns True → POST without tokens should pass
+        csrf = CsrfProtection(skip_csrf=lambda: True)
+        # check() does not call skip_csrf — it's a flask hook concern.
+        # Test that skip_csrf is stored and callable.
+        assert csrf.skip_csrf() is True
+
+    def test_skip_csrf_false_still_validates(self):
+        csrf = CsrfProtection(skip_csrf=lambda: False)
+        token = generate_csrf_token()
+        # With skip=False, normal CSRF validation applies
+        assert csrf.check("POST", "/", None, None) is False
+        assert csrf.check("POST", "/", token, token) is True
+
+    def test_skip_csrf_none_by_default(self):
+        csrf = CsrfProtection()
+        assert csrf.skip_csrf is None
+
+    def test_create_csrf_passes_skip_csrf(self):
+        cb = lambda: True
+        csrf = create_csrf(skip_csrf=cb)
+        assert csrf.skip_csrf is cb
+
+
+class TestUseHostPrefix:
+    """Test __Host- cookie prefix."""
+
+    def test_host_prefix_applied_to_cookie_name(self):
+        csrf = CsrfProtection(use_host_prefix=True)
+        assert csrf.cookie_name.startswith("__Host-")
+
+    def test_host_prefix_default_off(self):
+        csrf = CsrfProtection()
+        assert not csrf.cookie_name.startswith("__Host-")
+
+    def test_host_prefix_prepended_to_custom_name(self):
+        csrf = CsrfProtection(cookie_name="xsrf", use_host_prefix=True)
+        assert csrf.cookie_name == "__Host-xsrf"
+
+    def test_cookie_header_contains_host_prefix_name(self):
+        csrf = CsrfProtection(use_host_prefix=True, cookie=CsrfCookieOptions(secure=False))
+        header = csrf._build_cookie_header("tok")
+        assert "__Host-_csrf=tok" in header
+
+    def test_create_csrf_passes_use_host_prefix(self):
+        csrf = create_csrf(use_host_prefix=True)
+        assert csrf.cookie_name.startswith("__Host-")

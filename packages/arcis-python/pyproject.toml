@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arcis"
-version = "1.3.0"
-description = "One-line security for Python web applications"
+version = "1.4.0"
+description = "One line of code protects your Python app against 45+ security flaws at runtime — XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and more. Zero dependencies. Works with Flask, FastAPI, and Django."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
