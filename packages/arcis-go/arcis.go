@@ -419,6 +419,17 @@ var EncodeForURL = sanitizers.EncodeForURL
 // EncodeForCSS encodes for CSS value context (\HH hex escaping).
 var EncodeForCSS = sanitizers.EncodeForCSS
 
+// ─── LDAP Injection Prevention ───────────────────────────────────────────────
+
+// SanitizeLdapFilter sanitizes a string for safe use in LDAP filter expressions (RFC 4515).
+var SanitizeLdapFilter = sanitizers.SanitizeLdapFilter
+
+// SanitizeLdapDn sanitizes a string for safe use in LDAP Distinguished Names (RFC 4514).
+var SanitizeLdapDn = sanitizers.SanitizeLdapDn
+
+// DetectLdapInjection checks if a string contains LDAP injection patterns.
+var DetectLdapInjection = sanitizers.DetectLdapInjection
+
 // ─── Tier 2: File Upload Validation ─────────────────────────────────────────
 
 // ValidateFile validates a file upload for security.
