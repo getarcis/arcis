@@ -8,7 +8,7 @@
 
 Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
-**20 attack vectors handled. 1,264+ tests. Zero dependencies.**
+**45+ security flaws covered. 1,264+ tests. Zero dependencies.**
 
 ## Installation
 
