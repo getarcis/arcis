@@ -11,7 +11,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg?branch=nwl)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-2800%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
+[![Tests](https://img.shields.io/badge/tests-2795%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
 
 Arcis is a unified, zero-dependency security middleware for Node.js, Python, and Go. <br />
 One line of code protects your application against 45+ security flaws at runtime — XSS, SQL injection, SSRF, CSRF, HPP, and more.
@@ -24,7 +24,7 @@ One line of code protects your application against 45+ security flaws at runtime
 
 ## What is Arcis?
 
-Arcis is a security middleware library that protects web applications against 42+ security flaws at runtime. It works with **Node.js**, **Python**, and **Go** — the three most popular backend languages — with a consistent API across all three.
+Arcis is a security middleware library that protects web applications against 45+ security flaws at runtime. It works with **Node.js**, **Python**, and **Go** — the three most popular backend languages — with a consistent API across all three.
 
 Arcis sits between incoming requests and your application code. It sanitizes input, detects attack patterns, enforces rate limits, sets security headers, and blocks malicious traffic — all before your code ever sees the request. Only proven, pattern-matched threats are blocked. Safe input passes through untouched.
 
@@ -56,7 +56,7 @@ At the checkpoint, Arcis:
 ## Features
 
 - **One-Line Setup**: A single `app.use(arcis())` activates all protections. Sanitization, rate limiting, security headers, CSRF, bot detection, and CORS — all on by default.
-- **42+ Security Flaws Handled**: Covers XSS, SQL/NoSQL injection, command injection, path traversal, SSTI, XXE, SSRF, CSRF, prototype pollution, header injection, open redirect, and more.
+- **45+ Security Flaws Handled**: Covers XSS, SQL/NoSQL injection, command injection, path traversal, SSTI, XXE, SSRF, CSRF, HPP, prototype pollution, header injection, open redirect, and more.
 - **Zero Dependencies**: Arcis is entirely self-contained. No transitive dependencies, no supply chain risk.
 - **Three-Language Parity**: Same API, same behavior, same test results across Node.js, Python, and Go. Enforced by shared test vectors.
 - **Framework-Agnostic Core**: Core functions (sanitizers, validators, encoders) work with plain strings and objects — no framework lock-in. Built-in adapters for Express, FastAPI, Flask, Django, Gin, and Echo.
@@ -394,10 +394,10 @@ All SDKs are tested against a shared set of test vectors (`TEST_VECTORS.json`) t
 
 | SDK | Tests | Framework | Status |
 |-----|-------|-----------|--------|
-| Node.js | 1,193 | vitest | All passing |
-| Python | 995 | pytest | All passing |
+| Node.js | 1,264 | vitest | All passing |
+| Python | 1,011 | pytest | All passing |
 | Go | 520 | go test -race | All passing |
-| **Total** | **2,708** | | |
+| **Total** | **2,795** | | |
 
 ---
 
@@ -445,7 +445,7 @@ The attack is removed. The safe text passes through. No one gets hacked.
 
 ### Completed (v1.0 — v1.2)
 
-- 42+ security flaw coverage (runtime + detection)
+- 45+ security flaw coverage (runtime + detection)
 - 3 SDKs (Node.js, Python, Go) at full parity
 - 7 framework adapters (Express, FastAPI, Flask, Django, Gin, Echo, net/http)
 - 3 rate limiting algorithms (fixed, sliding, token bucket)
