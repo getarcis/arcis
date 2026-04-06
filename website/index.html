@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Arcis — Security Middleware for Every Backend</title>
-  <meta name="description" content="One line of code protects your app against 42+ security flaws. Zero dependencies. Works with Node.js, Python, and Go.">
+  <meta name="description" content="One line of code protects your app against 45+ security flaws. Zero dependencies. Works with Node.js, Python, and Go.">
   <meta property="og:title" content="Arcis — Security Middleware for Every Backend">
-  <meta property="og:description" content="One line of code. 42+ security flaws handled. Zero dependencies. Node.js, Python, Go.">
+  <meta property="og:description" content="One line of code. 45+ security flaws handled. Zero dependencies. Node.js, Python, Go.">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1095,13 +1095,13 @@
     <div class="container">
       <div class="hero-badge">
         <span class="dot"></span>
-        v1.3.0 — SCA scanner, context-aware encoding, 15 security headers
+        v1.4.0 — HPP protection, CSRF hardening, 14 audit rules
       </div>
 
       <h1>Security middleware that <em>just works</em></h1>
 
       <p class="hero-sub">
-        One line of code. 42+ security flaws neutralized at runtime. Zero dependencies. Zero configuration. Node.js, Python, and Go.
+        One line of code. 45+ security flaws neutralized at runtime. Zero dependencies. Zero configuration. Node.js, Python, and Go.
       </p>
 
       <div class="hero-actions">
@@ -1125,7 +1125,7 @@
           </div>
           <div class="code-body">
             <span class="keyword">import</span> <span class="punctuation">{</span> <span class="function">arcis</span> <span class="punctuation">}</span> <span class="keyword">from</span> <span class="string">'@arcis/node'</span><span class="punctuation">;</span><br><br>
-            <span class="comment">// That's it. 42+ security flaws handled.</span><br>
+            <span class="comment">// That's it. 45+ security flaws handled.</span><br>
             app.<span class="function">use</span><span class="punctuation">(</span><span class="function">arcis</span><span class="punctuation">());</span>
           </div>
         </div>
@@ -1166,7 +1166,7 @@
     <div class="container">
       <div class="stats-grid">
         <div class="stat reveal">
-          <div class="stat-number"><span class="accent-red">42+</span></div>
+          <div class="stat-number"><span class="accent-red">45+</span></div>
           <div class="stat-label">Security Flaws Handled</div>
         </div>
         <div class="stat reveal reveal-delay-1">
@@ -1174,7 +1174,7 @@
           <div class="stat-label">SDKs &mdash; Node, Python, Go</div>
         </div>
         <div class="stat reveal reveal-delay-2">
-          <div class="stat-number">2,800+</div>
+          <div class="stat-number">2,795+</div>
           <div class="stat-label">Tests Passing</div>
         </div>
         <div class="stat reveal reveal-delay-3">
@@ -1311,7 +1311,7 @@
           <ul>
             <li>One package: <code>@arcis/node</code></li>
             <li>One line: <code>app.use(arcis())</code></li>
-            <li>42+ flaws covered instantly</li>
+            <li>45+ flaws covered instantly</li>
             <li>Zero dependencies to audit</li>
             <li>Same API across 3 languages</li>
             <li>Secure defaults, no config needed</li>
@@ -1410,7 +1410,7 @@
           <ul class="feature-detail">
             <li><code>arcis sca</code> &mdash; supply chain attack scanner</li>
             <li><code>arcis scan</code> &mdash; vulnerability scanner</li>
-            <li><code>arcis audit</code> &mdash; static analysis (11 rules)</li>
+            <li><code>arcis audit</code> &mdash; static analysis (14 rules)</li>
             <li>CI-friendly exit codes</li>
           </ul>
         </div>
@@ -1448,15 +1448,15 @@
           <div class="pipeline-num">3</div>
           <div class="pipeline-content">
             <h3>Input Sanitization</h3>
-            <p>Strip XSS, SQL injection, NoSQL, command injection, path traversal, SSTI, XXE, JSONP, header injection, prototype pollution.</p>
-            <span class="pipeline-tag">10 attack vectors neutralized</span>
+            <p>Strip XSS, SQL injection, NoSQL, command injection, path traversal, SSTI, XXE, JSONP, header injection, prototype pollution, HTTP parameter pollution.</p>
+            <span class="pipeline-tag">11 attack vectors neutralized</span>
           </div>
         </div>
         <div class="pipeline-step reveal reveal-delay-3" data-step="3">
           <div class="pipeline-num">4</div>
           <div class="pipeline-content">
             <h3>CSRF Verification</h3>
-            <p>Double-submit cookie pattern with constant-time token comparison. Prevents timing side-channel attacks.</p>
+            <p>Double-submit cookie pattern with constant-time token comparison. Per-request <code>skipCsrf</code> callback and <code>__Host-</code> cookie prefix support.</p>
             <span class="pipeline-tag">403 CSRF Token Invalid</span>
           </div>
         </div>
@@ -1508,7 +1508,7 @@
               <span class="keyword">import</span> <span class="punctuation">{</span> <span class="function">arcis</span> <span class="punctuation">}</span> <span class="keyword">from</span> <span class="string">'@arcis/node'</span><span class="punctuation">;</span><br>
               <span class="keyword">import</span> express <span class="keyword">from</span> <span class="string">'express'</span><span class="punctuation">;</span><br><br>
               <span class="keyword">const</span> app = <span class="function">express</span><span class="punctuation">();</span><br>
-              app.<span class="function">use</span><span class="punctuation">(</span><span class="function">arcis</span><span class="punctuation">());</span> <span class="comment">// All 42+ protections active</span><br><br>
+              app.<span class="function">use</span><span class="punctuation">(</span><span class="function">arcis</span><span class="punctuation">());</span> <span class="comment">// All 45+ protections active</span><br><br>
               app.<span class="function">get</span><span class="punctuation">(</span><span class="string">'/'</span><span class="punctuation">,</span> <span class="punctuation">(</span>req<span class="punctuation">,</span> res<span class="punctuation">)</span> <span class="keyword">=></span> <span class="punctuation">{</span><br>
               &nbsp;&nbsp;<span class="comment">// req.query and req.body are already sanitized</span><br>
               &nbsp;&nbsp;res.<span class="function">json</span><span class="punctuation">({</span> message<span class="punctuation">:</span> <span class="string">'Safe and sound.'</span> <span class="punctuation">});</span><br>
@@ -1529,7 +1529,7 @@
               <span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI<br>
               <span class="keyword">from</span> arcis <span class="keyword">import</span> ArcisMiddleware<br><br>
               app = <span class="function">FastAPI</span><span class="punctuation">()</span><br>
-              app.<span class="function">add_middleware</span><span class="punctuation">(</span>ArcisMiddleware<span class="punctuation">)</span> <span class="comment"># All 42+ protections active</span><br><br>
+              app.<span class="function">add_middleware</span><span class="punctuation">(</span>ArcisMiddleware<span class="punctuation">)</span> <span class="comment"># All 45+ protections active</span><br><br>
               <span class="keyword">@</span>app.<span class="function">get</span><span class="punctuation">(</span><span class="string">"/"</span><span class="punctuation">)</span><br>
               <span class="keyword">def</span> <span class="function">root</span><span class="punctuation">():</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Input already sanitized and validated</span><br>
@@ -1554,7 +1554,7 @@
               <span class="punctuation">)</span><br><br>
               <span class="keyword">func</span> <span class="function">main</span><span class="punctuation">()</span> <span class="punctuation">{</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;r <span class="punctuation">:=</span> gin.<span class="function">Default</span><span class="punctuation">()</span><br>
-              &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Use</span><span class="punctuation">(</span>arcisgin.<span class="function">Middleware</span><span class="punctuation">())</span> <span class="comment">// All 42+ protections active</span><br>
+              &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Use</span><span class="punctuation">(</span>arcisgin.<span class="function">Middleware</span><span class="punctuation">())</span> <span class="comment">// All 45+ protections active</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Run</span><span class="punctuation">()</span><br>
               <span class="punctuation">}</span>
             </div>
@@ -1568,7 +1568,7 @@
   <section class="section" id="threats">
     <div class="container">
       <div class="section-label reveal">Protection</div>
-      <h2 class="section-title reveal">42+ security flaws. One package.</h2>
+      <h2 class="section-title reveal">45+ security flaws. One package.</h2>
       <p class="section-desc reveal" style="max-width: 700px;">
         Covers OWASP Top 10 and beyond. From injection attacks to response hardening &mdash; if it can hurt your app, Arcis handles it.
       </p>
@@ -1590,6 +1590,10 @@
         <div class="threat-item reveal"><div class="threat-name">Open Redirect</div><div class="threat-desc">Absolute URLs, javascript:, protocol-relative, backslash</div></div>
         <div class="threat-item reveal"><div class="threat-name">Error Leakage</div><div class="threat-desc">Stack traces, DB errors, internal IPs, connection strings</div></div>
         <div class="threat-item reveal"><div class="threat-name">Header Injection</div><div class="threat-desc">CRLF injection, response splitting, null bytes stripped</div></div>
+        <div class="threat-item reveal"><div class="threat-name">HTTP Parameter Pollution</div><div class="threat-desc">Duplicate query/body params normalized, last-value-wins, per-param whitelist</div></div>
+        <div class="threat-item reveal"><div class="threat-name">CSRF Hardening</div><div class="threat-desc">Per-request skipCsrf callback, __Host- cookie prefix enforcement</div></div>
+        <div class="threat-item reveal"><div class="threat-name">Unsafe Deserialization</div><div class="threat-desc">Static analysis detects pickle.loads, eval, unsafe YAML in audit rules</div></div>
+        <div class="threat-item reveal"><div class="threat-name">SSRF via Code</div><div class="threat-desc">Audit detects user-controlled URLs passed to fetch/requests/http.Get</div></div>
       </div>
     </div>
   </section>
@@ -1723,7 +1727,7 @@
       <div class="footer-inner">
         <div class="footer-brand">
           <div class="footer-logo">Arcis<span>.</span></div>
-          <p class="footer-tagline">Security middleware for every backend. One line of code, 42+ flaws handled, zero dependencies.</p>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 45+ flaws handled, zero dependencies.</p>
           <div class="footer-badges">
             <span class="footer-badge">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
