@@ -97,7 +97,7 @@ export function fingerprint(req: RequestLike, options: FingerprintOptions = {}):
   }
 
   for (const c of custom) {
-    if (c != null) components.push(`custom:${c}`);
+    if (c !== null && c !== undefined) components.push(`custom:${c}`);
   }
 
   // Sort for deterministic ordering
