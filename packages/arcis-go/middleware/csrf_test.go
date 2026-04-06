@@ -384,6 +384,188 @@ func TestCsrfMiddleware_Factory(t *testing.T) {
 	}
 }
 
+// --- SkipCsrf tests ---
+
+func TestHandler_SkipCsrf_BypassesValidation(t *testing.T) {
+	nextCalled := false
+	csrf := NewCsrfProtection(CsrfOptions{
+		SkipCsrf: func(r *http.Request) bool {
+			return r.Header.Get("X-Api-Key") != ""
+		},
+	})
+	handler := csrf.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// POST without CSRF token — but has API key, so should pass
+	req := httptest.NewRequest("POST", "/", nil)
+	req.Header.Set("X-Api-Key", "secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 when SkipCsrf returns true, got %d", rec.Code)
+	}
+	if !nextCalled {
+		t.Error("next should be called when SkipCsrf returns true")
+	}
+}
+
+func TestHandler_SkipCsrf_FalseStillValidates(t *testing.T) {
+	csrf := NewCsrfProtection(CsrfOptions{
+		SkipCsrf: func(r *http.Request) bool {
+			return false
+		},
+	})
+	handler := csrf.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("POST", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 when SkipCsrf returns false, got %d", rec.Code)
+	}
+}
+
+func TestHandler_SkipCsrf_NilByDefault(t *testing.T) {
+	csrf := NewCsrfProtection(CsrfOptions{})
+	if csrf.skipCsrf != nil {
+		t.Error("skipCsrf should be nil by default")
+	}
+}
+
+func TestHandler_SkipCsrf_TakesPriorityOverExcludePaths(t *testing.T) {
+	nextCalled := false
+	csrf := NewCsrfProtection(CsrfOptions{
+		// No excludePaths — but SkipCsrf returns true
+		SkipCsrf: func(r *http.Request) bool { return true },
+	})
+	handler := csrf.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("POST", "/any/path", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if !nextCalled {
+		t.Error("SkipCsrf true should skip everything including token check")
+	}
+}
+
+func TestHandler_SkipCsrf_NoApiKey_StillBlocked(t *testing.T) {
+	csrf := NewCsrfProtection(CsrfOptions{
+		SkipCsrf: func(r *http.Request) bool {
+			return r.Header.Get("X-Api-Key") != ""
+		},
+	})
+	handler := csrf.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("POST", "/", nil)
+	// No X-Api-Key header
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 without API key, got %d", rec.Code)
+	}
+}
+
+// --- UseHostPrefix tests ---
+
+func TestNewCsrfProtection_HostPrefix_AppliedToCookieName(t *testing.T) {
+	csrf := NewCsrfProtection(CsrfOptions{UseHostPrefix: true})
+	if !strings.HasPrefix(csrf.cookieName, "__Host-") {
+		t.Errorf("expected __Host- prefix, got %q", csrf.cookieName)
+	}
+}
+
+func TestNewCsrfProtection_HostPrefix_DefaultOff(t *testing.T) {
+	csrf := NewCsrfProtection(CsrfOptions{})
+	if strings.HasPrefix(csrf.cookieName, "__Host-") {
+		t.Error("should not have __Host- prefix by default")
+	}
+}
+
+func TestNewCsrfProtection_HostPrefix_CustomCookieName(t *testing.T) {
+	csrf := NewCsrfProtection(CsrfOptions{
+		CookieName:    "xsrf",
+		UseHostPrefix: true,
+	})
+	if csrf.cookieName != "__Host-xsrf" {
+		t.Errorf("expected __Host-xsrf, got %q", csrf.cookieName)
+	}
+}
+
+func TestHandler_HostPrefix_SetsCookieWithPrefix(t *testing.T) {
+	secure := false
+	csrf := NewCsrfProtection(CsrfOptions{
+		UseHostPrefix: true,
+		Cookie: CsrfCookieOptions{
+			Secure: &secure,
+		},
+	})
+	handler := csrf.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	cookies := rec.Header().Values("Set-Cookie")
+	if len(cookies) == 0 {
+		t.Fatal("expected Set-Cookie header")
+	}
+	if !containsSubstring(cookies[0], "__Host-_csrf=") {
+		t.Errorf("expected __Host-_csrf= in cookie, got %q", cookies[0])
+	}
+}
+
+func TestHandler_HostPrefix_ValidatesWithPrefixedCookieName(t *testing.T) {
+	csrf := NewCsrfProtection(CsrfOptions{UseHostPrefix: true})
+	handler := csrf.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	token, _ := GenerateCsrfToken(32)
+	req := httptest.NewRequest("POST", "/", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-_csrf", Value: token})
+	req.Header.Set("X-Csrf-Token", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 with __Host- prefixed cookie, got %d", rec.Code)
+	}
+}
+
+func TestHandler_HostPrefix_RejectsStandardCookieName(t *testing.T) {
+	csrf := NewCsrfProtection(CsrfOptions{UseHostPrefix: true})
+	handler := csrf.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	token, _ := GenerateCsrfToken(32)
+	req := httptest.NewRequest("POST", "/", nil)
+	// Using _csrf instead of __Host-_csrf — should fail
+	req.AddCookie(&http.Cookie{Name: "_csrf", Value: token})
+	req.Header.Set("X-Csrf-Token", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 when using wrong cookie name, got %d", rec.Code)
+	}
+}
+
 func containsSubstring(s, substr string) bool {
 	return strings.Contains(s, substr)
 }

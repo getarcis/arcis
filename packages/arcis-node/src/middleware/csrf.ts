@@ -29,6 +29,21 @@ export interface CsrfOptions {
   protectedMethods?: string[];
   /** Paths to exclude from CSRF checks (e.g., webhook endpoints) */
   excludePaths?: string[];
+  /**
+   * Per-request skip function. If it returns true, CSRF check is skipped
+   * for that request. Useful for API key auth or signed webhooks.
+   *
+   * @example
+   * skipCsrf: (req) => Boolean(req.headers['x-api-key'])
+   */
+  skipCsrf?: (req: Request) => boolean;
+  /**
+   * Use the __Host- cookie prefix for stronger cookie security.
+   * When enabled, the browser enforces: Secure=true, no Domain, Path=/.
+   * This prevents CSRF cookie theft across subdomains.
+   * Default: false
+   */
+  useHostPrefix?: boolean;
   /** Cookie options */
   cookie?: {
     /** Cookie path. Default: '/' */
@@ -138,12 +153,15 @@ function getRequestToken(req: Request, headerName: string, fieldName: string): s
  * });
  */
 export function csrfProtection(options: CsrfOptions = {}): RequestHandler {
-  const cookieName = options.cookieName ?? DEFAULTS.cookieName;
+  const baseCookieName = options.cookieName ?? DEFAULTS.cookieName;
+  // __Host- prefix: forces browser to enforce Secure + no Domain + Path=/
+  const cookieName = options.useHostPrefix ? `__Host-${baseCookieName}` : baseCookieName;
   const headerName = options.headerName ?? DEFAULTS.headerName;
   const fieldName = options.fieldName ?? DEFAULTS.fieldName;
   const tokenLength = options.tokenLength ?? DEFAULTS.tokenLength;
   const protectedMethods = options.protectedMethods ?? [...DEFAULTS.protectedMethods];
   const excludePaths = options.excludePaths ?? [];
+  const skipCsrf = options.skipCsrf;
 
   const isProduction = process.env.NODE_ENV === 'production';
   const cookieOpts = {
@@ -168,6 +186,11 @@ export function csrfProtection(options: CsrfOptions = {}): RequestHandler {
 
   return (req: Request, res: Response, next: NextFunction) => {
     const method = req.method.toUpperCase();
+
+    // Per-request skip callback (API keys, signed webhooks, etc.)
+    if (skipCsrf && skipCsrf(req)) {
+      return next();
+    }
 
     // Check if path is excluded
     const requestPath = req.path || req.url;

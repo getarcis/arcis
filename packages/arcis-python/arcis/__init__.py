@@ -139,6 +139,8 @@ from .validation.email import (
 from .middleware.rate_limit_sliding import SlidingWindowLimiter
 from .middleware.rate_limit_token import TokenBucketLimiter
 from .middleware.bot_detection import BotProtection, BotDenied, BotDetectionResult, detect_bot
+from .middleware.hpp import HppProtection, create_hpp
+from .middleware.csrf import CsrfProtection, create_csrf, generate_csrf_token, validate_csrf_token
 
 from .utils import (
     parse_duration,
@@ -161,7 +163,7 @@ try:
 except ImportError:
     _HAS_ASYNC = False
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 __all__ = [
     # Main class
     "Arcis",
