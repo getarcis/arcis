@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Arcis — Security Middleware for Every Backend</title>
-  <meta name="description" content="One line of code protects your app against 45+ security flaws. Zero dependencies. Works with Node.js, Python, and Go.">
+  <meta name="description" content="One line of code protects your app against 20+ security flaws. Zero dependencies. Works with Node.js, Python, and Go.">
   <meta property="og:title" content="Arcis — Security Middleware for Every Backend">
-  <meta property="og:description" content="One line of code. 45+ security flaws handled. Zero dependencies. Node.js, Python, Go.">
+  <meta property="og:description" content="One line of code. 20+ security flaws handled. Zero dependencies. Node.js, Python, Go.">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1101,7 +1101,7 @@
       <h1>Security middleware that <em>just works</em></h1>
 
       <p class="hero-sub">
-        One line of code. 45+ security flaws neutralized at runtime. Zero dependencies. Zero configuration. Node.js, Python, and Go.
+        One line of code. 20+ security flaws neutralized at runtime. Zero dependencies. Zero configuration. Node.js, Python, and Go.
       </p>
 
       <div class="hero-actions">
@@ -1125,7 +1125,7 @@
           </div>
           <div class="code-body">
             <span class="keyword">import</span> <span class="punctuation">{</span> <span class="function">arcis</span> <span class="punctuation">}</span> <span class="keyword">from</span> <span class="string">'@arcis/node'</span><span class="punctuation">;</span><br><br>
-            <span class="comment">// That's it. 45+ security flaws handled.</span><br>
+            <span class="comment">// That's it. 20+ security flaws handled.</span><br>
             app.<span class="function">use</span><span class="punctuation">(</span><span class="function">arcis</span><span class="punctuation">());</span>
           </div>
         </div>
@@ -1166,7 +1166,7 @@
     <div class="container">
       <div class="stats-grid">
         <div class="stat reveal">
-          <div class="stat-number"><span class="accent-red">45+</span></div>
+          <div class="stat-number"><span class="accent-red">20+</span></div>
           <div class="stat-label">Security Flaws Handled</div>
         </div>
         <div class="stat reveal reveal-delay-1">
@@ -1174,7 +1174,7 @@
           <div class="stat-label">SDKs &mdash; Node, Python, Go</div>
         </div>
         <div class="stat reveal reveal-delay-2">
-          <div class="stat-number">2,795+</div>
+          <div class="stat-number">2,774+</div>
           <div class="stat-label">Tests Passing</div>
         </div>
         <div class="stat reveal reveal-delay-3">
@@ -1217,7 +1217,7 @@
           <ul class="diff-detail">
             <li>Remove-then-encode sanitization pipeline</li>
             <li>Idempotent: safe input is never corrupted</li>
-            <li>Sub-5ms overhead per request</li>
+            <li>Minimal overhead per request</li>
           </ul>
         </div>
 
@@ -1228,7 +1228,7 @@
           <h3>True Cross-Language Parity</h3>
           <p>Same input produces the same output in Node.js, Python, and Go. Not "similar" &mdash; identical. Shared test vectors enforce it.</p>
           <ul class="diff-detail">
-            <li>2,800+ shared test cases across 3 SDKs</li>
+            <li>2,774+ shared test cases across 3 SDKs</li>
             <li>Shared regex patterns from patterns.json</li>
             <li>Contract-first: spec before code</li>
           </ul>
@@ -1311,7 +1311,7 @@
           <ul>
             <li>One package: <code>@arcis/node</code></li>
             <li>One line: <code>app.use(arcis())</code></li>
-            <li>45+ flaws covered instantly</li>
+            <li>20+ flaws covered instantly</li>
             <li>Zero dependencies to audit</li>
             <li>Same API across 3 languages</li>
             <li>Secure defaults, no config needed</li>
@@ -1456,7 +1456,7 @@
           <div class="pipeline-num">4</div>
           <div class="pipeline-content">
             <h3>CSRF Verification</h3>
-            <p>Double-submit cookie pattern with constant-time token comparison. Per-request <code>skipCsrf</code> callback and <code>__Host-</code> cookie prefix support.</p>
+            <p>Double-submit cookie with constant-time token comparison. Token accepted via header or request body only &mdash; query string tokens rejected to prevent log leakage. Per-request <code>skipCsrf</code> callback supported.</p>
             <span class="pipeline-tag">403 CSRF Token Invalid</span>
           </div>
         </div>
@@ -1472,7 +1472,7 @@
           <div class="pipeline-num">6</div>
           <div class="pipeline-content">
             <h3>Response Hardening</h3>
-            <p>15 security headers, secure cookies (HttpOnly, Secure, SameSite), CORS enforcement, error scrubbing &mdash; all applied automatically.</p>
+            <p>16 security headers, secure cookies (HttpOnly, Secure, SameSite), CORS enforcement, error scrubbing &mdash; all applied automatically.</p>
             <span class="pipeline-tag">headers + cookies + error scrubbing</span>
           </div>
         </div>
@@ -1508,7 +1508,7 @@
               <span class="keyword">import</span> <span class="punctuation">{</span> <span class="function">arcis</span> <span class="punctuation">}</span> <span class="keyword">from</span> <span class="string">'@arcis/node'</span><span class="punctuation">;</span><br>
               <span class="keyword">import</span> express <span class="keyword">from</span> <span class="string">'express'</span><span class="punctuation">;</span><br><br>
               <span class="keyword">const</span> app = <span class="function">express</span><span class="punctuation">();</span><br>
-              app.<span class="function">use</span><span class="punctuation">(</span><span class="function">arcis</span><span class="punctuation">());</span> <span class="comment">// All 45+ protections active</span><br><br>
+              app.<span class="function">use</span><span class="punctuation">(</span><span class="function">arcis</span><span class="punctuation">());</span> <span class="comment">// All 20+ protections active</span><br><br>
               app.<span class="function">get</span><span class="punctuation">(</span><span class="string">'/'</span><span class="punctuation">,</span> <span class="punctuation">(</span>req<span class="punctuation">,</span> res<span class="punctuation">)</span> <span class="keyword">=></span> <span class="punctuation">{</span><br>
               &nbsp;&nbsp;<span class="comment">// req.query and req.body are already sanitized</span><br>
               &nbsp;&nbsp;res.<span class="function">json</span><span class="punctuation">({</span> message<span class="punctuation">:</span> <span class="string">'Safe and sound.'</span> <span class="punctuation">});</span><br>
@@ -1529,7 +1529,7 @@
               <span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI<br>
               <span class="keyword">from</span> arcis <span class="keyword">import</span> ArcisMiddleware<br><br>
               app = <span class="function">FastAPI</span><span class="punctuation">()</span><br>
-              app.<span class="function">add_middleware</span><span class="punctuation">(</span>ArcisMiddleware<span class="punctuation">)</span> <span class="comment"># All 45+ protections active</span><br><br>
+              app.<span class="function">add_middleware</span><span class="punctuation">(</span>ArcisMiddleware<span class="punctuation">)</span> <span class="comment"># All 20+ protections active</span><br><br>
               <span class="keyword">@</span>app.<span class="function">get</span><span class="punctuation">(</span><span class="string">"/"</span><span class="punctuation">)</span><br>
               <span class="keyword">def</span> <span class="function">root</span><span class="punctuation">():</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Input already sanitized and validated</span><br>
@@ -1554,7 +1554,7 @@
               <span class="punctuation">)</span><br><br>
               <span class="keyword">func</span> <span class="function">main</span><span class="punctuation">()</span> <span class="punctuation">{</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;r <span class="punctuation">:=</span> gin.<span class="function">Default</span><span class="punctuation">()</span><br>
-              &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Use</span><span class="punctuation">(</span>arcisgin.<span class="function">Middleware</span><span class="punctuation">())</span> <span class="comment">// All 45+ protections active</span><br>
+              &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Use</span><span class="punctuation">(</span>arcisgin.<span class="function">Middleware</span><span class="punctuation">())</span> <span class="comment">// All 20+ protections active</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Run</span><span class="punctuation">()</span><br>
               <span class="punctuation">}</span>
             </div>
@@ -1568,14 +1568,14 @@
   <section class="section" id="threats">
     <div class="container">
       <div class="section-label reveal">Protection</div>
-      <h2 class="section-title reveal">45+ security flaws. One package.</h2>
+      <h2 class="section-title reveal">20+ security flaws. One package.</h2>
       <p class="section-desc reveal" style="max-width: 700px;">
         Covers OWASP Top 10 and beyond. From injection attacks to response hardening &mdash; if it can hurt your app, Arcis handles it.
       </p>
 
       <div class="threats-grid">
         <div class="threat-item reveal"><div class="threat-name">XSS</div><div class="threat-desc">Script injection, event handlers, javascript: URIs, SVG payloads</div></div>
-        <div class="threat-item reveal"><div class="threat-name">SQL Injection</div><div class="threat-desc">Keywords, boolean logic, comments, time-based blind</div></div>
+        <div class="threat-item reveal"><div class="threat-name">SQL Injection</div><div class="threat-desc">Strips known SQL patterns from input as defense-in-depth. Not a replacement for parameterized queries — use both.</div></div>
         <div class="threat-item reveal"><div class="threat-name">NoSQL Injection</div><div class="threat-desc">35 MongoDB operators: $gt, $where, $regex, $function</div></div>
         <div class="threat-item reveal"><div class="threat-name">Command Injection</div><div class="threat-desc">Shell metacharacters, subshells, redirections, newlines</div></div>
         <div class="threat-item reveal"><div class="threat-name">Path Traversal</div><div class="threat-desc">../ sequences, encoded variants, double-encoding, null bytes</div></div>
@@ -1584,8 +1584,8 @@
         <div class="threat-item reveal"><div class="threat-name">CSRF</div><div class="threat-desc">Double-submit cookie, constant-time token comparison</div></div>
         <div class="threat-item reveal"><div class="threat-name">SSTI</div><div class="threat-desc">Jinja2, Twig, Freemarker, ERB, Pug, Python dunder chains</div></div>
         <div class="threat-item reveal"><div class="threat-name">XXE</div><div class="threat-desc">DOCTYPE, ENTITY, SYSTEM/PUBLIC references stripped</div></div>
-        <div class="threat-item reveal"><div class="threat-name">Rate Limiting</div><div class="threat-desc">Fixed, sliding window, token bucket &mdash; memory or Redis</div></div>
-        <div class="threat-item reveal"><div class="threat-name">Security Headers</div><div class="threat-desc">CSP, HSTS, X-Frame-Options, COOP, CORP, COEP &mdash; 15 total</div></div>
+        <div class="threat-item reveal"><div class="threat-name">Rate Limiting</div><div class="threat-desc">Application-level — fixed, sliding window, token bucket, memory or Redis. Complements proxy/CDN-level limiting, not a replacement.</div></div>
+        <div class="threat-item reveal"><div class="threat-name">Security Headers</div><div class="threat-desc">CSP, HSTS, X-Frame-Options, COOP, CORP, COEP &mdash; 16 total</div></div>
         <div class="threat-item reveal"><div class="threat-name">Bot Detection</div><div class="threat-desc">80+ patterns, 7 categories, behavioral fingerprinting</div></div>
         <div class="threat-item reveal"><div class="threat-name">Open Redirect</div><div class="threat-desc">Absolute URLs, javascript:, protocol-relative, backslash</div></div>
         <div class="threat-item reveal"><div class="threat-name">Error Leakage</div><div class="threat-desc">Stack traces, DB errors, internal IPs, connection strings</div></div>
@@ -1727,7 +1727,7 @@
       <div class="footer-inner">
         <div class="footer-brand">
           <div class="footer-logo">Arcis<span>.</span></div>
-          <p class="footer-tagline">Security middleware for every backend. One line of code, 45+ flaws handled, zero dependencies.</p>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ flaws handled, zero core dependencies.</p>
           <div class="footer-badges">
             <span class="footer-badge">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>

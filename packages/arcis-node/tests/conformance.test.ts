@@ -59,35 +59,40 @@ describe('Conformance: sanitizeString', () => {
   });
 
   describe('SQL Injection Prevention', () => {
-    // Default mode is 'reject' — sanitizeString throws SecurityThreatError on SQL patterns.
-    // Pass { mode: 'sanitize' } to strip instead of reject (e.g. for lenient legacy inputs).
-    it('must reject DROP keyword (reject mode)', () => {
-      expect(() => sanitizeString("'; DROP TABLE users; --")).toThrow();
+    // Default mode is 'sanitize' — sanitizeString strips threats and returns clean string.
+    // Pass { mode: 'reject' } to throw SecurityThreatError instead.
+    it('must strip DROP keyword (default sanitize mode)', () => {
+      const result = sanitizeString("'; DROP TABLE users; --");
+      expect(result.toUpperCase()).not.toContain('DROP');
     });
 
-    it('must strip DROP keyword (sanitize mode)', () => {
+    it('must strip DROP keyword (explicit sanitize mode)', () => {
       const result = sanitizeString("'; DROP TABLE users; --", { mode: 'sanitize' });
       expect(result.toUpperCase()).not.toContain('DROP');
     });
 
+    it('must reject DROP keyword (reject mode)', () => {
+      expect(() => sanitizeString("'; DROP TABLE users; --", { mode: 'reject' })).toThrow();
+    });
+
     it('must reject OR 1=1 pattern (reject mode)', () => {
-      expect(() => sanitizeString('1 OR 1=1')).toThrow();
+      expect(() => sanitizeString('1 OR 1=1', { mode: 'reject' })).toThrow();
     });
 
     it('must reject SELECT keyword (reject mode)', () => {
-      expect(() => sanitizeString('SELECT * FROM users')).toThrow();
+      expect(() => sanitizeString('SELECT * FROM users', { mode: 'reject' })).toThrow();
     });
 
     it('must reject DELETE keyword (reject mode)', () => {
-      expect(() => sanitizeString('1; DELETE FROM users')).toThrow();
+      expect(() => sanitizeString('1; DELETE FROM users', { mode: 'reject' })).toThrow();
     });
 
     it('must reject -- comment syntax (reject mode)', () => {
-      expect(() => sanitizeString("admin'--")).toThrow();
+      expect(() => sanitizeString("admin'--", { mode: 'reject' })).toThrow();
     });
 
     it('must reject UNION and /* comment */ (reject mode)', () => {
-      expect(() => sanitizeString('1 /* comment */ UNION SELECT')).toThrow();
+      expect(() => sanitizeString('1 /* comment */ UNION SELECT', { mode: 'reject' })).toThrow();
     });
   });
 

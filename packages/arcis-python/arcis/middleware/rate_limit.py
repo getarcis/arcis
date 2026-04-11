@@ -90,35 +90,11 @@ class RateLimiter:
     def _default_key_func(self, request) -> str:
         """Default key function - uses client IP address.
 
-        Checks X-Forwarded-For and X-Real-IP headers first so deployments
-        behind reverse proxies (nginx, ALB, Cloudflare) get per-client buckets
-        instead of sharing a single bucket for the proxy IP.
+        Delegates to detect_client_ip() which reads X-Forwarded-For from the
+        right (proxy-appended end) to prevent trivial IP spoofing bypasses.
         """
-        # Django — headers live in META with HTTP_ prefix
-        if hasattr(request, 'META'):
-            forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
-            if forwarded:
-                return forwarded.split(',')[0].strip()
-            real_ip = request.META.get('HTTP_X_REAL_IP')
-            if real_ip:
-                return real_ip
-            return request.META.get('REMOTE_ADDR', 'unknown')
-
-        # Flask — headers via request.headers mapping
-        if hasattr(request, 'remote_addr'):
-            forwarded = request.headers.get('X-Forwarded-For') if hasattr(request, 'headers') else None
-            if forwarded:
-                return forwarded.split(',')[0].strip()
-            real_ip = request.headers.get('X-Real-IP') if hasattr(request, 'headers') else None
-            if real_ip:
-                return real_ip
-            return request.remote_addr or "unknown"
-
-        # FastAPI/Starlette sync fallback
-        if hasattr(request, 'client'):
-            return request.client.host if request.client else "unknown"
-
-        return "unknown"
+        from ..utils.ip import detect_client_ip
+        return detect_client_ip(request)
 
     def check(self, request) -> Dict[str, Any]:
         """
@@ -133,22 +109,29 @@ class RateLimiter:
             return {"allowed": True, "limit": self.max_requests, "remaining": self.max_requests, "reset": 0}
 
         key = self.key_func(request)
-        now = time.time()
 
-        entry = self.store.get(key)
+        # Use atomic increment_or_set when available (InMemoryStore) to avoid the
+        # get()+increment() race where two concurrent threads both see count=N and
+        # both get allowed. External stores (Redis) handle atomicity via INCR.
+        if hasattr(self.store, 'increment_or_set'):
+            count, reset_time = self.store.increment_or_set(key, self.window_seconds)
+            now = time.time()
+            reset = max(0, int(reset_time - now))
+        else:
+            now = time.time()
+            entry = self.store.get(key)
+            if not entry:
+                self.store.set(key, 1, now + self.window_seconds)
+                return {
+                    "allowed": True,
+                    "limit": self.max_requests,
+                    "remaining": self.max_requests - 1,
+                    "reset": int(self.window_seconds),
+                }
+            count = self.store.increment(key)
+            reset = max(0, int(entry.reset_time - now))
 
-        if not entry:
-            self.store.set(key, 1, now + self.window_seconds)
-            return {
-                "allowed": True,
-                "limit": self.max_requests,
-                "remaining": self.max_requests - 1,
-                "reset": int(self.window_seconds),
-            }
-
-        count = self.store.increment(key)
         remaining = max(0, self.max_requests - count)
-        reset = int(entry.reset_time - now)
 
         if count > self.max_requests:
             raise RateLimitExceeded(self.message, reset)

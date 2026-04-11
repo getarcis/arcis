@@ -226,7 +226,7 @@ class CsrfProtection:
         return response
 
     def _get_flask_request_token(self, request) -> Optional[str]:
-        """Extract CSRF token from Flask request (header, form, query)."""
+        """Extract CSRF token from Flask request (header or form body only)."""
         # Header
         header_token = request.headers.get(self.header_name)
         if header_token:
@@ -248,10 +248,8 @@ class CsrfProtection:
             except Exception:
                 pass
 
-        # Query string
-        query_token = request.args.get(self.field_name)
-        if query_token:
-            return query_token
+        # SECURITY: Query string intentionally not supported — tokens in URLs leak
+        # to server logs, Referer headers, browser history, and CDN/proxy logs.
 
         return None
 
@@ -282,7 +280,7 @@ class CsrfProtection:
             method: HTTP method (GET, POST, etc.)
             path: Request path
             cookie_token: Token from the cookie
-            request_token: Token from header/body/query
+            request_token: Token from header or body
 
         Returns:
             True if request is valid (safe method or valid token)

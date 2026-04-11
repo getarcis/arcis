@@ -305,13 +305,15 @@ func TestHandler_QueryStringToken(t *testing.T) {
 	}))
 
 	token, _ := GenerateCsrfToken(32)
+	// Query string tokens are no longer accepted — they leak to server logs and Referer headers.
+	// Token must be in X-CSRF-Token header or request body only.
 	req := httptest.NewRequest("POST", "/?_csrf="+token, nil)
 	req.AddCookie(&http.Cookie{Name: "_csrf", Value: token})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 with query token, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 — query string tokens must be rejected, got %d", rec.Code)
 	}
 }
 

@@ -28,12 +28,33 @@ const SSTI_DETECT_PATTERNS = [
   /\{\{\s*(?:self|request|lipsum|cycler|joiner|namespace|range)\b/gi,
 ] as const;
 
-/** Removal patterns — strip the full template expression */
+/**
+ * Removal patterns — strip template expressions that look like actual attacks.
+ *
+ * ${ and #{ patterns are narrowed to require operators/method-calls inside to
+ * avoid false-positives on JS template literals (${name}) and Ruby/Pug output
+ * expressions (#{name}) that appear in legitimate user-submitted content.
+ *
+ * The broader detection patterns above still flag these for detectSsti() —
+ * narrowing only applies to destructive sanitization.
+ */
 const SSTI_REMOVE_PATTERNS = [
+  /** Jinja2 / Twig: {{ ... }} — always strip (not valid in any JS context) */
   /\{\{.*?\}\}/g,
-  /\$\{.*?\}/g,
+  /**
+   * Freemarker / Spring EL: ${...} — only strip when the expression contains
+   * operators (?!*+-/), method calls (), or known-dangerous prefixes.
+   * Bare ${name} and ${user.name} are left intact (JS template literal syntax).
+   */
+  /\$\{[^}]*[?!()*+\-/][^}]*\}/g,
+  /** ERB / EJS: <%= ... %> */
   /<%[=\-]?.*?%>/gs,
-  /#\{.*?\}/g,
+  /**
+   * Pug / Jade: #{...} — same narrowing as ${ above.
+   * #{name} output expressions are left intact.
+   */
+  /#\{[^}]*[?!()*+\-/][^}]*\}/g,
+  /** Python dunder sandbox escape — always strip */
   /__(?:class|mro|subclasses|globals|builtins|import)__/gi,
 ] as const;
 

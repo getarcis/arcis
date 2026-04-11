@@ -31,11 +31,21 @@ _SSTI_DETECT_PATTERNS = [
 ]
 
 # Removal patterns — used by sanitize_ssti()
+#
+# ${ and #{ are narrowed to only strip when the expression contains operators or
+# method calls, avoiding false-positives on JS template literals (${name}) and
+# Pug/Ruby output expressions (#{name}) in legitimate user content.
+# The broad detection patterns above still flag these for detect_ssti().
 _SSTI_REMOVE_PATTERNS = [
+    # Jinja2 / Twig: {{ ... }} — always strip (not valid in any JS context)
     re.compile(r"\{\{.*?\}\}", re.DOTALL),
-    re.compile(r"\$\{.*?\}"),
+    # Freemarker / Spring EL: only strip when expression contains operators/calls
+    re.compile(r"\$\{[^}]*[?!()*+\-/][^}]*\}"),
+    # ERB / EJS — always strip
     re.compile(r"<%[=\-]?.*?%>", re.DOTALL),
-    re.compile(r"#\{.*?\}"),
+    # Pug / Jade: only strip when expression contains operators/calls
+    re.compile(r"#\{[^}]*[?!()*+\-/][^}]*\}"),
+    # Python dunder sandbox escape — always strip
     re.compile(r"__(?:class|mro|subclasses|globals|builtins|import)__", re.IGNORECASE),
 ]
 

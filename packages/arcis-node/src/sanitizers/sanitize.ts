@@ -41,7 +41,9 @@ export function sanitizeString(value: string, options: SanitizeOptions = {}): st
     throw new InputTooLargeError(maxSize, value.length);
   }
 
-  const reject = options.mode !== 'sanitize'; // default: 'reject'
+  // Default mode is 'sanitize' (strip threats and return cleaned string).
+  // Pass mode: 'reject' to throw SecurityThreatError instead of stripping.
+  const reject = options.mode === 'reject';
   let result = value;
 
   // 1. SQL injection

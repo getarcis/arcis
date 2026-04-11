@@ -36,5 +36,8 @@ export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from '.
 // Context-aware encoding (XSS prevention by output context)
 export { encodeForHtml, encodeForAttribute, encodeForJs, encodeForUrl, encodeForCss } from './encode';
 
+// LDAP injection prevention
+export { sanitizeLdapFilter, sanitizeLdapDn, detectLdapInjection } from './ldap';
+
 // Utilities
 export { encodeHtmlEntities, isPlainObject } from './utils';

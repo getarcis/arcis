@@ -88,14 +88,12 @@ describe('Integration: Full Arcis Middleware', () => {
       body: JSON.stringify({ query: "'; DROP TABLE users; --" }),
     });
 
-    // Default arcis() uses reject mode — SQL injection returns 400.
-    // arcis() does not include errorHandler, so the response may be HTML (Express default).
-    // We verify: (a) status is 400, (b) the /echo route was NOT reached (no JSON body).
-    expect(res.status).toBe(400);
-    const body = await res.text();
-    // The echo route returns { received, keys } — if sanitizer blocked correctly,
-    // that JSON must not be present in the response.
-    expect(body).not.toContain('"received"');
+    // Default mode is 'sanitize' — SQL patterns are stripped and the request proceeds.
+    expect(res.status).toBe(200);
+    const body = await res.json() as { received: Record<string, string> };
+    // SQL keywords stripped — DROP, TABLE, users should not appear
+    const query = body.received?.query ?? '';
+    expect(query.toUpperCase()).not.toContain('DROP');
   });
 
   it('should block prototype pollution', async () => {

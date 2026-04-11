@@ -37,9 +37,12 @@ function mockResponse(): Partial<Response> & { statusCode: number } {
     return res;
   });
   res.json = vi.fn(() => res);
-  res.setHeader = vi.fn((name: string, value: string) => {
-    (res.headers as Record<string, string>)[name.toLowerCase()] = value;
+  res.setHeader = vi.fn((name: string, value: string | string[]) => {
+    (res.headers as Record<string, string | string[]>)[name.toLowerCase()] = value;
     return res;
+  });
+  res.getHeader = vi.fn((name: string) => {
+    return (res.headers as Record<string, string | string[]>)[name.toLowerCase()];
   });
   return res as Partial<Response> & { statusCode: number };
 }
@@ -202,13 +205,14 @@ describe('csrfProtection — protected methods', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('should allow POST with matching query token', () => {
+  it('should reject POST with token only in query string (tokens must not appear in URLs)', () => {
+    // SECURITY: query string tokens leak to logs, Referer headers, and browser history
     const { next } = callCsrf({}, {
       method: 'POST',
       cookies: { _csrf: validToken },
       query: { _csrf: validToken },
     });
-    expect(next).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('should protect PUT requests', () => {
