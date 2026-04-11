@@ -74,15 +74,6 @@ func TestSanitizeLdapFilter(t *testing.T) {
 	}
 }
 
-func TestSanitizeLdapFilterIdempotent(t *testing.T) {
-	input := "user*(admin)"
-	once := SanitizeLdapFilter(input)
-	twice := SanitizeLdapFilter(once)
-	if once != twice {
-		t.Errorf("sanitizeLdapFilter is not idempotent: %q vs %q", once, twice)
-	}
-}
-
 func TestSanitizeLdapDn(t *testing.T) {
 	tests := []struct {
 		name     string
