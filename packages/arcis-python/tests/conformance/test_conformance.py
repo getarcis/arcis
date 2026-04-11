@@ -62,10 +62,9 @@ class TestConformanceSanitizeXSS:
         result = sanitize_string('<iframe src="evil.com">')
         assert "<iframe" not in result.lower()
 
-    def test_encodes_remaining_html(self):
-        """After XSS removal, remaining < > are encoded."""
+    def test_safe_html_preserved(self):
+        """Benign tags must not be corrupted — html encoding is opt-in."""
         result = sanitize_string("Hello <b>World</b>")
-        assert "<b>" not in result
         assert "Hello" in result
         assert "World" in result
 

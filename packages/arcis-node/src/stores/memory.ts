@@ -15,18 +15,26 @@ import { RATE_LIMIT } from '../core/constants';
  * const store = new MemoryStore(60000); // 1 minute window
  * const limiter = createRateLimiter({ store });
  */
+/** Default maximum number of keys the in-memory store will hold. */
+const DEFAULT_MAX_SIZE = 10_000;
+
 export class MemoryStore implements RateLimitStore {
   private store: Map<string, RateLimitEntry> = new Map();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private windowMs: number;
+  private maxSize: number;
 
-  constructor(windowMs: number = RATE_LIMIT.DEFAULT_WINDOW_MS) {
+  constructor(windowMs: number = RATE_LIMIT.DEFAULT_WINDOW_MS, maxSize: number = DEFAULT_MAX_SIZE) {
     if (!Number.isFinite(windowMs) || windowMs < RATE_LIMIT.MIN_WINDOW_MS) {
       throw new RangeError(
         `MemoryStore: windowMs must be a finite number >= ${RATE_LIMIT.MIN_WINDOW_MS} (got ${windowMs})`
       );
     }
+    if (!Number.isFinite(maxSize) || maxSize < 1) {
+      throw new RangeError(`MemoryStore: maxSize must be >= 1 (got ${maxSize})`);
+    }
     this.windowMs = windowMs;
+    this.maxSize = maxSize;
     this.startCleanup();
   }
 
@@ -70,21 +78,38 @@ export class MemoryStore implements RateLimitStore {
   }
 
   async set(key: string, entry: RateLimitEntry): Promise<void> {
+    if (!this.store.has(key) && this.store.size >= this.maxSize) {
+      this.evictExpired();
+      // If still at capacity after eviction, fail open — don't crash the app
+      if (this.store.size >= this.maxSize) return;
+    }
     this.store.set(key, entry);
   }
 
   async increment(key: string): Promise<number> {
     const now = Date.now();
     const entry = this.store.get(key);
-    
+
     if (!entry || entry.resetTime < now) {
-      // Start new window
+      // Start new window — check capacity first
+      if (this.store.size >= this.maxSize) {
+        this.evictExpired();
+        if (this.store.size >= this.maxSize) return 1; // fail open
+      }
       this.store.set(key, { count: 1, resetTime: now + this.windowMs });
       return 1;
     }
-    
+
     entry.count++;
     return entry.count;
+  }
+
+  /** Eagerly remove expired entries to reclaim capacity. */
+  private evictExpired(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.store.entries()) {
+      if (entry.resetTime < now) this.store.delete(key);
+    }
   }
 
   async decrement(key: string): Promise<void> {

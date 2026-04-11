@@ -89,6 +89,34 @@
           "flags": "gi",
           "description": "Detects SVG with onload",
           "redos_safe": true
+        },
+        {
+          "id": "xss-form-injection",
+          "pattern": "<form[\\s>]",
+          "flags": "gi",
+          "description": "Detects form tags used for phishing/credential harvesting via action= redirection",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-meta-injection",
+          "pattern": "<meta[\\s>]",
+          "flags": "gi",
+          "description": "Detects meta tags used for http-equiv refresh redirects or CSP bypass",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-base-injection",
+          "pattern": "<base[\\s>]",
+          "flags": "gi",
+          "description": "Detects base href hijacking — redirects all relative URLs to attacker domain",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-link-injection",
+          "pattern": "<link[\\s>]",
+          "flags": "gi",
+          "description": "Detects link tag injection used for stylesheet or preload CSRF attacks",
+          "redos_safe": true
         }
       ],
       "encoding": {
@@ -211,13 +239,6 @@
           "redos_safe": true
         },
         {
-          "id": "cmdi-commands",
-          "pattern": "\\b(cat|ls|rm|mv|cp|wget|curl|nc|bash|sh|python|perl|ruby|php|node|powershell|cmd)\\b",
-          "flags": "gi",
-          "description": "Detects common shell commands",
-          "redos_safe": true
-        },
-        {
           "id": "cmdi-newline",
           "pattern": "%0[aAdD]",
           "flags": "gi",
@@ -226,9 +247,9 @@
         },
         {
           "id": "cmdi-redirection",
-          "pattern": "(>>|<<|>|<)\\s*[/\\w]",
+          "pattern": "(>>|<<|[<>]\\s+[/\\w])",
           "flags": "g",
-          "description": "Detects shell redirection",
+          "description": "Detects shell redirection operators. Requires whitespace before the path for single < or > to avoid false-positives on HTML tags like <b> or </b>.",
           "redos_safe": true
         }
       ]
@@ -325,8 +346,9 @@
         {
           "id": "ssti-freemarker-spring",
           "pattern": "\\$\\{.*?\\}",
+          "pattern_safe": "\\$\\{[^}]*[?!()*+\\-/][^}]*\\}",
           "flags": "g",
-          "description": "Detects Freemarker/Thymeleaf/Spring EL expressions (${ ... })",
+          "description": "Detects Freemarker/Thymeleaf/Spring EL expressions. Detection uses broad pattern; sanitization uses pattern_safe which requires operators/method-calls to avoid false-positives on JS template literals like ${name}.",
           "redos_safe": true
         },
         {
@@ -339,8 +361,9 @@
         {
           "id": "ssti-pug-jade",
           "pattern": "#\\{.*?\\}",
+          "pattern_safe": "#\\{[^}]*[?!()*+\\-/][^}]*\\}",
           "flags": "g",
-          "description": "Detects Pug/Jade/Slim template expressions (#{ ... })",
+          "description": "Detects Pug/Jade/Slim template expressions. Detection uses broad pattern; sanitization uses pattern_safe to avoid false-positives on Ruby/Pug output like #{name}.",
           "redos_safe": true
         },
         {

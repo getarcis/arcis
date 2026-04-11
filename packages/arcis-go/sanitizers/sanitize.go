@@ -19,6 +19,12 @@ var xssPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(?:^|[\s"'=])data:`),
 	regexp.MustCompile(`(?i)%3Cscript`),
 	regexp.MustCompile(`(?i)<svg[^>]*onload`),
+	// HTML injection vectors — form/meta/base/link can be used for phishing,
+	// CSP bypass, base-href hijack, and stylesheet injection
+	regexp.MustCompile(`(?i)<form[\s>]`),
+	regexp.MustCompile(`(?i)<meta[\s>]`),
+	regexp.MustCompile(`(?i)<base[\s>]`),
+	regexp.MustCompile(`(?i)<link[\s>]`),
 }
 
 // Pre-compiled SQL injection patterns
@@ -44,16 +50,33 @@ var pathPatterns = []*regexp.Regexp{
 
 // Pre-compiled command injection patterns
 var cmdPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`[;&|` + "`" + `$()]`),
-	regexp.MustCompile(`(?i)\b(cat|ls|rm|mv|cp|wget|curl|nc|bash|sh|python|perl|ruby|php)\b`),
+	regexp.MustCompile(`[;&|` + "`" + `]`),
+	regexp.MustCompile(`\$\(`),
+	regexp.MustCompile(`(?i)%0[aAdD]`),
+	regexp.MustCompile(`(>>|<<|[<>]\s+[/\w])`),
 }
 
-// NoSQL dangerous keys that could be used for injection
+// NoSQL dangerous keys that could be used for injection.
+// Synced with packages/core/patterns.json dangerous_keys (35 operators).
 var nosqlDangerousKeys = map[string]bool{
+	// Comparison
 	"$gt": true, "$gte": true, "$lt": true, "$lte": true,
 	"$ne": true, "$eq": true, "$in": true, "$nin": true,
-	"$and": true, "$or": true, "$not": true, "$exists": true,
-	"$type": true, "$regex": true, "$where": true, "$expr": true,
+	// Logical
+	"$and": true, "$or": true, "$not": true, "$nor": true,
+	// Element
+	"$exists": true, "$type": true,
+	// Evaluation — high risk (JS execution, regex, schema)
+	"$regex": true, "$where": true, "$expr": true, "$mod": true,
+	"$text": true, "$jsonSchema": true,
+	// JavaScript execution operators — critical
+	"$function": true, "$accumulator": true,
+	// Array
+	"$elemMatch": true, "$all": true, "$size": true,
+	// Aggregation pipeline operators
+	"$lookup": true, "$match": true, "$project": true, "$group": true,
+	"$sort": true, "$limit": true, "$skip": true, "$unwind": true,
+	"$addFields": true, "$replaceRoot": true,
 }
 
 // Prototype pollution dangerous keys (for JS interop).
@@ -153,10 +176,17 @@ func (s *Sanitizer) SanitizeString(value string) string {
 		}
 	}
 
-	// Path traversal prevention
+	// Path traversal prevention — loop until stable to prevent bypass via
+	// nested sequences: "....//".replace("../","") → "../"
 	if s.path {
-		for _, pattern := range pathPatterns {
-			result = pattern.ReplaceAllString(result, "")
+		for {
+			prev := result
+			for _, pattern := range pathPatterns {
+				result = pattern.ReplaceAllString(result, "")
+			}
+			if result == prev {
+				break
+			}
 		}
 	}
 
