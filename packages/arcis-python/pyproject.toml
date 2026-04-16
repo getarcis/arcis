@@ -38,7 +38,7 @@ fastapi = ["fastapi>=0.68.0", "starlette>=0.14.0"]
 django = ["django>=3.2"]
 redis = ["redis>=4.0.0"]
 dev = [
-    "pytest>=7.0.0",
+    "pytest>=8.4.2",
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-benchmark>=4.0.0",
