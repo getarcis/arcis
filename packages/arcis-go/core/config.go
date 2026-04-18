@@ -24,6 +24,8 @@ type Config struct {
 	SanitizeNoSQL bool
 	SanitizePath  bool
 	SanitizeCmd   bool // Command injection protection
+	SanitizeSSTI  bool // Server-Side Template Injection protection
+	SanitizeXXE   bool // XML External Entity protection
 	MaxInputSize  int  // Maximum input size in bytes (default: 1MB)
 
 	// Rate limiter options

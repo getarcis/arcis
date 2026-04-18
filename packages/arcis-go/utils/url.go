@@ -101,6 +101,20 @@ func ValidateURL(rawURL string, opts *ValidateURLOptions) ValidateURLResult {
 		}
 	}
 
+	// Check decimal IP encoding (e.g., 2130706433 = 127.0.0.1)
+	if !opts.AllowLocalhost || !opts.AllowPrivate {
+		if reason := checkDecimalIP(hostname, opts.AllowLocalhost, opts.AllowPrivate); reason != "" {
+			return ValidateURLResult{Safe: false, Reason: reason}
+		}
+	}
+
+	// Check octal/hex IP encoding (e.g., 0177.0.0.1 = 127.0.0.1, 0x7f.0.0.1 = 127.0.0.1)
+	if !opts.AllowLocalhost || !opts.AllowPrivate {
+		if reason := checkOctalHexIP(hostname, opts.AllowLocalhost, opts.AllowPrivate); reason != "" {
+			return ValidateURLResult{Safe: false, Reason: reason}
+		}
+	}
+
 	// Check private IPs
 	if !opts.AllowPrivate {
 		if reason := checkPrivateIP(hostname); reason != "" {
@@ -153,5 +167,91 @@ func checkPrivateIP(hostname string) string {
 		return "private IPv6 address"
 	}
 
+	return ""
+}
+
+// checkDecimalIP detects decimal-encoded IPs (e.g., 2130706433 = 127.0.0.1).
+func checkDecimalIP(hostname string, allowLocalhost, allowPrivate bool) string {
+	// Must be all digits
+	if len(hostname) == 0 {
+		return ""
+	}
+	for _, c := range hostname {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+
+	num, err := strconv.ParseUint(hostname, 10, 64)
+	if err != nil || num > 0xFFFFFFFF {
+		return ""
+	}
+
+	a := byte(num >> 24)
+	b := byte(num >> 16)
+	c := byte(num >> 8)
+	d := byte(num)
+	dotted := strconv.Itoa(int(a)) + "." + strconv.Itoa(int(b)) + "." + strconv.Itoa(int(c)) + "." + strconv.Itoa(int(d))
+
+	if !allowLocalhost && a == 127 {
+		return "loopback address (decimal IP: " + dotted + ")"
+	}
+	if !allowPrivate {
+		if reason := checkPrivateIP(dotted); reason != "" {
+			return reason + " (decimal IP: " + dotted + ")"
+		}
+	}
+	return ""
+}
+
+// checkOctalHexIP detects octal/hex-encoded IPs (e.g., 0177.0.0.1, 0x7f.0.0.1 = 127.0.0.1).
+func checkOctalHexIP(hostname string, allowLocalhost, allowPrivate bool) string {
+	parts := strings.Split(hostname, ".")
+	if len(parts) != 4 {
+		return ""
+	}
+
+	// Check if any part uses octal (leading 0) or hex (0x) notation
+	hasAlternate := false
+	for _, p := range parts {
+		if len(p) > 1 && p[0] == '0' {
+			if len(p) > 2 && (p[1] == 'x' || p[1] == 'X') {
+				hasAlternate = true // hex
+			} else if p[1] >= '0' && p[1] <= '7' {
+				hasAlternate = true // octal
+			}
+		}
+	}
+	if !hasAlternate {
+		return ""
+	}
+
+	octets := make([]int, 4)
+	for i, part := range parts {
+		var val int64
+		var err error
+		if len(part) > 2 && (part[:2] == "0x" || part[:2] == "0X") {
+			val, err = strconv.ParseInt(part[2:], 16, 64)
+		} else if len(part) > 1 && part[0] == '0' {
+			val, err = strconv.ParseInt(part, 8, 64)
+		} else {
+			val, err = strconv.ParseInt(part, 10, 64)
+		}
+		if err != nil || val < 0 || val > 255 {
+			return ""
+		}
+		octets[i] = int(val)
+	}
+
+	dotted := strconv.Itoa(octets[0]) + "." + strconv.Itoa(octets[1]) + "." + strconv.Itoa(octets[2]) + "." + strconv.Itoa(octets[3])
+
+	if !allowLocalhost && octets[0] == 127 {
+		return "loopback address (octal/hex IP: " + dotted + ")"
+	}
+	if !allowPrivate {
+		if reason := checkPrivateIP(dotted); reason != "" {
+			return reason + " (octal/hex IP: " + dotted + ")"
+		}
+	}
 	return ""
 }

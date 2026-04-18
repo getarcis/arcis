@@ -239,10 +239,10 @@
           "redos_safe": true
         },
         {
-          "id": "cmdi-newline",
-          "pattern": "%0[aAdD]",
+          "id": "cmdi-control-chars",
+          "pattern": "%0[0-9a-fA-F]",
           "flags": "gi",
-          "description": "Detects URL-encoded newline/carriage-return injection",
+          "description": "Detects URL-encoded control characters (%00-%0F) including null, tab, vertical tab, form feed, LF, CR",
           "redos_safe": true
         },
         {

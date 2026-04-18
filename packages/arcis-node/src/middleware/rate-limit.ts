@@ -131,8 +131,27 @@ export function createRateLimiter(options: RateLimitOptions = {}): RateLimiterMi
 
       next();
     } catch (error) {
-      // Log error but fail open (allow request through) to prevent DoS
-      console.error('[arcis] Rate limiter error:', error);
+      // External store failed — fall back to in-memory rate limiting.
+      // Pure fail-open is a security bypass; in-memory fallback maintains protection.
+      console.error('[arcis] Rate limiter store error, using in-memory fallback:', error);
+      try {
+        const key = keyGenerator(req);
+        const now = Date.now();
+        if (!inMemoryStore[key] || inMemoryStore[key].resetTime < now) {
+          inMemoryStore[key] = { count: 1, resetTime: now + windowMs };
+        } else {
+          inMemoryStore[key].count++;
+        }
+        const count = inMemoryStore[key].count;
+        if (count > max) {
+          const resetSeconds = Math.ceil((inMemoryStore[key].resetTime - now) / 1000);
+          res.setHeader('Retry-After', resetSeconds.toString());
+          res.status(statusCode).json({ error: message, retryAfter: resetSeconds });
+          return;
+        }
+      } catch {
+        // If even fallback fails, allow through to preserve availability
+      }
       next();
     }
   };

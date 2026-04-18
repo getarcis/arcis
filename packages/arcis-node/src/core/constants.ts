@@ -213,8 +213,8 @@ export const COMMAND_PATTERNS = [
   /[;&|`]/g,
   /** Command substitution: $( ... ) — matched as a pair to reduce false positives */
   /\$\(/g,
-  /** URL-encoded newline/carriage-return injection (%0a, %0d) */
-  /%0[ad]/gi,
+  /** URL-encoded control characters (%00-%0F): null, tab, vtab, formfeed, LF, CR */
+  /%0[0-9a-f]/gi,
 ] as const;
 
 // =============================================================================

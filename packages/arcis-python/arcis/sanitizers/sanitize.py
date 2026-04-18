@@ -7,6 +7,7 @@ path traversal, and command injection.
 
 import re
 import types
+import unicodedata
 from typing import Any, Dict, List, Set
 
 from ..core.constants import PATTERNS, DEFAULT_MAX_INPUT_SIZE, MAX_RECURSION_DEPTH
@@ -126,6 +127,9 @@ class Sanitizer:
         # Path traversal prevention — loop until stable to prevent bypass via
         # nested sequences: "....//".replace("../","") → "../"
         if self.path:
+            # SECURITY: Normalize Unicode to NFKC before path pattern matching.
+            # Fullwidth dot U+FF0E normalizes to '.', preventing bypass of ../ detection.
+            result = unicodedata.normalize('NFKC', result)
             prev = None
             while prev != result:
                 prev = result

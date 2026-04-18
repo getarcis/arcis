@@ -200,14 +200,20 @@ function checkPrivateIp(hostname: string): string | null {
     return 'cloud metadata endpoint';
   }
 
-  // IPv6 private ranges (simplified — bracket-wrapped in URLs)
-  const ipv6 = hostname.replace(/^\[|\]$/g, '');
+  // IPv6 private ranges (bracket-wrapped in URLs)
+  let ipv6 = hostname.replace(/^\[|\]$/g, '');
+  // Strip zone ID (e.g., ::1%eth0 → ::1)
+  const zoneIdx = ipv6.indexOf('%');
+  if (zoneIdx !== -1) {
+    ipv6 = ipv6.slice(0, zoneIdx);
+  }
   if (
     ipv6 === '::1' ||
     ipv6 === '::' ||
-    ipv6.startsWith('fc') ||
-    ipv6.startsWith('fd') ||
-    ipv6.startsWith('fe80')
+    /^fc[0-9a-f]{2}:/i.test(ipv6) ||
+    /^fd[0-9a-f]{2}:/i.test(ipv6) ||
+    /^fe80:/i.test(ipv6) ||
+    /^ff[0-9a-f]{2}:/i.test(ipv6)  // IPv6 multicast (ff00::/8)
   ) {
     return 'private IPv6 address';
   }
