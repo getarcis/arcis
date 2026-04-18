@@ -35,7 +35,7 @@ dependencies = []
 [project.optional-dependencies]
 flask = ["flask>=2.0.0"]
 fastapi = ["fastapi>=0.68.0", "starlette>=0.14.0"]
-django = ["django>=3.2"]
+django = ["django>=4.2.30"]
 redis = ["redis>=4.0.0"]
 dev = [
     "pytest>=7.0.0",
