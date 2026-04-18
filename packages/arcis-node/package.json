@@ -1,7 +1,7 @@
 {
   "name": "@arcis/node",
   "version": "1.4.1",
-  "description": "One line of code protects your Node.js app against 20+ security flaws at runtime — XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and more. Zero dependencies. Supply chain attack scanner included.",
+  "description": "Zero-dependency security middleware for Node.js. Protects against XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and 15+ more attack types. Supply chain attack scanner included.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
