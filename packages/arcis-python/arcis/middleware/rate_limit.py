@@ -55,6 +55,7 @@ class RateLimiter:
         self._store_provided = store is not None
         self.store = store or InMemoryStore()
         self._closed = False
+        self._fallback_lock = threading.Lock()
 
         # Start cleanup thread only for in-memory store
         # External stores (e.g. Redis) handle their own expiry
@@ -118,18 +119,21 @@ class RateLimiter:
             now = time.time()
             reset = max(0, int(reset_time - now))
         else:
-            now = time.time()
-            entry = self.store.get(key)
-            if not entry:
-                self.store.set(key, 1, now + self.window_seconds)
-                return {
-                    "allowed": True,
-                    "limit": self.max_requests,
-                    "remaining": self.max_requests - 1,
-                    "reset": int(self.window_seconds),
-                }
-            count = self.store.increment(key)
-            reset = max(0, int(entry.reset_time - now))
+            # Serialize get+increment to prevent TOCTOU race where two threads
+            # both see count=N and both pass through.
+            with self._fallback_lock:
+                now = time.time()
+                entry = self.store.get(key)
+                if not entry:
+                    self.store.set(key, 1, now + self.window_seconds)
+                    return {
+                        "allowed": True,
+                        "limit": self.max_requests,
+                        "remaining": self.max_requests - 1,
+                        "reset": int(self.window_seconds),
+                    }
+                count = self.store.increment(key)
+                reset = max(0, int(entry.reset_time - now))
 
         remaining = max(0, self.max_requests - count)
 

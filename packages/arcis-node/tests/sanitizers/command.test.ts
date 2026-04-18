@@ -47,6 +47,26 @@ describe('sanitizeCommand', () => {
       const result = sanitizeCommand('file.txt%0Aid');
       expect(result).not.toMatch(/%0[aA]/);
     });
+
+    it('should block %0B (URL-encoded vertical tab)', () => {
+      const result = sanitizeCommand('file.txt%0Bwhoami');
+      expect(result.toLowerCase()).not.toMatch(/%0b/);
+    });
+
+    it('should block %0C (URL-encoded form feed)', () => {
+      const result = sanitizeCommand('file.txt%0Cwhoami');
+      expect(result.toLowerCase()).not.toMatch(/%0c/);
+    });
+
+    it('should block %09 (URL-encoded tab)', () => {
+      const result = sanitizeCommand('file.txt%09whoami');
+      expect(result.toLowerCase()).not.toMatch(/%09/);
+    });
+
+    it('should block %00 (URL-encoded null byte)', () => {
+      const result = sanitizeCommand('file.txt%00whoami');
+      expect(result.toLowerCase()).not.toMatch(/%00/);
+    });
   });
 
   describe('Command Chaining and Substitution', () => {

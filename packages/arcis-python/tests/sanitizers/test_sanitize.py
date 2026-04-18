@@ -123,6 +123,17 @@ class TestSanitizeStringPathTraversal:
         result = sanitize_string("%252e%252e/etc/passwd")
         assert "%252e" not in result.lower()
 
+    def test_unicode_fullwidth_dot_bypass(self):
+        """Fullwidth dot U+FF0E should not bypass ../ detection after NFKC normalization."""
+        result = sanitize_string('\uff0e\uff0e/etc/passwd')
+        assert '../' not in result
+        assert '\uff0e\uff0e/' not in result
+
+    def test_unicode_fullwidth_slash_bypass(self):
+        """Fullwidth slash U+FF0F should not bypass path traversal detection."""
+        result = sanitize_string('..\uff0fetc\uff0fpasswd')
+        assert '../' not in result
+
 
 class TestSanitizeStringCommandInjection:
     """Test command injection prevention in sanitize_string."""
@@ -161,6 +172,22 @@ class TestSanitizeStringCommandInjection:
     def test_removes_url_encoded_carriage_return(self):
         result = sanitize_string("file.txt%0dwhoami")
         assert "%0d" not in result.lower()
+
+    def test_removes_url_encoded_vertical_tab(self):
+        result = sanitize_string("file.txt%0Bwhoami")
+        assert "%0b" not in result.lower()
+
+    def test_removes_url_encoded_form_feed(self):
+        result = sanitize_string("file.txt%0Cwhoami")
+        assert "%0c" not in result.lower()
+
+    def test_removes_url_encoded_tab(self):
+        result = sanitize_string("file.txt%09whoami")
+        assert "%09" not in result.lower()
+
+    def test_removes_url_encoded_null_byte(self):
+        result = sanitize_string("file.txt%00whoami")
+        assert "%00" not in result.lower()
 
     def test_safe_input_unchanged(self):
         from arcis.sanitizers.sanitize import Sanitizer

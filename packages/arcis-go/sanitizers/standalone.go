@@ -122,6 +122,50 @@ func DetectCommandInjection(input string) bool {
 	return false
 }
 
+// SanitizeSSTI removes SSTI patterns from input.
+func SanitizeSSTI(input string) string {
+	result := input
+	for _, pattern := range sstiRemovePatterns {
+		result = pattern.ReplaceAllString(result, "")
+	}
+	return result
+}
+
+// SanitizeXXE removes XXE patterns from input.
+func SanitizeXXE(input string) string {
+	result := input
+	for _, pattern := range xxeRemovePatterns {
+		result = pattern.ReplaceAllString(result, "")
+	}
+	return result
+}
+
+// DetectSSTI checks if input contains SSTI patterns.
+func DetectSSTI(input string) bool {
+	if input == "" {
+		return false
+	}
+	for _, pattern := range sstiDetectPatterns {
+		if pattern.MatchString(input) {
+			return true
+		}
+	}
+	return false
+}
+
+// DetectXXE checks if input contains XXE patterns.
+func DetectXXE(input string) bool {
+	if input == "" {
+		return false
+	}
+	for _, pattern := range xxeDetectPatterns {
+		if pattern.MatchString(input) {
+			return true
+		}
+	}
+	return false
+}
+
 // DetectNoSQLInjection checks if a map contains NoSQL injection operators.
 // It recursively walks the map up to maxDepth levels deep.
 func DetectNoSQLInjection(data map[string]interface{}, maxDepth int) bool {

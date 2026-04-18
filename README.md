@@ -11,7 +11,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg?branch=nwl)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-2774%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
+[![Tests](https://img.shields.io/badge/tests-2800%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
 
 Arcis is a unified, zero-dependency security middleware for Node.js, Python, and Go. <br />
 One line of code protects your application against 20+ security flaws at runtime — XSS, SQL injection, SSRF, CSRF, HPP, and more.
@@ -395,10 +395,10 @@ All SDKs are tested against a shared set of test vectors (`TEST_VECTORS.json`) t
 
 | SDK | Tests | Framework | Status |
 |-----|-------|-----------|--------|
-| Node.js | 1,289 | vitest | All passing |
-| Python | 1,005 | pytest | All passing |
-| Go | 480 | go test -race | All passing |
-| **Total** | **2,774** | | |
+| Node.js | 1,298 | vitest | All passing |
+| Python | 1,011 | pytest | All passing |
+| Go | 483+ | go test -race | All passing |
+| **Total** | **2,792+** | | |
 
 ---
 
@@ -444,20 +444,22 @@ The attack is removed. The safe text passes through. No one gets hacked.
 
 ## Roadmap
 
-### Completed (v1.0 — v1.2)
+### Completed (v1.0 — v1.4)
 
 - 20+ security flaw coverage (runtime + detection)
 - 3 SDKs (Node.js, Python, Go) at full parity
 - 7 framework adapters (Express, FastAPI, Flask, Django, Gin, Echo, net/http)
 - 3 rate limiting algorithms (fixed, sliding, token bucket)
 - Redis store support
-- `arcis scan` + `arcis audit` CLI tools
-- 2,774 tests, published on npm + PyPI
-
-### Next (v1.3)
-
-- Context-aware XSS encoding (HTML attributes, JS strings, URLs, CSS)
-- Additional security headers (COOP, CORP, COEP)
+- `arcis scan` + `arcis audit` + `arcis sca` CLI tools
+- Context-aware output encoding (HTML body, attributes, JS, CSS, URL)
+- COOP, CORP, COEP cross-origin isolation headers
+- HPP (HTTP Parameter Pollution) protection
+- CSRF hardening (double-submit cookie + HMAC)
+- LDAP injection protection
+- SSTI and XXE sanitization across all 3 SDKs
+- Security bypass hardening (Unicode normalization, decimal/octal IP encoding, surrogate pairs)
+- 2,792+ tests, published on npm + PyPI
 
 ### Planned
 

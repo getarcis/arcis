@@ -64,19 +64,24 @@ export function encodeForAttribute(value: string): string {
 export function encodeForJs(value: string): string {
   if (!value) return '';
   let result = '';
-  for (let i = 0; i < value.length; i++) {
-    const ch = value.charCodeAt(i);
+  // Use for-of to iterate codepoints, not UTF-16 code units.
+  // This correctly handles surrogate pairs (emoji, symbols outside BMP).
+  for (const char of value) {
+    const cp = char.codePointAt(0)!;
     // Allow a-z A-Z 0-9
     if (
-      (ch >= 0x30 && ch <= 0x39) || // 0-9
-      (ch >= 0x41 && ch <= 0x5a) || // A-Z
-      (ch >= 0x61 && ch <= 0x7a)    // a-z
+      (cp >= 0x30 && cp <= 0x39) || // 0-9
+      (cp >= 0x41 && cp <= 0x5a) || // A-Z
+      (cp >= 0x61 && cp <= 0x7a)    // a-z
     ) {
-      result += value[i];
-    } else if (ch < 0x100) {
-      result += `\\x${ch.toString(16).toUpperCase().padStart(2, '0')}`;
+      result += char;
+    } else if (cp < 0x100) {
+      result += `\\x${cp.toString(16).toUpperCase().padStart(2, '0')}`;
+    } else if (cp <= 0xFFFF) {
+      result += `\\u${cp.toString(16).toUpperCase().padStart(4, '0')}`;
     } else {
-      result += `\\u${ch.toString(16).toUpperCase().padStart(4, '0')}`;
+      // Codepoints above BMP — use ES6 Unicode escape
+      result += `\\u{${cp.toString(16).toUpperCase()}}`;
     }
   }
   return result;

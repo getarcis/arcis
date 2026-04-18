@@ -54,12 +54,40 @@ func TestSanitizeString_SQL(t *testing.T) {
 		{"removes DELETE", "1; DELETE FROM users", "DELETE"},
 		{"removes SQL comments", "admin'--", "--"},
 		{"removes UNION", "1 /* comment */ UNION SELECT", "UNION"},
+		{"removes pg_sleep (PostgreSQL timing)", "1; SELECT pg_sleep(5)", "pg_sleep"},
+		{"removes WAITFOR DELAY (MSSQL timing)", "1; WAITFOR DELAY '0:0:5'", "WAITFOR"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := sanitizer.SanitizeString(tt.input)
 			if strings.Contains(strings.ToUpper(result), strings.ToUpper(tt.notContains)) {
+				t.Errorf("SanitizeString(%q) = %q, should not contain %q", tt.input, result, tt.notContains)
+			}
+		})
+	}
+}
+
+func TestSanitizeString_CommandInjection(t *testing.T) {
+	sanitizer := NewSanitizerWithOptions(false, false, false, false, true)
+
+	tests := []struct {
+		name        string
+		input       string
+		notContains string
+	}{
+		{"removes %0a (newline)", "file.txt%0aid", "%0a"},
+		{"removes %0d (carriage return)", "file.txt%0dwhoami", "%0d"},
+		{"removes %0B (vertical tab)", "file.txt%0Bwhoami", "%0B"},
+		{"removes %0C (form feed)", "file.txt%0Cwhoami", "%0C"},
+		{"removes %09 (tab)", "file.txt%09whoami", "%09"},
+		{"removes %00 (null byte)", "file.txt%00whoami", "%00"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizer.SanitizeString(tt.input)
+			if strings.Contains(strings.ToLower(result), strings.ToLower(tt.notContains)) {
 				t.Errorf("SanitizeString(%q) = %q, should not contain %q", tt.input, result, tt.notContains)
 			}
 		})
@@ -77,6 +105,8 @@ func TestSanitizeString_PathTraversal(t *testing.T) {
 		{"removes unix path traversal", "../../etc/passwd", "../"},
 		{"removes windows path traversal", "..\\..\\windows\\system32", "..\\"},
 		{"removes URL-encoded traversal", "%2e%2e%2f%2e%2e%2f", "%2e%2e"},
+		{"removes fullwidth dot traversal (U+FF0E)", "\uFF0E\uFF0E/etc/passwd", "../"},
+		{"removes fullwidth slash traversal (U+FF0F)", "..\uFF0Fetc", ".."},
 	}
 
 	for _, tt := range tests {

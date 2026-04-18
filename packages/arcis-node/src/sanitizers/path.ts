@@ -31,6 +31,10 @@ export function sanitizePath(input: string, collectThreats = false): string | Sa
   let value = input;
   let wasSanitized = false;
 
+  // SECURITY: Normalize Unicode to NFKC before pattern matching.
+  // Fullwidth dot U+FF0E normalizes to '.', preventing ．．/ bypass of ../ detection.
+  value = value.normalize('NFKC');
+
   // Apply patterns repeatedly until the string stops changing.
   // Single-pass stripping is bypassable: "....//".replace("../","") → "../"
   let prev: string;
@@ -77,10 +81,13 @@ export function sanitizePath(input: string, collectThreats = false): string | Sa
  */
 export function detectPathTraversal(input: string): boolean {
   if (typeof input !== 'string') return false;
-  
+
+  // SECURITY: Normalize Unicode to NFKC — same as sanitizePath
+  const normalized = input.normalize('NFKC');
+
   for (const pattern of PATH_PATTERNS) {
     pattern.lastIndex = 0;
-    if (pattern.test(input)) {
+    if (pattern.test(normalized)) {
       return true;
     }
   }

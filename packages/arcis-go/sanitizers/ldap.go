@@ -3,7 +3,6 @@ package sanitizers
 import (
 	"fmt"
 	"regexp"
-	"strings"
 )
 
 // LDAP injection prevention.
@@ -48,10 +47,7 @@ func SanitizeLdapFilter(input string) string {
 //	SanitizeLdapDn("cn=admin,dc=example")
 //	// Returns: "cn\3dadmin\2cdc\3dexample"
 func SanitizeLdapDn(input string) string {
-	// First escape filter chars, then DN-specific chars
-	result := strings.NewReplacer().Replace(input)
-	result = ldapDnChars.ReplaceAllStringFunc(input, escapeLdapChar)
-	return result
+	return ldapDnChars.ReplaceAllStringFunc(input, escapeLdapChar)
 }
 
 // DetectLdapInjection checks if a string contains LDAP injection patterns.
