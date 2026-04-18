@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/GagancM/arcis/core"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Pre-compiled XSS patterns for performance (ReDoS-safe)
@@ -19,6 +20,12 @@ var xssPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(?:^|[\s"'=])data:`),
 	regexp.MustCompile(`(?i)%3Cscript`),
 	regexp.MustCompile(`(?i)<svg[^>]*onload`),
+	// HTML injection vectors — form/meta/base/link can be used for phishing,
+	// CSP bypass, base-href hijack, and stylesheet injection
+	regexp.MustCompile(`(?i)<form[\s>]`),
+	regexp.MustCompile(`(?i)<meta[\s>]`),
+	regexp.MustCompile(`(?i)<base[\s>]`),
+	regexp.MustCompile(`(?i)<link[\s>]`),
 }
 
 // Pre-compiled SQL injection patterns
@@ -32,6 +39,8 @@ var sqlPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bAND\s+['"][^'"]+['"]\s*=\s*['"][^'"]+['"]`),
 	regexp.MustCompile(`(?i)\bSLEEP\s*\(\s*\d+\s*\)`),
 	regexp.MustCompile(`(?i)\bBENCHMARK\s*\(`),
+	regexp.MustCompile(`(?i)\bpg_sleep\s*\(`),
+	regexp.MustCompile(`(?i)\bWAITFOR\s+DELAY\b`),
 }
 
 // Pre-compiled path traversal patterns
@@ -44,16 +53,72 @@ var pathPatterns = []*regexp.Regexp{
 
 // Pre-compiled command injection patterns
 var cmdPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`[;&|` + "`" + `$()]`),
-	regexp.MustCompile(`(?i)\b(cat|ls|rm|mv|cp|wget|curl|nc|bash|sh|python|perl|ruby|php)\b`),
+	regexp.MustCompile(`[;&|` + "`" + `]`),
+	regexp.MustCompile(`\$\(`),
+	regexp.MustCompile(`(?i)%0[0-9a-fA-F]`),
+	regexp.MustCompile(`(>>|<<|[<>]\s+[/\w])`),
 }
 
-// NoSQL dangerous keys that could be used for injection
+// Pre-compiled SSTI (Server-Side Template Injection) detection patterns.
+// Matches Node.js/Python SSTI implementation for cross-SDK parity.
+var sstiDetectPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\{\{.*?\}\}`),                                                     // Jinja2 / Twig / Nunjucks
+	regexp.MustCompile(`\$\{.*?\}`),                                                       // Freemarker / Spring EL
+	regexp.MustCompile(`<%[\s\S]*?%>`),                                                    // ERB / EJS
+	regexp.MustCompile(`#\{.*?\}`),                                                        // Pug / Jade
+	regexp.MustCompile(`(?i)__(?:class|mro|subclasses|globals|builtins|import)__`),         // Python dunder
+	regexp.MustCompile(`(?i)\{\{\s*config[.\[]`),                                          // Jinja2 config leak
+	regexp.MustCompile(`(?i)\{\{\s*(?:self|request|lipsum|cycler|joiner|namespace|range)\b`), // Jinja2 objects
+}
+
+// SSTI removal patterns — narrowed to avoid false positives on legitimate ${name}.
+// Only strip ${...} and #{...} when operators are present inside the expression.
+var sstiRemovePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\{\{.*?\}\}`),                           // Jinja2 / Twig
+	regexp.MustCompile(`\$\{[^}]*[?!()*+\-/][^}]*\}`),          // Freemarker with operators
+	regexp.MustCompile(`<%[\s\S]*?%>`),                          // ERB / EJS
+	regexp.MustCompile(`#\{[^}]*[?!()*+\-/][^}]*\}`),           // Pug with operators
+	regexp.MustCompile(`(?i)__(?:class|mro|subclasses|globals|builtins|import)__`),
+}
+
+// Pre-compiled XXE (XML External Entity) detection patterns.
+var xxeDetectPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)<!DOCTYPE\b`),
+	regexp.MustCompile(`(?i)<!ENTITY\b`),
+	regexp.MustCompile(`(?i)\bSYSTEM\s+["']`),
+	regexp.MustCompile(`(?i)\bPUBLIC\s+["']`),
+	regexp.MustCompile(`%\s*\w+\s*;`),        // Parameter entity
+	regexp.MustCompile(`(?i)<!\[CDATA\[`),
+}
+
+// XXE removal patterns
+var xxeRemovePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)<!DOCTYPE\s[^[>]*(?:\[[^\]]*\]\s*)?>|<!DOCTYPE\s[^>]*>`),
+	regexp.MustCompile(`(?i)<!ENTITY[^>]*>`),
+	regexp.MustCompile(`(?i)<!\[CDATA\[[\s\S]*?\]\]>`),
+}
+
+// NoSQL dangerous keys that could be used for injection.
+// Synced with packages/core/patterns.json dangerous_keys (35 operators).
 var nosqlDangerousKeys = map[string]bool{
+	// Comparison
 	"$gt": true, "$gte": true, "$lt": true, "$lte": true,
 	"$ne": true, "$eq": true, "$in": true, "$nin": true,
-	"$and": true, "$or": true, "$not": true, "$exists": true,
-	"$type": true, "$regex": true, "$where": true, "$expr": true,
+	// Logical
+	"$and": true, "$or": true, "$not": true, "$nor": true,
+	// Element
+	"$exists": true, "$type": true,
+	// Evaluation — high risk (JS execution, regex, schema)
+	"$regex": true, "$where": true, "$expr": true, "$mod": true,
+	"$text": true, "$jsonSchema": true,
+	// JavaScript execution operators — critical
+	"$function": true, "$accumulator": true,
+	// Array
+	"$elemMatch": true, "$all": true, "$size": true,
+	// Aggregation pipeline operators
+	"$lookup": true, "$match": true, "$project": true, "$group": true,
+	"$sort": true, "$limit": true, "$skip": true, "$unwind": true,
+	"$addFields": true, "$replaceRoot": true,
 }
 
 // Prototype pollution dangerous keys (for JS interop).
@@ -84,6 +149,8 @@ type Sanitizer struct {
 	nosql        bool
 	path         bool
 	cmd          bool
+	ssti         bool
+	xxe          bool
 	maxInputSize int
 }
 
@@ -99,6 +166,8 @@ func NewSanitizer(config core.Config) *Sanitizer {
 		nosql:        config.SanitizeNoSQL,
 		path:         config.SanitizePath,
 		cmd:          config.SanitizeCmd,
+		ssti:         config.SanitizeSSTI,
+		xxe:          config.SanitizeXXE,
 		maxInputSize: maxSize,
 	}
 }
@@ -153,10 +222,20 @@ func (s *Sanitizer) SanitizeString(value string) string {
 		}
 	}
 
-	// Path traversal prevention
+	// Path traversal prevention — loop until stable to prevent bypass via
+	// nested sequences: "....//".replace("../","") → "../"
 	if s.path {
-		for _, pattern := range pathPatterns {
-			result = pattern.ReplaceAllString(result, "")
+		// SECURITY: Normalize Unicode to NFKC before path pattern matching.
+		// Fullwidth dot U+FF0E normalizes to '.', preventing bypass of ../ detection.
+		result = norm.NFKC.String(result)
+		for {
+			prev := result
+			for _, pattern := range pathPatterns {
+				result = pattern.ReplaceAllString(result, "")
+			}
+			if result == prev {
+				break
+			}
 		}
 	}
 
@@ -164,6 +243,20 @@ func (s *Sanitizer) SanitizeString(value string) string {
 	if s.cmd {
 		for _, pattern := range cmdPatterns {
 			result = pattern.ReplaceAllString(result, "[BLOCKED]")
+		}
+	}
+
+	// SSTI prevention
+	if s.ssti {
+		for _, pattern := range sstiRemovePatterns {
+			result = pattern.ReplaceAllString(result, "")
+		}
+	}
+
+	// XXE prevention
+	if s.xxe {
+		for _, pattern := range xxeRemovePatterns {
+			result = pattern.ReplaceAllString(result, "")
 		}
 	}
 

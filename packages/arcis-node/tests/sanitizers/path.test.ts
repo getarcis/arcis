@@ -180,4 +180,30 @@ describe('detectPathTraversal', () => {
   it('should handle non-string input', () => {
     expect(detectPathTraversal(123 as unknown as string)).toBe(false);
   });
+
+  it('should detect fullwidth dot traversal (U+FF0E)', () => {
+    expect(detectPathTraversal('\uFF0E\uFF0E/etc/passwd')).toBe(true);
+  });
+
+  it('should detect fullwidth slash traversal (U+FF0F)', () => {
+    expect(detectPathTraversal('..\uFF0Fetc')).toBe(true);
+  });
+});
+
+describe('Unicode Normalization Bypass', () => {
+  it('should block fullwidth dot traversal (U+FF0E)', () => {
+    const result = sanitizePath('\uFF0E\uFF0E/etc/passwd');
+    expect(result).not.toContain('../');
+    expect(result).not.toContain('\uFF0E\uFF0E/');
+  });
+
+  it('should block fullwidth slash traversal (U+FF0F)', () => {
+    const result = sanitizePath('..\uFF0Fetc\uFF0Fpasswd');
+    expect(result).not.toContain('../');
+  });
+
+  it('should block one-dot-leader traversal (U+2024)', () => {
+    const result = sanitizePath('\u2024\u2024/etc/passwd');
+    expect(result).not.toContain('../');
+  });
 });

@@ -7,6 +7,7 @@ path traversal, and command injection.
 
 import re
 import types
+import unicodedata
 from typing import Any, Dict, List, Set
 
 from ..core.constants import PATTERNS, DEFAULT_MAX_INPUT_SIZE, MAX_RECURSION_DEPTH
@@ -32,6 +33,7 @@ class Sanitizer:
         command: bool = True,
         max_input_size: int = DEFAULT_MAX_INPUT_SIZE,
         freeze: bool = False,
+        html_encode: bool = False,
     ):
         self.xss = xss
         self.sql = sql
@@ -40,6 +42,10 @@ class Sanitizer:
         self.command = command
         self.max_input_size = max_input_size
         self.freeze = freeze
+        # Do NOT encode by default — this is a REST API middleware; encoding
+        # here corrupts JSON data with HTML entities (&lt;, &amp;, etc.) that
+        # consumers receive verbatim. Set html_encode=True for SSR/template contexts.
+        self.html_encode = html_encode
 
         # Compile XSS patterns (prefer ReDoS-safe variants)
         self._xss_patterns = []
@@ -97,28 +103,38 @@ class Sanitizer:
 
         result = value
 
-        # XSS prevention - remove patterns FIRST (while detectable), then encode
+        # XSS prevention - remove patterns FIRST (while detectable), then optionally encode
         if self.xss:
             # Remove dangerous patterns FIRST
             for pattern in self._xss_patterns:
                 result = pattern.sub("", result)
 
-            # THEN encode remaining content (& first to avoid double-encoding)
-            if '&' in self._xss_encoding:
-                result = result.replace('&', self._xss_encoding['&'])
-            for char, replacement in self._xss_encoding.items():
-                if char != '&':
-                    result = result.replace(char, replacement)
+            # HTML-encode only when explicitly requested (SSR/template context).
+            # Do NOT encode by default — REST API middleware; encoding corrupts JSON
+            # data with HTML entities (&lt;, &amp;, etc.) received verbatim by clients.
+            if self.html_encode:
+                if '&' in self._xss_encoding:
+                    result = result.replace('&', self._xss_encoding['&'])
+                for char, replacement in self._xss_encoding.items():
+                    if char != '&':
+                        result = result.replace(char, replacement)
 
         # SQL injection prevention
         if self.sql:
             for pattern in self._sql_patterns:
                 result = pattern.sub(" ", result)
 
-        # Path traversal prevention
+        # Path traversal prevention — loop until stable to prevent bypass via
+        # nested sequences: "....//".replace("../","") → "../"
         if self.path:
-            for pattern in self._path_patterns:
-                result = pattern.sub("", result)
+            # SECURITY: Normalize Unicode to NFKC before path pattern matching.
+            # Fullwidth dot U+FF0E normalizes to '.', preventing bypass of ../ detection.
+            result = unicodedata.normalize('NFKC', result)
+            prev = None
+            while prev != result:
+                prev = result
+                for pattern in self._path_patterns:
+                    result = pattern.sub("", result)
 
         # Command injection prevention
         if self.command:

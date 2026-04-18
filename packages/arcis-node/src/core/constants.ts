@@ -88,6 +88,14 @@ export const XSS_PATTERNS = [
   /%3Cscript/gi,
   /** SVG with onload */
   /<svg[^>]*onload/gi,
+  /** form tags — phishing/credential harvesting via action= redirection */
+  /<form[\s>]/gi,
+  /** meta tags — http-equiv refresh redirects or CSP bypass */
+  /<meta[\s>]/gi,
+  /** base href hijacking — redirects all relative URLs to attacker domain */
+  /<base[\s>]/gi,
+  /** link tag injection — stylesheet or preload CSRF attacks */
+  /<link[\s>]/gi,
 ] as const;
 
 /**
@@ -122,6 +130,14 @@ export const XSS_REMOVE_PATTERNS = [
   /vbscript\s*:/gi,
   /** data: URIs with HTML/script content */
   /data\s*:\s*text\/html[^>\s]*/gi,
+  /** form tag injection — phishing via action= redirection */
+  /<form[\s>][^>]*/gi,
+  /** meta tag injection — http-equiv refresh or CSP bypass */
+  /<meta[\s>][^>]*/gi,
+  /** base href hijacking */
+  /<base[\s>][^>]*/gi,
+  /** link tag injection — stylesheet or preload attacks */
+  /<link[\s>][^>]*/gi,
 ] as const;
 
 // =============================================================================
@@ -197,8 +213,8 @@ export const COMMAND_PATTERNS = [
   /[;&|`]/g,
   /** Command substitution: $( ... ) — matched as a pair to reduce false positives */
   /\$\(/g,
-  /** URL-encoded newline/carriage-return injection (%0a, %0d) */
-  /%0[ad]/gi,
+  /** URL-encoded control characters (%00-%0F): null, tab, vtab, formfeed, LF, CR */
+  /%0[0-9a-f]/gi,
 ] as const;
 
 // =============================================================================

@@ -12,7 +12,7 @@
  * the matching header.
  */
 
-import { randomBytes } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 
 /** CSRF protection configuration */
@@ -93,12 +93,10 @@ export function validateCsrfToken(cookieToken: string, requestToken: string): bo
   if (!cookieToken || !requestToken) return false;
   if (cookieToken.length !== requestToken.length) return false;
 
-  // Constant-time comparison to prevent timing attacks
-  let result = 0;
-  for (let i = 0; i < cookieToken.length; i++) {
-    result |= cookieToken.charCodeAt(i) ^ requestToken.charCodeAt(i);
-  }
-  return result === 0;
+  // SECURITY: Use Node.js built-in constant-time comparison to prevent timing attacks
+  const a = Buffer.from(cookieToken);
+  const b = Buffer.from(requestToken);
+  return timingSafeEqual(a, b);
 }
 
 /**
@@ -115,11 +113,8 @@ function getRequestToken(req: Request, headerName: string, fieldName: string): s
     if (typeof bodyToken === 'string' && bodyToken) return bodyToken;
   }
 
-  // 3. Check query string (fallback)
-  if (req.query && fieldName in req.query) {
-    const queryToken = req.query[fieldName];
-    if (typeof queryToken === 'string' && queryToken) return queryToken;
-  }
+  // SECURITY: Query string intentionally not supported — tokens in URLs leak
+  // to server logs, Referer headers, browser history, and CDN/proxy logs.
 
   return undefined;
 }
@@ -270,7 +265,16 @@ function setCsrfCookie(
   parts.push(`SameSite=${opts.sameSite}`);
   if (opts.domain) parts.push(`Domain=${opts.domain}`);
 
-  res.setHeader('Set-Cookie', parts.join('; '));
+  // Accumulate Set-Cookie headers to avoid overwriting cookies set by other middleware
+  const newCookie = parts.join('; ');
+  const existing = res.getHeader('Set-Cookie');
+  if (existing === undefined) {
+    res.setHeader('Set-Cookie', newCookie);
+  } else if (Array.isArray(existing)) {
+    res.setHeader('Set-Cookie', [...existing, newCookie]);
+  } else {
+    res.setHeader('Set-Cookie', [existing as string, newCookie]);
+  }
 }
 
 /**

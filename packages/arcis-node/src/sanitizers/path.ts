@@ -31,30 +31,39 @@ export function sanitizePath(input: string, collectThreats = false): string | Sa
   let value = input;
   let wasSanitized = false;
 
-  for (const pattern of PATH_PATTERNS) {
-    // Reset regex lastIndex for global patterns
-    pattern.lastIndex = 0;
-    
-    if (pattern.test(value)) {
-      pattern.lastIndex = 0; // Reset again for replace
-      
-      if (collectThreats) {
-        const matches = value.match(pattern);
-        if (matches) {
-          for (const match of matches) {
-            threats.push({
-              type: 'path_traversal',
-              pattern: pattern.source,
-              original: match,
-            });
+  // SECURITY: Normalize Unicode to NFKC before pattern matching.
+  // Fullwidth dot U+FF0E normalizes to '.', preventing ．．/ bypass of ../ detection.
+  value = value.normalize('NFKC');
+
+  // Apply patterns repeatedly until the string stops changing.
+  // Single-pass stripping is bypassable: "....//".replace("../","") → "../"
+  let prev: string;
+  do {
+    prev = value;
+    for (const pattern of PATH_PATTERNS) {
+      pattern.lastIndex = 0;
+
+      if (pattern.test(value)) {
+        pattern.lastIndex = 0;
+
+        if (collectThreats) {
+          const matches = value.match(pattern);
+          if (matches) {
+            for (const match of matches) {
+              threats.push({
+                type: 'path_traversal',
+                pattern: pattern.source,
+                original: match,
+              });
+            }
           }
         }
+
+        value = value.replace(pattern, '');
+        wasSanitized = true;
       }
-      
-      value = value.replace(pattern, '');
-      wasSanitized = true;
     }
-  }
+  } while (value !== prev);
 
   if (collectThreats) {
     return { value, wasSanitized, threats };
@@ -72,10 +81,13 @@ export function sanitizePath(input: string, collectThreats = false): string | Sa
  */
 export function detectPathTraversal(input: string): boolean {
   if (typeof input !== 'string') return false;
-  
+
+  // SECURITY: Normalize Unicode to NFKC — same as sanitizePath
+  const normalized = input.normalize('NFKC');
+
   for (const pattern of PATH_PATTERNS) {
     pattern.lastIndex = 0;
-    if (pattern.test(input)) {
+    if (pattern.test(normalized)) {
       return true;
     }
   }

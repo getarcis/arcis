@@ -143,6 +143,10 @@ func (rl *RateLimiter) CheckKey(key string) core.RateLimitResult {
 }
 
 func (rl *RateLimiter) checkKeyWithStore(key string) core.RateLimitResult {
+	// Serialize access to custom store to prevent TOCTOU race between Get and Set/Increment.
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
 	now := time.Now()
 
 	entry := rl.customStore.Get(key)

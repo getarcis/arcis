@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arcis"
-version = "1.4.0"
-description = "One line of code protects your Python app against 45+ security flaws at runtime — XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and more. Zero dependencies. Works with Flask, FastAPI, and Django."
+version = "1.4.2"
+description = "Zero-dependency security middleware for Python. Protects against XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and 15+ more attack types. Works with Flask, FastAPI, and Django."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
