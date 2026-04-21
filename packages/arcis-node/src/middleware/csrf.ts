@@ -59,6 +59,16 @@ export interface CsrfOptions {
   };
   /** Custom error handler when CSRF validation fails */
   onError?: (req: Request, res: Response, next: NextFunction) => void;
+  /**
+   * Rotate the CSRF token after each successful validation on a protected
+   * method. Defends against token-fixation attacks where an attacker plants
+   * a known token before authentication. Default: false.
+   *
+   * When enabled, every successful POST/PUT/PATCH/DELETE causes the server to
+   * issue a fresh token via Set-Cookie — the client must re-read the cookie
+   * before the next mutating request.
+   */
+  rotateOnUse?: boolean;
 }
 
 const DEFAULTS = {
@@ -226,6 +236,12 @@ export function csrfProtection(options: CsrfOptions = {}): RequestHandler {
 
     if (!validateCsrfToken(cookieToken, requestToken)) {
       return onError(req, res, next);
+    }
+
+    // Optional token rotation on successful validation
+    if (options.rotateOnUse) {
+      const freshToken = generateCsrfToken(tokenLength);
+      setCsrfCookie(res, cookieName, freshToken, cookieOpts);
     }
 
     next();

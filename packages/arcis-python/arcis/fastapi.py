@@ -182,7 +182,9 @@ class AsyncRateLimiter:
         
         # Cleanup task for in-memory store
         self._cleanup_task: Optional[asyncio.Task] = None
-    
+        # Lock prevents concurrent first requests from each spawning a cleanup task
+        self._cleanup_lock: Optional[asyncio.Lock] = None
+
     def _default_key_func(self, request: Request) -> str:
         """Default key function - uses client IP address."""
         # FastAPI/Starlette
@@ -201,22 +203,34 @@ class AsyncRateLimiter:
         return "unknown"
     
     async def _start_cleanup(self) -> None:
-        """Start background cleanup task for in-memory store."""
+        """Start background cleanup task for in-memory store.
+
+        Uses a lock so concurrent first requests don't each spawn a task.
+        Lock is lazily created on first call (must be inside running loop).
+        """
         if self._store_provided:
             return  # External stores handle their own cleanup
-        
-        async def cleanup_loop():
-            while not self._closed:
-                try:
-                    await asyncio.sleep(self.window_seconds)
-                    if not self._closed:
-                        await self.store.cleanup()
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    logger.error("Async rate limiter cleanup error: %s", e)
-        
-        self._cleanup_task = asyncio.create_task(cleanup_loop())
+
+        if self._cleanup_lock is None:
+            self._cleanup_lock = asyncio.Lock()
+
+        async with self._cleanup_lock:
+            # Re-check under lock — another coroutine may have started it
+            if self._cleanup_task is not None:
+                return
+
+            async def cleanup_loop():
+                while not self._closed:
+                    try:
+                        await asyncio.sleep(self.window_seconds)
+                        if not self._closed:
+                            await self.store.cleanup()
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as e:
+                        logger.error("Async rate limiter cleanup error: %s", e)
+
+            self._cleanup_task = asyncio.create_task(cleanup_loop())
     
     async def check(self, request: Request) -> Dict[str, Any]:
         """

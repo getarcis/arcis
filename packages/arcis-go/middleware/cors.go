@@ -110,6 +110,13 @@ func isOriginAllowed(requestOrigin string, allowed CorsOrigin) bool {
 		}
 		return false
 	case *regexp.Regexp:
+		// SECURITY: Go's regexp package uses RE2 (linear time, no catastrophic
+		// backtracking) so user-provided regex cannot cause ReDoS. We still cap
+		// input length defensively — an Origin header longer than 2048 chars is
+		// malformed or an abuse attempt.
+		if len(requestOrigin) > 2048 {
+			return false
+		}
 		return v.MatchString(requestOrigin)
 	case func(string) bool:
 		return v(requestOrigin)

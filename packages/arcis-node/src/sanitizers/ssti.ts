@@ -42,17 +42,19 @@ const SSTI_REMOVE_PATTERNS = [
   /** Jinja2 / Twig: {{ ... }} — always strip (not valid in any JS context) */
   /\{\{.*?\}\}/g,
   /**
-   * Freemarker / Spring EL: ${...} — only strip when the expression contains
-   * operators (?!*+-/), method calls (), or known-dangerous prefixes.
+   * Freemarker / Spring EL: ${...} — strip when expression contains operators,
+   * method calls, or Python dunder patterns (sandbox escape).
    * Bare ${name} and ${user.name} are left intact (JS template literal syntax).
    */
+  /\$\{[^}]*__\w+__[^}]*\}/g,
   /\$\{[^}]*[?!()*+\-/][^}]*\}/g,
   /** ERB / EJS: <%= ... %> */
   /<%[=\-]?.*?%>/gs,
   /**
-   * Pug / Jade: #{...} — same narrowing as ${ above.
+   * Pug / Jade: #{...} — same narrowing as ${ above, plus dunder detection.
    * #{name} output expressions are left intact.
    */
+  /#\{[^}]*__\w+__[^}]*\}/g,
   /#\{[^}]*[?!()*+\-/][^}]*\}/g,
   /** Python dunder sandbox escape — always strip */
   /__(?:class|mro|subclasses|globals|builtins|import)__/gi,

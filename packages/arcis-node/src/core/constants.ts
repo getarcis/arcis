@@ -109,6 +109,9 @@ export const XSS_REMOVE_PATTERNS = [
   /<script[^>]*>[\s\S]*?<\/script>/gi,
   /** Standalone/unclosed script tags */
   /<script[^>]*>/gi,
+  /** style — CSS expression() and behavior: attacks (IE-era but still relevant) */
+  /<style[^>]*>[\s\S]*?<\/style>/gi,
+  /<style[^>]*/gi,
   /** iframe — full block and partial/unclosed */
   /<iframe[^>]*>[\s\S]*?<\/iframe>/gi,
   /<iframe[^>]*/gi,

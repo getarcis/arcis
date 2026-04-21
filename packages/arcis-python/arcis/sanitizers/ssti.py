@@ -39,11 +39,13 @@ _SSTI_DETECT_PATTERNS = [
 _SSTI_REMOVE_PATTERNS = [
     # Jinja2 / Twig: {{ ... }} — always strip (not valid in any JS context)
     re.compile(r"\{\{.*?\}\}", re.DOTALL),
-    # Freemarker / Spring EL: only strip when expression contains operators/calls
+    # Freemarker / Spring EL: strip when expression contains operators/calls or dunders
+    re.compile(r"\$\{[^}]*__\w+__[^}]*\}"),
     re.compile(r"\$\{[^}]*[?!()*+\-/][^}]*\}"),
     # ERB / EJS — always strip
     re.compile(r"<%[=\-]?.*?%>", re.DOTALL),
-    # Pug / Jade: only strip when expression contains operators/calls
+    # Pug / Jade: strip when expression contains operators/calls or dunders
+    re.compile(r"#\{[^}]*__\w+__[^}]*\}"),
     re.compile(r"#\{[^}]*[?!()*+\-/][^}]*\}"),
     # Python dunder sandbox escape — always strip
     re.compile(r"__(?:class|mro|subclasses|globals|builtins|import)__", re.IGNORECASE),

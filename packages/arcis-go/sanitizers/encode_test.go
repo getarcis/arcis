@@ -167,13 +167,20 @@ func TestEncodeForCSS(t *testing.T) {
 		}
 	})
 
-	t.Run("trailing space per CSS spec", func(t *testing.T) {
+	t.Run("zero-padded 6-digit hex escape", func(t *testing.T) {
 		result := EncodeForCSS(";")
-		if !strings.HasSuffix(result, " ") {
-			t.Errorf("should end with trailing space, got %q", result)
+		// ';' is 0x3B → expect \00003B (self-terminating, no trailing space)
+		if result != "\\00003B" {
+			t.Errorf("want %q, got %q", "\\00003B", result)
 		}
-		if !strings.Contains(result, "\\") {
-			t.Errorf("should contain backslash, got %q", result)
+	})
+
+	t.Run("escape does not absorb following space", func(t *testing.T) {
+		// Prior \HH<space> form would merge with a legitimate following space.
+		// 6-digit form must not.
+		result := EncodeForCSS("; ")
+		if !strings.HasSuffix(result, "\\000020") {
+			t.Errorf("trailing space should be escaped as \\000020, got %q", result)
 		}
 	})
 
