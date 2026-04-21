@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+
+  <title>Docs · Arcis</title>
+  <meta name="description" content="Arcis documentation. Install, configure, and use Arcis to secure your Node.js, Python, or Go app in one line.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <!-- ─── Top Nav ─────────────────────────────────── -->
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../#how-it-works">How It Works</a></li>
+        <li><a href="../#languages">Languages</a></li>
+        <li><a href="../#threats">Threats</a></li>
+        <li><a href="../#comparison">Compare</a></li>
+        <li><a href="./" class="active">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="./getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ─── Layout ─────────────────────────────────── -->
+  <div class="docs-layout">
+
+    <!-- Sidebar -->
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="./" class="active">Introduction</a></li>
+        <li><a href="./getting-started.html">Getting Started</a></li>
+      </ul>
+
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="./frameworks.html">Framework Adapters</a></li>
+        <li><a href="./configuration.html">Configuration</a></li>
+        <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+      </ul>
+
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="./api-reference.html">API Reference</a></li>
+        <li><a href="./cli.html">CLI Tools</a></li>
+      </ul>
+
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb">Docs</div>
+      <h1>Arcis Documentation</h1>
+      <p class="lead">
+        Arcis is a zero-dependency security middleware for Node.js, Python, and Go. One line of code protects your application against 20+ attack types at runtime.
+      </p>
+
+      <div class="callout note">
+        <p><strong>New to Arcis?</strong> Start with <a href="./getting-started.html">Getting Started</a>. Install and protect your app in under a minute.</p>
+      </div>
+
+      <h2>Quick install</h2>
+      <div class="tabs">
+        <div class="tab-buttons">
+          <button class="tab-btn active" data-tab="node">Node.js</button>
+          <button class="tab-btn" data-tab="python">Python</button>
+          <button class="tab-btn" data-tab="go">Go</button>
+        </div>
+        <div class="tab-panel active" data-panel="node">
+<pre><code><span class="c">// Install</span>
+npm install @arcis/node
+
+<span class="c">// app.js</span>
+<span class="k">import</span> <span class="p">{</span> arcis <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+<span class="k">const</span> app = <span class="f">express</span><span class="p">();</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">());</span> <span class="c">// that's it</span></code></pre>
+        </div>
+        <div class="tab-panel" data-panel="python">
+<pre><code><span class="c"># Install</span>
+pip install arcis
+
+<span class="c"># main.py (FastAPI)</span>
+<span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware
+<span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+
+app = <span class="f">FastAPI</span><span class="p">()</span>
+app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">)</span>  <span class="c"># that's it</span></code></pre>
+        </div>
+        <div class="tab-panel" data-panel="go">
+<pre><code><span class="c">// Install</span>
+go get github.com/GagancM/arcis
+
+<span class="c">// main.go (Gin)</span>
+<span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"github.com/gin-gonic/gin"</span>
+    arcisgin <span class="s">"github.com/GagancM/arcis/gin"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    r := gin.<span class="f">Default</span><span class="p">()</span>
+    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">())</span> <span class="c">// that's it</span>
+    r.<span class="f">Run</span><span class="p">()</span>
+<span class="p">}</span></code></pre>
+        </div>
+      </div>
+
+      <h2>What Arcis protects against</h2>
+      <p>
+        Arcis blocks 20+ attack types at the middleware layer. Every request is sanitized before it reaches your code. Every response is hardened before it reaches the client.
+      </p>
+
+      <div class="doc-cards">
+        <a href="./attack-vectors.html#xss" class="doc-card">
+          <h3>XSS &amp; Injection</h3>
+          <p>Script injection, SQL, NoSQL, command injection, LDAP, SSTI, XXE stripped from every input.</p>
+        </a>
+        <a href="./attack-vectors.html#csrf" class="doc-card">
+          <h3>CSRF &amp; SSRF</h3>
+          <p>Double-submit cookie CSRF. SSRF blocks private IPs, loopback, cloud metadata.</p>
+        </a>
+        <a href="./attack-vectors.html#rate-limit" class="doc-card">
+          <h3>Rate Limiting</h3>
+          <p>Fixed, sliding, and token bucket algorithms. In-memory or Redis backend.</p>
+        </a>
+        <a href="./attack-vectors.html#headers" class="doc-card">
+          <h3>Security Headers</h3>
+          <p>16 headers auto-set: CSP, HSTS, X-Frame-Options, COOP, CORP, COEP.</p>
+        </a>
+      </div>
+
+      <h2>Explore the docs</h2>
+      <div class="doc-cards">
+        <a href="./getting-started.html" class="doc-card">
+          <h3>Getting Started →</h3>
+          <p>Install Arcis and protect your app in under a minute.</p>
+        </a>
+        <a href="./frameworks.html" class="doc-card">
+          <h3>Framework Adapters →</h3>
+          <p>Express, FastAPI, Flask, Django, Gin, Echo, and plain HTTP.</p>
+        </a>
+        <a href="./configuration.html" class="doc-card">
+          <h3>Configuration →</h3>
+          <p>All config options for sanitizers, rate limiters, headers, and CORS.</p>
+        </a>
+        <a href="./api-reference.html" class="doc-card">
+          <h3>API Reference →</h3>
+          <p>Every exported function across all three SDKs.</p>
+        </a>
+        <a href="./cli.html" class="doc-card">
+          <h3>CLI Tools →</h3>
+          <p>arcis scan, arcis audit, arcis sca for scanning and auditing.</p>
+        </a>
+        <a href="./attack-vectors.html" class="doc-card">
+          <h3>Attack Vectors →</h3>
+          <p>What each attack is, how it works, how Arcis blocks it.</p>
+        </a>
+      </div>
+
+      <h2>Need help?</h2>
+      <p>
+        File an issue on <a href="https://github.com/Gagancm/arcis/issues" target="_blank" rel="noopener">GitHub</a> or start a discussion in the <a href="https://github.com/Gagancm/arcis/discussions" target="_blank" rel="noopener">community forum</a>. For security vulnerabilities, report privately through GitHub Security Advisories.
+      </p>
+
+      <!-- Pagination -->
+      <div class="docs-pagination">
+        <div></div>
+        <a href="./getting-started.html" class="next">
+          <span class="nav-label">Next →</span>
+          <span class="nav-title">Getting Started</span>
+        </a>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="docs-footer">
+    <div>© 2026 Arcis. MIT Licensed.</div>
+    <div>
+      <a href="../">Home</a> · <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </footer>
+
+  <script>
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tabs = btn.closest('.tabs');
+        const target = btn.dataset.tab;
+        tabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        tabs.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        tabs.querySelector(`[data-panel="${target}"]`).classList.add('active');
+      });
+    });
+  </script>
+
+  <script>
+    fetch('https://api.github.com/repos/Gagancm/arcis')
+      .then(r => r.json())
+      .then(d => { if (d.stargazers_count !== undefined) { const el = document.getElementById('starCount'); if (el) el.textContent = d.stargazers_count; } })
+      .catch(() => {});
+  </script>
+</body>
+</html>

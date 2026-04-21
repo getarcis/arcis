@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+  <title>API Reference · Arcis Docs</title>
+  <meta name="description" content="Every exported function across Arcis Node.js, Python, and Go SDKs.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../#how-it-works">How It Works</a></li>
+        <li><a href="../#languages">Languages</a></li>
+        <li><a href="../#threats">Threats</a></li>
+        <li><a href="../#comparison">Compare</a></li>
+        <li><a href="./" class="active">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="./getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="./">Introduction</a></li>
+        <li><a href="./getting-started.html">Getting Started</a></li>
+      </ul>
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="./frameworks.html">Framework Adapters</a></li>
+        <li><a href="./configuration.html">Configuration</a></li>
+        <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+      </ul>
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="./api-reference.html" class="active">API Reference</a></li>
+        <li><a href="./cli.html">CLI Tools</a></li>
+      </ul>
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb"><a href="./">Docs</a> / API Reference</div>
+      <h1>API Reference</h1>
+      <p class="lead">
+        Every exported function across all three SDKs. Function names differ by language convention (<code>camelCase</code> in Node.js, <code>snake_case</code> in Python, <code>PascalCase</code> in Go) but behavior is identical.
+      </p>
+
+      <h2 id="middleware">Middleware</h2>
+
+      <h3><code>arcis(config?)</code></h3>
+      <p>The main middleware. Activates sanitization, rate limiting, and security headers.</p>
+      <table>
+        <thead><tr><th>SDK</th><th>Usage</th></tr></thead>
+        <tbody>
+          <tr><td>Node.js</td><td><code>app.use(arcis(config))</code></td></tr>
+          <tr><td>Python (FastAPI)</td><td><code>app.add_middleware(ArcisMiddleware, config=Config(...))</code></td></tr>
+          <tr><td>Python (Flask)</td><td><code>Arcis(app, config=Config(...))</code></td></tr>
+          <tr><td>Go (Gin)</td><td><code>r.Use(arcisgin.Middleware())</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3><code>corsProtection(options)</code></h3>
+      <p>Whitelist-based CORS enforcement. Opt-in.</p>
+
+      <h3><code>csrfProtection(options)</code></h3>
+      <p>Double-submit cookie CSRF with HMAC. Opt-in.</p>
+
+      <h3><code>botProtection(options)</code></h3>
+      <p>80+ bot pattern detection with per-fingerprint rate limiting. Opt-in.</p>
+
+      <h3><code>cookieSecurity(options)</code></h3>
+      <p>Enforces HttpOnly, Secure, SameSite on all cookies. Opt-in.</p>
+
+      <h2 id="sanitizers">Sanitizers</h2>
+      <p>Framework-agnostic. Take strings, return sanitized strings.</p>
+
+      <table>
+        <thead><tr><th>Function</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>sanitizeString(input)</code></td><td>Applies all enabled sanitizers to a string.</td></tr>
+          <tr><td><code>sanitizeObject(obj)</code></td><td>Recursively sanitizes an object, stripping dangerous keys.</td></tr>
+          <tr><td><code>sanitizeXss(input)</code></td><td>Strip XSS patterns and HTML-encode.</td></tr>
+          <tr><td><code>sanitizeSql(input)</code></td><td>Replace SQL patterns with <code>[BLOCKED]</code>.</td></tr>
+          <tr><td><code>sanitizePath(input)</code></td><td>Strip path traversal patterns (with NFKC normalization).</td></tr>
+          <tr><td><code>sanitizeCommand(input)</code></td><td>Strip shell metacharacters and control chars.</td></tr>
+          <tr><td><code>sanitizeSsti(input)</code></td><td>Strip SSTI template syntax.</td></tr>
+          <tr><td><code>sanitizeXxe(input)</code></td><td>Strip XXE DOCTYPE / ENTITY syntax.</td></tr>
+          <tr><td><code>sanitizeJsonpCallback(input)</code></td><td>Validate and return safe callback identifiers only.</td></tr>
+          <tr><td><code>sanitizeHeaderValue(input)</code></td><td>Strip CRLF, null bytes from header values.</td></tr>
+          <tr><td><code>sanitizeLdap(input)</code></td><td>Escape LDAP filter special characters.</td></tr>
+          <tr><td><code>sanitizeLdapDn(input)</code></td><td>Escape LDAP DN special characters.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="detectors">Detectors</h2>
+      <p>Return <code>true</code>/<code>false</code> without modifying input. Useful for logging or custom handling.</p>
+
+      <table>
+        <thead><tr><th>Function</th><th>Detects</th></tr></thead>
+        <tbody>
+          <tr><td><code>detectXss(input)</code></td><td>Script injection, event handlers, JS URIs.</td></tr>
+          <tr><td><code>detectSql(input)</code></td><td>SQL keywords, boolean tautology, comments.</td></tr>
+          <tr><td><code>detectSsti(input)</code></td><td>Template syntax.</td></tr>
+          <tr><td><code>detectXxe(input)</code></td><td>XML entity declarations.</td></tr>
+          <tr><td><code>detectPathTraversal(input)</code></td><td><code>../</code> and encoded variants.</td></tr>
+          <tr><td><code>detectCommandInjection(input)</code></td><td>Shell metacharacters, subshells.</td></tr>
+          <tr><td><code>detectHeaderInjection(input)</code></td><td>CRLF injection patterns.</td></tr>
+          <tr><td><code>detectLdapInjection(input)</code></td><td>LDAP filter injection.</td></tr>
+          <tr><td><code>detectNoSqlInjection(obj)</code></td><td>Dangerous MongoDB operators in object.</td></tr>
+          <tr><td><code>detectPrototypePollution(obj)</code></td><td>Prototype-polluting keys in object.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="encoders">Context-Aware Encoders</h2>
+      <p>Use when rendering user content in different output contexts.</p>
+
+<pre><code><span class="k">import</span> <span class="p">{</span>
+  encodeForHtml<span class="p">,</span>       <span class="c">// HTML body: &amp;, &lt;, &gt;, ", '</span>
+  encodeForAttribute<span class="p">,</span>  <span class="c">// HTML attributes: all non-alphanumeric as &amp;#xHH;</span>
+  encodeForJs<span class="p">,</span>         <span class="c">// JS string: \xHH / \uHHHH</span>
+  encodeForUrl<span class="p">,</span>        <span class="c">// URL param: encodeURIComponent + extra chars</span>
+  encodeForCss<span class="p">,</span>        <span class="c">// CSS value: \HH with trailing space</span>
+<span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span></code></pre>
+
+      <h2 id="validators">Validators</h2>
+
+      <h3><code>validateUrl(url, options?)</code></h3>
+      <p>SSRF-safe URL validation. Blocks private IPs, loopback, cloud metadata, IP-encoding bypasses.</p>
+<pre><code>validateUrl<span class="p">(</span><span class="s">'http://169.254.169.254/'</span><span class="p">)</span>
+<span class="c">// { safe: false, reason: 'link-local address (169.254.0.0/16)' }</span>
+
+validateUrl<span class="p">(</span><span class="s">'https://api.example.com/'</span><span class="p">)</span>
+<span class="c">// { safe: true }</span></code></pre>
+
+      <h3><code>validateRedirect(url, allowlist)</code></h3>
+      <p>Open redirect prevention. Only allows paths or whitelisted hosts.</p>
+
+      <h3><code>validateEmail(email)</code></h3>
+      <p>Email validation with disposable blocklist, typo suggestions, optional MX check.</p>
+
+      <h2 id="pii">PII Detection</h2>
+
+      <h3><code>scanPii(input)</code></h3>
+      <p>Returns an array of PII matches found (email, phone, SSN, credit card).</p>
+
+      <h3><code>redactPii(input)</code></h3>
+      <p>Returns the input with detected PII redacted (e.g., <code>****-****-1234</code>).</p>
+
+      <h2 id="stores">Rate Limit Stores</h2>
+
+      <h3><code>MemoryStore</code></h3>
+      <p>Default in-memory store. Fine for single-instance deployments.</p>
+
+      <h3><code>RedisStore({ client })</code></h3>
+      <p>For multi-instance / distributed rate limiting. Pass a <code>redis</code> client instance.</p>
+
+      <h2 id="logging">Logging</h2>
+
+      <h3><code>createSafeLogger(logger)</code></h3>
+      <p>Wraps any logger to auto-redact PII and secrets from log entries.</p>
+
+      <div class="docs-pagination">
+        <a href="./attack-vectors.html" class="prev">
+          <span class="nav-label">← Previous</span>
+          <span class="nav-title">Attack Vectors</span>
+        </a>
+        <a href="./cli.html" class="next">
+          <span class="nav-label">Next →</span>
+          <span class="nav-title">CLI Tools</span>
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="docs-footer">
+    <div>© 2026 Arcis. MIT Licensed.</div>
+    <div><a href="../">Home</a> · <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></div>
+  </footer>
+
+  <script>
+    fetch('https://api.github.com/repos/Gagancm/arcis')
+      .then(r => r.json())
+      .then(d => { if (d.stargazers_count !== undefined) { const el = document.getElementById('starCount'); if (el) el.textContent = d.stargazers_count; } })
+      .catch(() => {});
+  </script>
+</body>
+</html>

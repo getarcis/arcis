@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+
+  <title>Getting Started · Arcis Docs</title>
+  <meta name="description" content="Install Arcis and protect your Node.js, Python, or Go app in under a minute.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../#how-it-works">How It Works</a></li>
+        <li><a href="../#languages">Languages</a></li>
+        <li><a href="../#threats">Threats</a></li>
+        <li><a href="../#comparison">Compare</a></li>
+        <li><a href="./" class="active">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="./getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="./">Introduction</a></li>
+        <li><a href="./getting-started.html" class="active">Getting Started</a></li>
+      </ul>
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="./frameworks.html">Framework Adapters</a></li>
+        <li><a href="./configuration.html">Configuration</a></li>
+        <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+      </ul>
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="./api-reference.html">API Reference</a></li>
+        <li><a href="./cli.html">CLI Tools</a></li>
+      </ul>
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb"><a href="./">Docs</a> / Getting Started</div>
+      <h1>Getting Started</h1>
+      <p class="lead">
+        Install Arcis, add one line of code, and your application is protected against 20+ attack types. No configuration required.
+      </p>
+
+      <h2>Requirements</h2>
+      <ul>
+        <li><strong>Node.js</strong>: version 18 or later</li>
+        <li><strong>Python</strong>: version 3.9 or later</li>
+        <li><strong>Go</strong>: version 1.25 or later</li>
+      </ul>
+
+      <h2 id="install">Installation</h2>
+      <p>Install the package for your language. Arcis has zero runtime dependencies beyond the framework you're already using.</p>
+
+      <div class="tabs">
+        <div class="tab-buttons">
+          <button class="tab-btn active" data-tab="node">Node.js</button>
+          <button class="tab-btn" data-tab="python">Python</button>
+          <button class="tab-btn" data-tab="go">Go</button>
+        </div>
+
+        <div class="tab-panel active" data-panel="node">
+<pre><code>npm install @arcis/node</code></pre>
+          <p>Or with yarn:</p>
+<pre><code>yarn add @arcis/node</code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="python">
+<pre><code>pip install arcis</code></pre>
+          <p>For Redis store support:</p>
+<pre><code>pip install "arcis[redis]"</code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="go">
+<pre><code>go get github.com/GagancM/arcis</code></pre>
+        </div>
+      </div>
+
+      <h2 id="basic-setup">Basic setup</h2>
+      <p>Add Arcis to your app before defining any routes. The core middleware activates sanitization, rate limiting, and security headers with secure defaults.</p>
+
+      <h3>Node.js with Express</h3>
+<pre><code><span class="k">import</span> express <span class="k">from</span> <span class="s">'express'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> arcis <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+
+<span class="k">const</span> app = <span class="f">express</span><span class="p">();</span>
+app.<span class="f">use</span><span class="p">(</span>express.<span class="f">json</span><span class="p">());</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">());</span>  <span class="c">// core protections enabled</span>
+
+app.<span class="f">get</span><span class="p">(</span><span class="s">'/'</span><span class="p">,</span> <span class="p">(</span>req<span class="p">,</span> res<span class="p">)</span> <span class="k">=></span> <span class="p">{</span>
+  <span class="c">// req.body and req.query are now sanitized</span>
+  res.<span class="f">json</span><span class="p">({</span> ok<span class="p">:</span> <span class="k">true</span> <span class="p">});</span>
+<span class="p">});</span>
+
+app.<span class="f">listen</span><span class="p">(</span><span class="n">3000</span><span class="p">);</span></code></pre>
+
+      <h3>Python with FastAPI</h3>
+<pre><code><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+<span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware
+
+app = <span class="f">FastAPI</span><span class="p">()</span>
+app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">)</span>  <span class="c"># core protections enabled</span>
+
+<span class="k">@</span>app.<span class="f">get</span><span class="p">(</span><span class="s">"/"</span><span class="p">)</span>
+<span class="k">def</span> <span class="f">root</span><span class="p">():</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s">"ok"</span><span class="p">:</span> <span class="k">True</span><span class="p">}</span></code></pre>
+
+      <h3>Python with Flask</h3>
+<pre><code><span class="k">from</span> flask <span class="k">import</span> Flask
+<span class="k">from</span> arcis <span class="k">import</span> Arcis
+
+app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p">)</span>
+<span class="f">Arcis</span><span class="p">(</span>app<span class="p">)</span>  <span class="c"># core protections enabled</span>
+
+<span class="k">@</span>app.<span class="f">route</span><span class="p">(</span><span class="s">"/"</span><span class="p">)</span>
+<span class="k">def</span> <span class="f">root</span><span class="p">():</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s">"ok"</span><span class="p">:</span> <span class="k">True</span><span class="p">}</span></code></pre>
+
+      <h3>Go with Gin</h3>
+<pre><code><span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"github.com/gin-gonic/gin"</span>
+    arcisgin <span class="s">"github.com/GagancM/arcis/gin"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    r := gin.<span class="f">Default</span><span class="p">()</span>
+    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">())</span>  <span class="c">// core protections enabled</span>
+
+    r.<span class="f">GET</span><span class="p">(</span><span class="s">"/"</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span>c *gin.Context<span class="p">)</span> <span class="p">{</span>
+        c.<span class="f">JSON</span><span class="p">(</span><span class="n">200</span><span class="p">,</span> gin.H<span class="p">{</span><span class="s">"ok"</span><span class="p">:</span> <span class="k">true</span><span class="p">})</span>
+    <span class="p">})</span>
+    r.<span class="f">Run</span><span class="p">()</span>
+<span class="p">}</span></code></pre>
+
+      <div class="callout note">
+        <p><strong>That's it.</strong> Your app is now protected against XSS, SQL injection, path traversal, command injection, and 16+ more attack types. Safe input passes through. Attack payloads are stripped.</p>
+      </div>
+
+      <h2 id="whats-enabled">What's enabled by default</h2>
+      <p>When you call <code>arcis()</code> with no options, the following protections are active:</p>
+      <table>
+        <thead>
+          <tr><th>Protection</th><th>Default behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Input sanitization</td><td>XSS, SQL, NoSQL, command, path traversal, SSTI, XXE, JSONP, header injection, prototype pollution</td></tr>
+          <tr><td>Rate limiting</td><td>100 requests per 60 seconds, per IP (fixed window)</td></tr>
+          <tr><td>Security headers</td><td>CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, COOP, CORP, COEP (16 headers)</td></tr>
+          <tr><td>Error scrubbing</td><td>Stack traces, DB errors, internal IPs removed from responses in production</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="opt-in">Opt-in middleware</h2>
+      <p>These are powerful but context-dependent. Add them explicitly when you need them.</p>
+
+<pre><code><span class="k">import</span> <span class="p">{</span>
+  arcis<span class="p">,</span>
+  corsProtection<span class="p">,</span>
+  csrfProtection<span class="p">,</span>
+  botProtection<span class="p">,</span>
+  cookieSecurity<span class="p">,</span>
+<span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">());</span>
+
+app.<span class="f">use</span><span class="p">(</span><span class="f">corsProtection</span><span class="p">({</span> origin<span class="p">:</span> <span class="p">[</span><span class="s">'https://yourapp.com'</span><span class="p">]</span> <span class="p">}));</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">csrfProtection</span><span class="p">());</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">botProtection</span><span class="p">());</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">cookieSecurity</span><span class="p">());</span></code></pre>
+
+      <h2 id="verify">Verify it's working</h2>
+      <p>Send a request with an attack payload to any route. Arcis strips it before your code runs.</p>
+
+<pre><code><span class="c"># Try an XSS attack</span>
+curl <span class="s">'http://localhost:3000/?q=&lt;script&gt;alert(1)&lt;/script&gt;'</span>
+
+<span class="c"># Your handler receives req.query.q === ''  (empty — script was stripped)</span></code></pre>
+
+      <p>To see what Arcis blocks, log <code>req.query</code> inside your route — the attack payload will be gone.</p>
+
+      <h2 id="next-steps">Next steps</h2>
+      <div class="doc-cards">
+        <a href="./frameworks.html" class="doc-card">
+          <h3>Framework guides →</h3>
+          <p>Detailed setup for Express, FastAPI, Flask, Django, Gin, Echo.</p>
+        </a>
+        <a href="./configuration.html" class="doc-card">
+          <h3>Configuration →</h3>
+          <p>Customize every protection: rate limits, headers, CORS, CSRF.</p>
+        </a>
+        <a href="./cli.html" class="doc-card">
+          <h3>CLI tools →</h3>
+          <p>Scan your code and dependencies from the terminal.</p>
+        </a>
+      </div>
+
+      <div class="docs-pagination">
+        <a href="./" class="prev">
+          <span class="nav-label">← Previous</span>
+          <span class="nav-title">Introduction</span>
+        </a>
+        <a href="./frameworks.html" class="next">
+          <span class="nav-label">Next →</span>
+          <span class="nav-title">Framework Adapters</span>
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="docs-footer">
+    <div>© 2026 Arcis. MIT Licensed.</div>
+    <div><a href="../">Home</a> · <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></div>
+  </footer>
+
+  <script>
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tabs = btn.closest('.tabs');
+        const target = btn.dataset.tab;
+        tabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        tabs.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        tabs.querySelector(`[data-panel="${target}"]`).classList.add('active');
+      });
+    });
+  </script>
+
+  <script>
+    fetch('https://api.github.com/repos/Gagancm/arcis')
+      .then(r => r.json())
+      .then(d => { if (d.stargazers_count !== undefined) { const el = document.getElementById('starCount'); if (el) el.textContent = d.stargazers_count; } })
+      .catch(() => {});
+  </script>
+</body>
+</html>
