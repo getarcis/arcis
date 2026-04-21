@@ -55,7 +55,9 @@ export interface HppOptions {
  * });
  */
 export function hpp(options: HppOptions = {}): RequestHandler {
-  const whitelist = new Set(options.whitelist ?? []);
+  // SECURITY: Store whitelist as lowercase so case-variant params can't bypass.
+  // Some frameworks normalize param case downstream — `TAGS` should match whitelist `tags`.
+  const whitelist = new Set((options.whitelist ?? []).map((k) => k.toLowerCase()));
   const checkQuery = options.checkQuery ?? true;
   const checkBody = options.checkBody ?? true;
 
@@ -68,7 +70,7 @@ export function hpp(options: HppOptions = {}): RequestHandler {
       for (const [key, value] of Object.entries(req.query)) {
         if (Array.isArray(value)) {
           const strings = value.filter((v): v is string => typeof v === 'string');
-          if (whitelist.has(key)) {
+          if (whitelist.has(key.toLowerCase())) {
             // Whitelisted — preserve as array
             clean[key] = strings;
           } else {
@@ -93,7 +95,7 @@ export function hpp(options: HppOptions = {}): RequestHandler {
 
       for (const [key, value] of Object.entries(req.body as Record<string, unknown>)) {
         if (Array.isArray(value)) {
-          if (whitelist.has(key)) {
+          if (whitelist.has(key.toLowerCase())) {
             clean[key] = value;
           } else {
             polluted[key] = value;

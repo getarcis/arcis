@@ -27,8 +27,9 @@ class TestSanitizeJsonpCallback:
     def test_underscore_prefix(self):
         assert sanitize_jsonp_callback("_cb") == "_cb"
 
-    def test_bracket_notation(self):
-        assert sanitize_jsonp_callback("obj[0]") == "obj[0]"
+    def test_bracket_notation_rejected(self):
+        # M3 audit fix: brackets enable `cb[x` bypass and are never needed in practice
+        assert sanitize_jsonp_callback("obj[0]") is None
 
     def test_jquery_style(self):
         assert sanitize_jsonp_callback("jQuery110209547534") == "jQuery110209547534"

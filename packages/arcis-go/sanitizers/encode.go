@@ -115,7 +115,9 @@ func EncodeForURL(value string) string {
 }
 
 // EncodeForCSS encodes for CSS value context.
-// Non-alphanumeric characters are hex-escaped as \HH (trailing space per CSS spec).
+// Non-alphanumeric characters are hex-escaped as zero-padded \HHHHHH (6 hex
+// digits). This form is self-terminating and, unlike the shorter \HH<space>
+// variant, does not risk absorbing a following legitimate space character.
 //
 // Use when embedding in CSS values:
 //
@@ -125,13 +127,12 @@ func EncodeForCSS(value string) string {
 		return ""
 	}
 	var b strings.Builder
-	b.Grow(len(value) * 2)
+	b.Grow(len(value) * 7)
 	for _, r := range value {
 		if isRuneAlphanumeric(r) {
 			b.WriteRune(r)
 		} else {
-			// CSS hex escape: backslash + hex code + trailing space
-			fmt.Fprintf(&b, "\\%X ", r)
+			fmt.Fprintf(&b, "\\%06X", r)
 		}
 	}
 	return b.String()

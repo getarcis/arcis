@@ -34,7 +34,9 @@ export interface PiiRedactOptions extends PiiScanOptions {
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+/g;
 
 // US phone numbers: (xxx) xxx-xxxx, xxx-xxx-xxxx, xxx.xxx.xxxx, xxx xxx xxxx, +1xxxxxxxxxx
-const PHONE_RE = /(?:\+?1[-.\s]?)?\(?[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
+// (?<!\d) / (?!\d) boundaries prevent false positives inside longer digit
+// sequences like ZIP+number combos ("94102 555-1234") or bank account strings.
+const PHONE_RE = /(?<!\d)(?:\+?1[-.\s]?)?\(?[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?!\d)/g;
 
 // Credit cards: 13-19 digits with optional separators (spaces or dashes)
 const CREDIT_CARD_RE = /\b(?:\d[ -]*?){13,19}\b/g;

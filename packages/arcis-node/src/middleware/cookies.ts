@@ -105,6 +105,23 @@ export function secureCookieDefaults(options: SecureCookieOptions = {}): Request
     path: options.path,
   };
 
+  // Fail loudly on incompatible combinations — silent misconfiguration is a
+  // common footgun (e.g. SameSite=None without Secure is rejected by every
+  // modern browser, producing a request that just silently loses cookies).
+  if (resolved.sameSite === 'None' && resolved.secure === false) {
+    throw new Error(
+      '[arcis] secureCookieDefaults: sameSite=None requires secure=true (modern browsers reject the cookie otherwise)'
+    );
+  }
+  if (resolved.httpOnly === false && resolved.secure === false && isProduction) {
+    // Only a warning — some apps legitimately need non-HttpOnly cookies (e.g. CSRF double-submit).
+    // But running both off in production is almost never intentional.
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[arcis] secureCookieDefaults: httpOnly and secure are both disabled in production — cookies will be readable by JS and sent over HTTP'
+    );
+  }
+
   return (_req: Request, res: Response, next: NextFunction) => {
     // Monkey-patch res.setHeader to intercept Set-Cookie
     const originalSetHeader = res.setHeader.bind(res);

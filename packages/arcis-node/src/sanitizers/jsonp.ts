@@ -4,10 +4,11 @@
  */
 
 /**
- * Valid JSONP callback pattern: only alphanumeric, underscore, dot, and bracket notation.
- * This prevents injection of arbitrary JS via callback parameters.
+ * Valid JSONP callback pattern: only alphanumeric, underscore, dollar, and dot.
+ * Bracket notation is rejected — it enables bypasses like `cb[x` (unbalanced)
+ * and isn't needed for real-world JSONP callbacks.
  */
-const SAFE_CALLBACK_PATTERN = /^[a-zA-Z_$][a-zA-Z0-9_$.[\]]*$/;
+const SAFE_CALLBACK_PATTERN = /^[a-zA-Z_$][a-zA-Z0-9_$.]*$/;
 
 /**
  * Dangerous patterns that should never appear in a callback name,
@@ -15,7 +16,6 @@ const SAFE_CALLBACK_PATTERN = /^[a-zA-Z_$][a-zA-Z0-9_$.[\]]*$/;
  */
 const DANGEROUS_CALLBACK_PATTERNS = [
   /\.\./,        // prototype chain traversal
-  /\[\s*\]/,     // empty bracket access
 ] as const;
 
 /**

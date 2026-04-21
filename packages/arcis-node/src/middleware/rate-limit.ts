@@ -42,14 +42,17 @@ export function createRateLimiter(options: RateLimitOptions = {}): RateLimiterMi
     statusCode = RATE_LIMIT.DEFAULT_STATUS_CODE,
     keyGenerator = (req) => {
       const ip = req.ip ?? req.socket?.remoteAddress;
-      if (!ip) {
-        console.warn(
-          '[arcis] Rate limiter: cannot resolve client IP. All unresolvable clients share ' +
-          'one counter. Set Express trust proxy if behind a reverse proxy.'
-        );
-        return 'unknown';
-      }
-      return ip;
+      if (ip) return ip;
+      // SECURITY: When IP is unresolvable, fall back to a fingerprint of UA +
+      // Accept-Language so unresolvable clients don't share a single counter
+      // (one attacker could exhaust the limit and block every other client).
+      const ua = (req.headers['user-agent'] ?? '') as string;
+      const lang = (req.headers['accept-language'] ?? '') as string;
+      const fp = `${ua}|${lang}`;
+      // Small non-crypto hash — just needs to disperse unknown clients
+      let hash = 0;
+      for (let i = 0; i < fp.length; i++) hash = ((hash << 5) - hash + fp.charCodeAt(i)) | 0;
+      return `unknown:${hash.toString(36)}`;
     },
     skip,
     store: externalStore,

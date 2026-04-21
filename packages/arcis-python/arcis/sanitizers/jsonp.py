@@ -8,13 +8,13 @@ XSS injection via ?callback= query parameters.
 import re
 from typing import Optional
 
-# Valid JSONP callback: alphanumeric, underscore, dot, dollar, brackets
-_SAFE_CALLBACK_PATTERN = re.compile(r"^[a-zA-Z_$][a-zA-Z0-9_$.[\]]*$")
+# Valid JSONP callback: alphanumeric, underscore, dollar, dot only.
+# Brackets rejected — enables bypasses like `cb[x` (unbalanced) and not needed in practice.
+_SAFE_CALLBACK_PATTERN = re.compile(r"^[a-zA-Z_$][a-zA-Z0-9_$.]*$")
 
 # Dangerous patterns within an otherwise-valid callback
 _DANGEROUS_CALLBACK_PATTERNS = [
     re.compile(r"\.\."),        # prototype chain traversal
-    re.compile(r"\[\s*\]"),     # empty bracket access
 ]
 
 

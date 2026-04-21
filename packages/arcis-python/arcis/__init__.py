@@ -141,6 +141,7 @@ from .middleware.rate_limit_token import TokenBucketLimiter
 from .middleware.bot_detection import BotProtection, BotDenied, BotDetectionResult, detect_bot
 from .middleware.hpp import HppProtection, create_hpp
 from .middleware.csrf import CsrfProtection, create_csrf, generate_csrf_token, validate_csrf_token
+from .middleware.signup_protection import SignupProtection, SignupCheckResult, check_signup
 
 from .utils import (
     parse_duration,
@@ -222,6 +223,10 @@ __all__ = [
     "BotDenied",
     "BotDetectionResult",
     "detect_bot",
+    # Signup protection (composite: email + bot + rate-limit)
+    "SignupProtection",
+    "SignupCheckResult",
+    "check_signup",
     # PII detection and redaction
     "scan_pii",
     "detect_pii",

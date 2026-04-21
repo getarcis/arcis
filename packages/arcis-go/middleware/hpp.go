@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,6 +18,12 @@ type HppOptions struct {
 
 	// DisableFormCheck disables form body normalization (default: enabled).
 	DisableFormCheck bool
+
+	// OnParseError is invoked when ParseForm fails. Default: log to stderr via
+	// the standard logger. Set to a no-op func to silence. The middleware then
+	// still skips form normalization for that request (we can't normalize what
+	// we couldn't parse), but the operator is at least told about it.
+	OnParseError func(r *http.Request, err error)
 }
 
 // HppMiddleware normalizes duplicate query and form parameters to their last
@@ -69,7 +76,13 @@ func HppMiddleware(opts HppOptions) func(http.Handler) http.Handler {
 						strings.Contains(contentType, "multipart/form-data")
 
 					if isForm {
-						if err := r.ParseForm(); err == nil {
+						if err := r.ParseForm(); err != nil {
+							if opts.OnParseError != nil {
+								opts.OnParseError(r, err)
+							} else {
+								log.Printf("[arcis] hpp: ParseForm failed, skipping form normalization: %v", err)
+							}
+						} else {
 							for key, values := range r.PostForm {
 								if len(values) > 1 && !whitelist[key] {
 									last := values[len(values)-1]

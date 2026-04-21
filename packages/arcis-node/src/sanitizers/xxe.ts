@@ -11,6 +11,14 @@ import type { SanitizeResult, ThreatInfo } from '../core/types';
  * Covers DOCTYPE declarations, ENTITY definitions, SYSTEM/PUBLIC references,
  * parameter entities, and CDATA abuse.
  */
+/**
+ * Billion-laughs defense: cap raw XML input length and the count of
+ * entity references. A valid document rarely needs more than a handful of
+ * entities; thousands of `&foo;` references is the classic bomb shape.
+ */
+const MAX_XXE_INPUT_BYTES = 1_000_000; // 1 MB — above any reasonable config/SOAP payload
+const MAX_ENTITY_REFERENCES = 64;
+
 const XXE_DETECT_PATTERNS = [
   /** DOCTYPE declaration */
   /<!DOCTYPE\b/gi,
@@ -52,6 +60,22 @@ export function sanitizeXxe(input: string, collectThreats = false): string | San
   const threats: ThreatInfo[] = [];
   let value = input;
   let wasSanitized = false;
+
+  // Billion-laughs defense: oversize input or many entity refs → flatten to empty.
+  // Safer to discard than to attempt partial sanitization of a bomb payload.
+  if (value.length > MAX_XXE_INPUT_BYTES) {
+    if (collectThreats) {
+      threats.push({ type: 'xxe', pattern: 'oversize_input', original: `length=${value.length}` });
+    }
+    return collectThreats ? { value: '', wasSanitized: true, threats } : '';
+  }
+  const entityRefs = value.match(/&\w+;/g);
+  if (entityRefs && entityRefs.length > MAX_ENTITY_REFERENCES) {
+    if (collectThreats) {
+      threats.push({ type: 'xxe', pattern: 'entity_expansion', original: `count=${entityRefs.length}` });
+    }
+    return collectThreats ? { value: '', wasSanitized: true, threats } : '';
+  }
 
   for (const pattern of XXE_REMOVE_PATTERNS) {
     pattern.lastIndex = 0;
