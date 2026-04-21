@@ -84,7 +84,7 @@ func TestConformance_SanitizeString_XSS(t *testing.T) {
 		if !ok {
 			continue
 		}
-		got := SanitizeString(v.Input)
+		got := SanitizeXSS(v.Input)
 		if strings.Contains(strings.ToLower(got), strings.ToLower(forbidden)) {
 			t.Errorf("xss vector %d (input=%q): output %q still contains forbidden %q",
 				i, v.Input, got, forbidden)
@@ -99,7 +99,7 @@ func TestConformance_SanitizeString_SQL(t *testing.T) {
 		if !ok {
 			continue
 		}
-		got := SanitizeString(v.Input)
+		got := SanitizeSQL(v.Input)
 		if strings.Contains(strings.ToLower(got), strings.ToLower(forbidden)) {
 			t.Errorf("sql vector %d (input=%q): output %q still contains forbidden %q",
 				i, v.Input, got, forbidden)
