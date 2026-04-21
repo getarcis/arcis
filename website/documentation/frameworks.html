@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+  <title>Framework Adapters · Arcis Docs</title>
+  <meta name="description" content="Use Arcis with Express, FastAPI, Flask, Django, Gin, Echo, and net/http.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../#how-it-works">How It Works</a></li>
+        <li><a href="../#languages">Languages</a></li>
+        <li><a href="../#threats">Threats</a></li>
+        <li><a href="../#comparison">Compare</a></li>
+        <li><a href="./" class="active">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="./getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="./">Introduction</a></li>
+        <li><a href="./getting-started.html">Getting Started</a></li>
+      </ul>
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="./frameworks.html" class="active">Framework Adapters</a></li>
+        <li><a href="./configuration.html">Configuration</a></li>
+        <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+      </ul>
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="./api-reference.html">API Reference</a></li>
+        <li><a href="./cli.html">CLI Tools</a></li>
+      </ul>
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb"><a href="./">Docs</a> / Framework Adapters</div>
+      <h1>Framework Adapters</h1>
+      <p class="lead">
+        Arcis has built-in adapters for the most popular web frameworks. The core functions are framework-agnostic, so Arcis also works with any framework that isn't listed here.
+      </p>
+
+      <h2 id="express">Express (Node.js)</h2>
+      <p>The primary Node.js adapter. Works with Express 4 and 5.</p>
+<pre><code><span class="k">import</span> express <span class="k">from</span> <span class="s">'express'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> arcis <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+
+<span class="k">const</span> app = <span class="f">express</span><span class="p">();</span>
+app.<span class="f">use</span><span class="p">(</span>express.<span class="f">json</span><span class="p">());</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">());</span></code></pre>
+
+      <h2 id="fastify-koa-hono">Fastify / Koa / Hono (Node.js)</h2>
+      <p>Built-in adapters are on the roadmap. Today, use the core sanitize functions directly:</p>
+<pre><code><span class="c">// Fastify</span>
+<span class="k">import</span> <span class="p">{</span> sanitizeObject <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+
+fastify.<span class="f">addHook</span><span class="p">(</span><span class="s">'preHandler'</span><span class="p">,</span> <span class="k">async</span> <span class="p">(</span>req<span class="p">,</span> reply<span class="p">)</span> <span class="k">=></span> <span class="p">{</span>
+  <span class="k">if</span> <span class="p">(</span>req.body<span class="p">)</span> req.body = <span class="f">sanitizeObject</span><span class="p">(</span>req.body<span class="p">);</span>
+  <span class="k">if</span> <span class="p">(</span>req.query<span class="p">)</span> req.query = <span class="f">sanitizeObject</span><span class="p">(</span>req.query<span class="p">);</span>
+<span class="p">});</span></code></pre>
+
+      <h2 id="fastapi">FastAPI (Python)</h2>
+<pre><code><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+<span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware
+
+app = <span class="f">FastAPI</span><span class="p">()</span>
+app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">)</span></code></pre>
+      <p>For custom config:</p>
+<pre><code><span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware<span class="p">,</span> Config
+
+app.<span class="f">add_middleware</span><span class="p">(</span>
+    ArcisMiddleware<span class="p">,</span>
+    config=<span class="f">Config</span><span class="p">(</span>
+        sanitize_xss=<span class="k">True</span><span class="p">,</span>
+        rate_limit_max=<span class="n">60</span><span class="p">,</span>
+    <span class="p">),</span>
+<span class="p">)</span></code></pre>
+
+      <h2 id="flask">Flask (Python)</h2>
+<pre><code><span class="k">from</span> flask <span class="k">import</span> Flask
+<span class="k">from</span> arcis <span class="k">import</span> Arcis
+
+app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p">)</span>
+<span class="f">Arcis</span><span class="p">(</span>app<span class="p">)</span></code></pre>
+
+      <h2 id="django">Django (Python)</h2>
+      <p>Add to <code>MIDDLEWARE</code> in <code>settings.py</code>:</p>
+<pre><code>MIDDLEWARE = <span class="p">[</span>
+    <span class="s">'django.middleware.security.SecurityMiddleware'</span><span class="p">,</span>
+    <span class="s">'arcis.django.ArcisMiddleware'</span><span class="p">,</span>   <span class="c"># add this line</span>
+    <span class="s">'django.middleware.common.CommonMiddleware'</span><span class="p">,</span>
+    <span class="c"># ... rest of your middleware</span>
+<span class="p">]</span></code></pre>
+
+      <h2 id="gin">Gin (Go)</h2>
+<pre><code><span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"github.com/gin-gonic/gin"</span>
+    arcisgin <span class="s">"github.com/GagancM/arcis/gin"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    r := gin.<span class="f">Default</span><span class="p">()</span>
+    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">())</span>
+    r.<span class="f">Run</span><span class="p">()</span>
+<span class="p">}</span></code></pre>
+
+      <h2 id="echo">Echo (Go)</h2>
+<pre><code><span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"github.com/labstack/echo/v4"</span>
+    arcisecho <span class="s">"github.com/GagancM/arcis/echo"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    e := echo.<span class="f">New</span><span class="p">()</span>
+    e.<span class="f">Use</span><span class="p">(</span>arcisecho.<span class="f">Middleware</span><span class="p">())</span>
+    e.<span class="f">Start</span><span class="p">(</span><span class="s">":8080"</span><span class="p">)</span>
+<span class="p">}</span></code></pre>
+
+      <h2 id="net-http">net/http (Go)</h2>
+      <p>Use the core Arcis middleware with the standard library:</p>
+<pre><code><span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"net/http"</span>
+    <span class="s">"github.com/GagancM/arcis"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    mux := http.<span class="f">NewServeMux</span><span class="p">()</span>
+    mux.<span class="f">HandleFunc</span><span class="p">(</span><span class="s">"/"</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span>w http.ResponseWriter<span class="p">,</span> r *http.Request<span class="p">)</span> <span class="p">{</span>
+        w.<span class="f">Write</span><span class="p">([]</span><span class="k">byte</span><span class="p">(</span><span class="s">"ok"</span><span class="p">))</span>
+    <span class="p">})</span>
+
+    handler := arcis.<span class="f">Wrap</span><span class="p">(</span>mux<span class="p">)</span>
+    http.<span class="f">ListenAndServe</span><span class="p">(</span><span class="s">":8080"</span><span class="p">,</span> handler<span class="p">)</span>
+<span class="p">}</span></code></pre>
+
+      <div class="docs-pagination">
+        <a href="./getting-started.html" class="prev">
+          <span class="nav-label">← Previous</span>
+          <span class="nav-title">Getting Started</span>
+        </a>
+        <a href="./configuration.html" class="next">
+          <span class="nav-label">Next →</span>
+          <span class="nav-title">Configuration</span>
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="docs-footer">
+    <div>© 2026 Arcis. MIT Licensed.</div>
+    <div><a href="../">Home</a> · <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></div>
+  </footer>
+
+  <script>
+    fetch('https://api.github.com/repos/Gagancm/arcis')
+      .then(r => r.json())
+      .then(d => { if (d.stargazers_count !== undefined) { const el = document.getElementById('starCount'); if (el) el.textContent = d.stargazers_count; } })
+      .catch(() => {});
+  </script>
+</body>
+</html>
