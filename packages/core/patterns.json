@@ -49,6 +49,13 @@
           "redos_safe": true
         },
         {
+          "id": "xss-style-tag",
+          "pattern": "<style[\\s>]",
+          "flags": "gi",
+          "description": "Detects style tags (CSS injection, expression(), behavior: attacks)",
+          "redos_safe": true
+        },
+        {
           "id": "xss-object",
           "pattern": "<object",
           "flags": "gi",

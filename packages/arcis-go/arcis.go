@@ -329,6 +329,22 @@ var DetectBot = middleware.DetectBot
 // BotProtection creates an http.Handler middleware for bot detection.
 var BotProtection = middleware.BotProtection
 
+// ─── Tier 2: Signup Protection ──────────────────────────────────────────────
+
+// NewSignupProtection creates a composite signup-form protector combining
+// email validation, bot detection, and a dedicated per-IP rate limit.
+var NewSignupProtection = middleware.NewSignupProtection
+
+// DefaultSignupProtectionOptions returns options with every check enabled.
+var DefaultSignupProtectionOptions = middleware.DefaultSignupProtectionOptions
+
+type (
+	SignupProtection        = middleware.SignupProtection
+	SignupProtectionOptions = middleware.SignupProtectionOptions
+	SignupCheckResult       = middleware.SignupCheckResult
+	SignupBlockReason       = middleware.SignupBlockReason
+)
+
 // ─── Tier 2: PII Scanning/Redaction ─────────────────────────────────────────
 
 // ScanPii finds all PII occurrences in a string.

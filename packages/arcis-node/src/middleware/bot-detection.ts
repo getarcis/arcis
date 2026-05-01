@@ -227,8 +227,19 @@ function detectBehavioralSignals(req: Request): string[] {
  */
 export function detectBot(req: Request): BotDetectionResult {
   const rawUa = req.headers['user-agent'] ?? '';
-  // Truncate to prevent CPU abuse from very long UA strings
-  const ua = rawUa.length > 2048 ? rawUa.slice(0, 2048) : rawUa;
+  // SECURITY: A UA longer than 2048 chars is either buggy client or attempt to hide
+  // a bot signature past a truncation boundary. Flag as suspicious bot directly —
+  // don't silently truncate and continue.
+  if (rawUa.length > 2048) {
+    return {
+      isBot: true,
+      category: 'UNKNOWN',
+      name: null,
+      confidence: 0.9,
+      signals: detectBehavioralSignals(req),
+    };
+  }
+  const ua = rawUa;
   const signals = detectBehavioralSignals(req);
 
   // No User-Agent at all

@@ -28,8 +28,8 @@ describe('sanitizeJsonpCallback', () => {
       expect(sanitizeJsonpCallback('_cb')).toBe('_cb');
     });
 
-    it('should accept callback with bracket notation', () => {
-      expect(sanitizeJsonpCallback('obj[0]')).toBe('obj[0]');
+    it('should reject callback with bracket notation (M3 audit fix)', () => {
+      expect(sanitizeJsonpCallback('obj[0]')).toBeNull();
     });
 
     it('should accept jQuery-style callback', () => {

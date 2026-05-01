@@ -15,6 +15,7 @@ var xssPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)vbscript:`),
 	regexp.MustCompile(`(?i)on\w+\s*=`),
 	regexp.MustCompile(`(?i)<iframe`),
+	regexp.MustCompile(`(?i)<style[\s>]`),
 	regexp.MustCompile(`(?i)<object`),
 	regexp.MustCompile(`(?i)<embed`),
 	regexp.MustCompile(`(?i)(?:^|[\s"'=])data:`),
@@ -49,6 +50,8 @@ var pathPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\.\.\\`),
 	regexp.MustCompile(`(?i)%2e%2e`),
 	regexp.MustCompile(`(?i)%252e`),
+	regexp.MustCompile(`(?i)%00`), // null byte injection — truncates file paths (file.txt%00.jpg)
+	regexp.MustCompile(`\x00`),    // literal null byte
 }
 
 // Pre-compiled command injection patterns
@@ -75,8 +78,10 @@ var sstiDetectPatterns = []*regexp.Regexp{
 // Only strip ${...} and #{...} when operators are present inside the expression.
 var sstiRemovePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\{\{.*?\}\}`),                           // Jinja2 / Twig
+	regexp.MustCompile(`\$\{[^}]*__\w+__[^}]*\}`),              // Freemarker with Python dunders
 	regexp.MustCompile(`\$\{[^}]*[?!()*+\-/][^}]*\}`),          // Freemarker with operators
 	regexp.MustCompile(`<%[\s\S]*?%>`),                          // ERB / EJS
+	regexp.MustCompile(`#\{[^}]*__\w+__[^}]*\}`),               // Pug with Python dunders
 	regexp.MustCompile(`#\{[^}]*[?!()*+\-/][^}]*\}`),           // Pug with operators
 	regexp.MustCompile(`(?i)__(?:class|mro|subclasses|globals|builtins|import)__`),
 }

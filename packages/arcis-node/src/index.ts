@@ -43,6 +43,13 @@ export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from '
 export { botProtection, detectBot } from './middleware/bot-detection';
 export { csrfProtection, createCsrf, generateCsrfToken, validateCsrfToken } from './middleware/csrf';
 export { hpp, createHpp } from './middleware/hpp';
+export { signupProtection, checkSignup } from './middleware/signup-protection';
+export type {
+  SignupProtectionOptions,
+  SignupCheckResult,
+  SignupBlockReason,
+  SignupProtectionMiddleware,
+} from './middleware/signup-protection';
 
 // =============================================================================
 // SANITIZERS
@@ -86,6 +93,17 @@ export { fingerprint } from './utils/fingerprint';
 // LOGGING
 // =============================================================================
 export { createSafeLogger, createRedactor, safeLog } from './logging/redactor';
+
+// =============================================================================
+// TELEMETRY
+// =============================================================================
+export { TelemetryClient, TelemetryHttpError } from './telemetry/client';
+export type {
+  TelemetryEvent,
+  TelemetryOptions,
+  TelemetryDecision,
+  TelemetrySeverity,
+} from './telemetry/types';
 
 // =============================================================================
 // STORES

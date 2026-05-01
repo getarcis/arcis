@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+  <title>Configuration · Arcis Docs</title>
+  <meta name="description" content="Configure Arcis sanitizers, rate limiters, headers, and CORS.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../#how-it-works">How It Works</a></li>
+        <li><a href="../#languages">Languages</a></li>
+        <li><a href="../#threats">Threats</a></li>
+        <li><a href="../#comparison">Compare</a></li>
+        <li><a href="./" class="active">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="./getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="./">Introduction</a></li>
+        <li><a href="./getting-started.html">Getting Started</a></li>
+      </ul>
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="./frameworks.html">Framework Adapters</a></li>
+        <li><a href="./configuration.html" class="active">Configuration</a></li>
+        <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+      </ul>
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="./api-reference.html">API Reference</a></li>
+        <li><a href="./cli.html">CLI Tools</a></li>
+      </ul>
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb"><a href="./">Docs</a> / Configuration</div>
+      <h1>Configuration</h1>
+      <p class="lead">
+        Arcis works out of the box with secure defaults. Every option is tunable when you need it. You only opt out of protection, never in.
+      </p>
+
+      <h2 id="passing-config">Passing config</h2>
+      <p>All configuration goes through a single options object passed to <code>arcis()</code>:</p>
+<pre><code>app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">({</span>
+  sanitize<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+  sanitizeXss<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+  rateLimit<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+  rateLimitMax<span class="p">:</span> <span class="n">100</span><span class="p">,</span>
+  rateLimitWindow<span class="p">:</span> <span class="n">60000</span><span class="p">,</span>  <span class="c">// ms</span>
+  headers<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+  isDev<span class="p">:</span> process.env.NODE_ENV === <span class="s">'development'</span><span class="p">,</span>
+<span class="p">}));</span></code></pre>
+
+      <h2 id="sanitization">Sanitization options</h2>
+      <table>
+        <thead>
+          <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>sanitize</code></td><td>true</td><td>Master switch. Disables all sanitization if false.</td></tr>
+          <tr><td><code>sanitizeXss</code></td><td>true</td><td>Strip XSS patterns and HTML-encode output.</td></tr>
+          <tr><td><code>sanitizeSql</code></td><td>true</td><td>Strip SQL injection patterns.</td></tr>
+          <tr><td><code>sanitizeNoSql</code></td><td>true</td><td>Block 35 MongoDB operators ($gt, $where, etc.).</td></tr>
+          <tr><td><code>sanitizePath</code></td><td>true</td><td>Strip path traversal (../, %2e%2e, etc.).</td></tr>
+          <tr><td><code>sanitizeCmd</code></td><td>true</td><td>Strip command injection patterns.</td></tr>
+          <tr><td><code>sanitizeSsti</code></td><td>true</td><td>Strip SSTI patterns (Jinja2, Twig, ERB, Pug).</td></tr>
+          <tr><td><code>sanitizeXxe</code></td><td>true</td><td>Strip XXE patterns from XML input.</td></tr>
+          <tr><td><code>maxInputSize</code></td><td>1_000_000</td><td>Max input size in bytes. Inputs over this are truncated.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="rate-limiting">Rate limiting</h2>
+      <table>
+        <thead>
+          <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>rateLimit</code></td><td>true</td><td>Enable rate limiting.</td></tr>
+          <tr><td><code>rateLimitMax</code></td><td>100</td><td>Max requests per window.</td></tr>
+          <tr><td><code>rateLimitWindow</code></td><td>60000</td><td>Window in milliseconds.</td></tr>
+          <tr><td><code>rateLimitStore</code></td><td>memory</td><td>Storage: memory, Redis, or custom.</td></tr>
+          <tr><td><code>rateLimitSkip</code></td><td>—</td><td>Function <code>(req) =&gt; boolean</code>. Return true to skip rate limiting.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Using Redis</h3>
+<pre><code><span class="k">import</span> <span class="p">{</span> arcis<span class="p">,</span> RedisStore <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> createClient <span class="p">}</span> <span class="k">from</span> <span class="s">'redis'</span><span class="p">;</span>
+
+<span class="k">const</span> redis = <span class="f">createClient</span><span class="p">();</span>
+<span class="k">await</span> redis.<span class="f">connect</span><span class="p">();</span>
+
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">({</span>
+  rateLimitStore<span class="p">:</span> <span class="k">new</span> <span class="f">RedisStore</span><span class="p">({</span> client<span class="p">:</span> redis <span class="p">}),</span>
+<span class="p">}));</span></code></pre>
+
+      <h2 id="security-headers">Security headers</h2>
+      <table>
+        <thead>
+          <tr><th>Option</th><th>Default</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>headers</code></td><td>true</td></tr>
+          <tr><td><code>csp</code></td><td>strict policy (see below)</td></tr>
+          <tr><td><code>frameOptions</code></td><td>DENY</td></tr>
+          <tr><td><code>hstsMaxAge</code></td><td>31536000 (1 year)</td></tr>
+          <tr><td><code>hstsSubdomains</code></td><td>true</td></tr>
+          <tr><td><code>referrerPolicy</code></td><td>strict-origin-when-cross-origin</td></tr>
+          <tr><td><code>crossOriginOpenerPolicy</code></td><td>same-origin</td></tr>
+          <tr><td><code>crossOriginResourcePolicy</code></td><td>same-origin</td></tr>
+          <tr><td><code>crossOriginEmbedderPolicy</code></td><td>require-corp</td></tr>
+        </tbody>
+      </table>
+
+      <p>Default CSP:</p>
+<pre><code>default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+img-src 'self' data: https:; font-src 'self'; object-src 'none';
+frame-ancestors 'none';</code></pre>
+
+      <h2 id="cors">CORS</h2>
+      <p><code>corsProtection()</code> is opt-in middleware. Pass allowed origins explicitly:</p>
+<pre><code><span class="k">import</span> <span class="p">{</span> corsProtection <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+
+app.<span class="f">use</span><span class="p">(</span><span class="f">corsProtection</span><span class="p">({</span>
+  origin<span class="p">:</span> <span class="p">[</span><span class="s">'https://yourapp.com'</span><span class="p">,</span> <span class="s">'https://admin.yourapp.com'</span><span class="p">],</span>
+  methods<span class="p">:</span> <span class="p">[</span><span class="s">'GET'</span><span class="p">,</span> <span class="s">'POST'</span><span class="p">],</span>
+  credentials<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+<span class="p">}));</span></code></pre>
+
+      <h2 id="csrf">CSRF</h2>
+<pre><code><span class="k">import</span> <span class="p">{</span> csrfProtection <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+
+app.<span class="f">use</span><span class="p">(</span><span class="f">csrfProtection</span><span class="p">({</span>
+  cookieName<span class="p">:</span> <span class="s">'__Host-csrf'</span><span class="p">,</span>   <span class="c">// __Host- prefix requires Secure + Path=/</span>
+  useHostPrefix<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+  skipCsrf<span class="p">:</span> <span class="p">(</span>req<span class="p">)</span> <span class="k">=></span> req.path.<span class="f">startsWith</span><span class="p">(</span><span class="s">'/api/webhook/'</span><span class="p">),</span>
+<span class="p">}));</span></code></pre>
+
+      <h2 id="dev-mode">Development mode</h2>
+      <p>In dev, show detailed error info. In production (default), scrub all sensitive info from errors.</p>
+<pre><code>app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">({</span>
+  isDev<span class="p">:</span> process.env.NODE_ENV === <span class="s">'development'</span><span class="p">,</span>
+<span class="p">}));</span></code></pre>
+
+      <div class="docs-pagination">
+        <a href="./frameworks.html" class="prev">
+          <span class="nav-label">← Previous</span>
+          <span class="nav-title">Framework Adapters</span>
+        </a>
+        <a href="./attack-vectors.html" class="next">
+          <span class="nav-label">Next →</span>
+          <span class="nav-title">Attack Vectors</span>
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="docs-footer">
+    <div>© 2026 Arcis. MIT Licensed.</div>
+    <div><a href="../">Home</a> · <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></div>
+  </footer>
+
+  <script>
+    fetch('https://api.github.com/repos/Gagancm/arcis')
+      .then(r => r.json())
+      .then(d => { if (d.stargazers_count !== undefined) { const el = document.getElementById('starCount'); if (el) el.textContent = d.stargazers_count; } })
+      .catch(() => {});
+  </script>
+</body>
+</html>
