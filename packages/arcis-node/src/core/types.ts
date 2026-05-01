@@ -4,6 +4,7 @@
  */
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { TelemetryOptions } from '../telemetry/types';
 
 // =============================================================================
 // MAIN CONFIGURATION
@@ -19,6 +20,11 @@ export interface ArcisOptions {
   headers?: boolean | HeaderOptions;
   /** Enable/configure safe logging. Default: true */
   logging?: boolean | LogOptions;
+  /**
+   * Stream decision events to a dashboard endpoint. Opt-in: zero overhead when omitted.
+   * See spec/API_SPEC.md §9.
+   */
+  telemetry?: TelemetryOptions;
 }
 
 // =============================================================================

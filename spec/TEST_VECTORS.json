@@ -403,5 +403,212 @@
         "expected_response_contains": "Something broke"
       }
     ]
+  },
+
+  "telemetry": {
+    "description": "Round-trip tests for SDK -> POST /v1/events -> GET /v1/events. All SDKs must emit the same shape; the dashboard server must accept it and return it unchanged.",
+
+    "minimal_deny_event": {
+      "sdk_emits": {
+        "ts": "2026-04-23T04:12:00.000Z",
+        "ip": "185.220.101.47",
+        "method": "POST",
+        "path": "/api/login",
+        "decision": "deny",
+        "vector": "sql",
+        "rule": "sql/union-select",
+        "severity": "critical",
+        "userAgent": "sqlmap/1.8#stable",
+        "status": 403,
+        "matchedPattern": "UNION SELECT",
+        "latencyMs": 0.48
+      },
+      "expected_behavior": "Server accepts the event and returns { inserted: 1 }",
+      "expected_findings_upsert": {
+        "rule": "sql/union-select",
+        "count_delta": 1,
+        "last_seen_matches_ts": true
+      }
+    },
+
+    "minimal_allow_event": {
+      "sdk_emits": {
+        "ts": "2026-04-23T04:13:10.000Z",
+        "ip": "71.182.12.8",
+        "method": "GET",
+        "path": "/api/products",
+        "decision": "allow",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15",
+        "status": 200,
+        "latencyMs": 0.21
+      },
+      "expected_behavior": "Server accepts event with no vector/rule/severity. No finding is upserted.",
+      "expected_findings_upsert": null
+    },
+
+    "challenge_event": {
+      "sdk_emits": {
+        "ts": "2026-04-23T04:14:05.000Z",
+        "ip": "103.248.114.12",
+        "method": "GET",
+        "path": "/api/search",
+        "decision": "challenge",
+        "vector": "bot",
+        "rule": "bot/scanner",
+        "severity": "medium",
+        "userAgent": "Nikto/2.5.0",
+        "status": 429,
+        "reason": "Known scanner UA",
+        "latencyMs": 0.35
+      },
+      "expected_behavior": "Server accepts challenge decision. Severity 'medium' landed. Reason preserved."
+    },
+
+    "batch_ingest": {
+      "sdk_emits": {
+        "events": [
+          {
+            "ip": "1.2.3.4",
+            "method": "POST",
+            "path": "/api/users",
+            "decision": "deny",
+            "vector": "xss",
+            "rule": "xss/script-tag",
+            "severity": "high",
+            "userAgent": "curl/8.4.0",
+            "status": 403,
+            "matchedPattern": "<script>",
+            "latencyMs": 0.55
+          },
+          {
+            "ip": "1.2.3.4",
+            "method": "GET",
+            "path": "/api/comments",
+            "decision": "allow",
+            "userAgent": "curl/8.4.0",
+            "status": 200,
+            "latencyMs": 0.18
+          }
+        ]
+      },
+      "expected_behavior": "Server returns { inserted: 2 }. One finding upserted (xss/script-tag). Allowed event has no finding."
+    },
+
+    "invalid_missing_required_field": {
+      "sdk_emits": {
+        "events": [
+          {
+            "ip": "1.2.3.4"
+          }
+        ]
+      },
+      "expected_behavior": "Server returns HTTP 400 because method, path, and decision are required."
+    },
+
+    "invalid_empty_batch": {
+      "sdk_emits": {
+        "events": []
+      },
+      "expected_behavior": "Server returns HTTP 400 because batch must contain 1-500 events."
+    },
+
+    "invalid_bad_decision_enum": {
+      "sdk_emits": {
+        "events": [
+          {
+            "ip": "1.2.3.4",
+            "method": "GET",
+            "path": "/",
+            "decision": "maybe",
+            "userAgent": "",
+            "status": 200
+          }
+        ]
+      },
+      "expected_behavior": "Server returns HTTP 400 because 'maybe' is not in the decision enum."
+    },
+
+    "server_generates_missing_fields": {
+      "sdk_emits": {
+        "events": [
+          {
+            "ip": "1.2.3.4",
+            "method": "GET",
+            "path": "/api/health",
+            "decision": "allow"
+          }
+        ]
+      },
+      "expected_behavior": "Server accepts event. Missing id is auto-generated. Missing ts defaults to server now(). Missing userAgent defaults to ''. Missing status defaults to 200."
+    },
+
+    "batch_size_limit": {
+      "sdk_emits_count": 501,
+      "expected_behavior": "Server returns HTTP 400 because batch exceeds 500-event limit. SDK must split batches >= 500 before sending."
+    },
+
+    "cross_sdk_parity": {
+      "description": "Given the same attack payload hitting Node, Python, and Go adapters, the TelemetryEvent emitted MUST have identical values for: decision, vector, rule, severity, matchedPattern. ts and latencyMs will differ per request and are not compared. ip, method, path are framework-provided and must be canonical (lowercase method excluded — normalize uppercase).",
+      "parity_fields": ["decision", "vector", "rule", "severity", "matchedPattern"],
+      "non_parity_fields": ["id", "ts", "latencyMs", "userAgent"]
+    },
+
+    "middleware_emission": {
+      "description": "Cross-SDK parity vectors: given a request shape arriving at arcis() middleware, the emitted TelemetryEvent MUST match expected_event on the listed fields. Each SDK reuses these cases. Excluded from comparison: ts, latencyMs, ip, userAgent (framework- or time-derived).",
+      "compared_fields": ["decision", "vector", "severity", "status"],
+      "cases": [
+        {
+          "name": "clean_get_request",
+          "config": { "rateLimit": { "max": 100 } },
+          "request": { "method": "GET", "path": "/ping" },
+          "expected_event": {
+            "decision": "allow",
+            "status": 200
+          }
+        },
+        {
+          "name": "rate_limit_exceeded",
+          "config": { "rateLimit": { "max": 1, "windowMs": 60000 } },
+          "request": { "method": "GET", "path": "/x", "repeat": 2 },
+          "compare_event_index": 1,
+          "expected_event": {
+            "decision": "deny",
+            "vector": "rate-limit",
+            "severity": "medium",
+            "status": 429
+          }
+        },
+        {
+          "name": "sql_injection_in_body",
+          "config": { "rateLimit": false, "sanitize": { "mode": "reject" } },
+          "request": {
+            "method": "POST",
+            "path": "/login",
+            "body": { "user": "admin' UNION SELECT * FROM users --" }
+          },
+          "expected_event": {
+            "decision": "deny",
+            "vector": "sql",
+            "severity": "high",
+            "status": 400
+          }
+        },
+        {
+          "name": "command_injection_backticks",
+          "config": { "rateLimit": false, "sanitize": { "mode": "reject" } },
+          "request": {
+            "method": "POST",
+            "path": "/run",
+            "body": { "cmd": "hello `whoami` world" }
+          },
+          "expected_event": {
+            "decision": "deny",
+            "vector": "command",
+            "severity": "high",
+            "status": 400
+          }
+        }
+      ]
+    }
   }
 }

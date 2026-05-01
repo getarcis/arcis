@@ -17,8 +17,16 @@ from .sanitizers.sanitize import Sanitizer
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
 from .middleware.headers import SecurityHeaders
 from .middleware.error_handler import ErrorHandler
+from .middleware.telemetry import (
+    ArcisTelemetryMarker,
+    build_event,
+    extract_starlette_ip,
+)
 from .core.types import RateLimitEntry
 from .core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS, DEFAULT_RATE_LIMIT_MESSAGE
+from .telemetry.client import AsyncTelemetryClient
+from .telemetry.types import TelemetryOptions
+from .middleware.telemetry import telemetry_options_from_env as _telemetry_options_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -386,6 +394,9 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         async_rate_limiter: Optional[AsyncRateLimiter] = None,  # NEW
         security_headers: Optional[SecurityHeaders] = None,
         error_handler: Optional[ErrorHandler] = None,
+        # Telemetry: dict, TelemetryOptions, or pre-built AsyncTelemetryClient.
+        # When None, telemetry is fully disabled (zero overhead).
+        telemetry: Optional[Any] = None,
     ):
         super().__init__(app)
         
@@ -423,11 +434,59 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         self.error_handler = error_handler or (ErrorHandler(
             is_dev=is_dev,
         ) if error_handling else None)
-    
+
+        # ── Telemetry wiring ───────────────────────────────────────────────
+        # Accept four shapes for `telemetry`:
+        #   1. AsyncTelemetryClient — used as-is (caller-managed lifecycle)
+        #   2. TelemetryOptions     — wrap in a new client we own
+        #   3. dict                 — convert to TelemetryOptions, then wrap
+        #   4. None                 — fall back to ARCIS_* env vars; if those
+        #                             aren't set either, telemetry is fully
+        #                             disabled with zero overhead.
+        self._telemetry_client: Optional[AsyncTelemetryClient] = None
+        self._owns_telemetry_client: bool = False
+        if telemetry is None:
+            telemetry = _telemetry_options_from_env()
+        if telemetry is not None:
+            if isinstance(telemetry, AsyncTelemetryClient):
+                self._telemetry_client = telemetry
+            elif isinstance(telemetry, TelemetryOptions):
+                self._telemetry_client = AsyncTelemetryClient(telemetry)
+                self._owns_telemetry_client = True
+            elif isinstance(telemetry, dict):
+                self._telemetry_client = AsyncTelemetryClient(TelemetryOptions(**telemetry))
+                self._owns_telemetry_client = True
+            else:
+                raise TypeError(
+                    "ArcisMiddleware.telemetry must be AsyncTelemetryClient, "
+                    "TelemetryOptions, dict, or None"
+                )
+
+    async def close(self) -> None:
+        """Drain telemetry queue and stop the background flush task.
+
+        Only closes the client if this middleware created it (caller-supplied
+        clients are left alone — caller manages their lifecycle).
+        """
+        if self._telemetry_client is not None and self._owns_telemetry_client:
+            try:
+                await self._telemetry_client.close()
+            except Exception:
+                # fail-open on shutdown
+                pass
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Telemetry: start latency clock + give inner middleware a place to
+        # write attribution. The marker is only created when telemetry is
+        # active so the request.state surface stays clean otherwise.
+        telemetry_start: Optional[float] = None
+        if self._telemetry_client is not None:
+            telemetry_start = time.perf_counter()
+            request.state.__arcis = ArcisTelemetryMarker()
+
         # Rate limiting (async or sync)
         rate_limit_info = None
-        
+
         if self.async_rate_limiter:
             try:
                 rate_limit_info = await self.async_rate_limiter.check(request)
@@ -437,6 +496,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                     status_code=429,
                 )
                 response.headers["Retry-After"] = str(e.retry_after)
+                self._maybe_record(request, response, telemetry_start)
                 return response
         elif self.rate_limiter:
             try:
@@ -447,6 +507,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                     status_code=429,
                 )
                 response.headers["Retry-After"] = str(e.retry_after)
+                self._maybe_record(request, response, telemetry_start)
                 return response
         
         # Store sanitized body in request state if JSON
@@ -492,8 +553,48 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # Remove fingerprinting headers
         if "server" in response.headers:
             del response.headers["server"]
-        
+
+        # Telemetry: emit AFTER all response mutation has settled so latency
+        # and final status reflect what the client actually sees.
+        self._maybe_record(request, response, telemetry_start)
+
         return response
+
+    def _maybe_record(
+        self,
+        request: Request,
+        response: Response,
+        start: Optional[float],
+    ) -> None:
+        """Build and record a TelemetryEvent if telemetry is configured.
+
+        Never raises — telemetry must not affect the response. ``start`` is
+        ``None`` when telemetry is disabled, in which case this is a no-op.
+        """
+        if self._telemetry_client is None or start is None:
+            return
+        try:
+            from datetime import datetime, timezone
+
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            marker: Optional[ArcisTelemetryMarker] = getattr(
+                request.state, "__arcis", None
+            )
+            user_agent = request.headers.get("user-agent", "") if hasattr(request, "headers") else ""
+            event = build_event(
+                ip=extract_starlette_ip(request),
+                method=request.method,
+                path=request.url.path if hasattr(request, "url") else "/",
+                status=response.status_code,
+                user_agent=user_agent,
+                latency_ms=latency_ms,
+                marker=marker,
+                ts=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            )
+            self._telemetry_client.record(event)
+        except Exception:
+            # fail-open: telemetry must never break a response
+            return
 
 
 # ============================================================================
