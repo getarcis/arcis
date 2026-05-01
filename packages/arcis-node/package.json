@@ -1,6 +1,6 @@
 {
   "name": "@arcis/node",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Zero-dependency security middleware for Node.js. Protects against XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and 15+ more attack types. Supply chain attack scanner included.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -45,6 +45,11 @@
       "types": "./dist/utils/index.d.ts",
       "import": "./dist/utils/index.mjs",
       "require": "./dist/utils/index.js"
+    },
+    "./telemetry": {
+      "types": "./dist/telemetry/index.d.ts",
+      "import": "./dist/telemetry/index.mjs",
+      "require": "./dist/telemetry/index.js"
     }
   },
   "files": [
@@ -96,6 +101,7 @@
     "@types/node": "^25.5.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.58.0",
+    "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^10.1.0",
     "express": "^5.2.1",
     "tsup": "^8.0.1",

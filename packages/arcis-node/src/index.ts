@@ -95,6 +95,17 @@ export { fingerprint } from './utils/fingerprint';
 export { createSafeLogger, createRedactor, safeLog } from './logging/redactor';
 
 // =============================================================================
+// TELEMETRY
+// =============================================================================
+export { TelemetryClient, TelemetryHttpError } from './telemetry/client';
+export type {
+  TelemetryEvent,
+  TelemetryOptions,
+  TelemetryDecision,
+  TelemetrySeverity,
+} from './telemetry/types';
+
+// =============================================================================
 // STORES
 // =============================================================================
 export { MemoryStore } from './stores/memory';

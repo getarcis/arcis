@@ -15,9 +15,41 @@ import type {
 import { createHeaders } from './headers';
 import { createRateLimiter } from './rate-limit';
 import { createErrorHandler } from './error-handler';
+import { createTelemetryEmitter, tapSanitizerThreats } from './telemetry';
 import { createSanitizer } from '../sanitizers';
 import { validate } from '../validation';
 import { createSafeLogger } from '../logging';
+import { TelemetryClient } from '../telemetry/client';
+import type { TelemetryOptions } from '../telemetry/types';
+
+/**
+ * Build TelemetryOptions from `ARCIS_*` environment variables when the user
+ * didn't pass `telemetry` in `arcis({...})`. Returns undefined if `ARCIS_ENDPOINT`
+ * isn't set — preserving zero-overhead opt-in.
+ *
+ * Recognized env vars:
+ *   - `ARCIS_ENDPOINT`           (required to activate)
+ *   - `ARCIS_WORKSPACE_ID`       (optional; sent as x-workspace-id)
+ *   - `ARCIS_KEY`                (optional; sent as Authorization: Bearer <key>)
+ *   - `ARCIS_BATCH_SIZE`         (optional integer; default 50)
+ *   - `ARCIS_FLUSH_INTERVAL_MS`  (optional integer; default 5000)
+ *
+ * Explicit `options.telemetry` always wins over env. This preserves the
+ * existing opt-in contract and lets callers override env in tests.
+ */
+function buildTelemetryFromEnv(): TelemetryOptions | undefined {
+  const env = typeof process !== 'undefined' ? process.env : undefined;
+  const endpoint = env?.ARCIS_ENDPOINT;
+  if (!endpoint) return undefined;
+  const opts: TelemetryOptions = { endpoint };
+  if (env?.ARCIS_WORKSPACE_ID) opts.workspaceId = env.ARCIS_WORKSPACE_ID;
+  if (env?.ARCIS_KEY) opts.apiKey = env.ARCIS_KEY;
+  const batch = env?.ARCIS_BATCH_SIZE ? parseInt(env.ARCIS_BATCH_SIZE, 10) : NaN;
+  if (!Number.isNaN(batch)) opts.batchSize = batch;
+  const flush = env?.ARCIS_FLUSH_INTERVAL_MS ? parseInt(env.ARCIS_FLUSH_INTERVAL_MS, 10) : NaN;
+  if (!Number.isNaN(flush)) opts.flushIntervalMs = flush;
+  return opts;
+}
 
 /**
  * Create Arcis middleware with all protections enabled.
@@ -53,30 +85,48 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
   const middlewares: RequestHandler[] = [];
   const cleanupFns: (() => void)[] = [];
 
-  // Security headers (first, always)
+  // Telemetry emitter — first, so latency includes the full middleware chain.
+  // Opt-in: zero overhead unless options.telemetry.endpoint is set, OR
+  // ARCIS_ENDPOINT is present in the environment. Explicit options win.
+  let telemetryClient: TelemetryClient | undefined;
+  const telemetryOpts = options.telemetry?.endpoint
+    ? options.telemetry
+    : buildTelemetryFromEnv();
+  if (telemetryOpts) {
+    const client = new TelemetryClient(telemetryOpts);
+    telemetryClient = client;
+    middlewares.push(createTelemetryEmitter(client));
+    cleanupFns.push(() => {
+      void client.close();
+    });
+  }
+
+  // Security headers (always before rate-limit/sanitize)
   if (options.headers !== false) {
-    const headerOpts: HeaderOptions = typeof options.headers === 'object' 
-      ? options.headers 
+    const headerOpts: HeaderOptions = typeof options.headers === 'object'
+      ? options.headers
       : {};
     middlewares.push(createHeaders(headerOpts));
   }
 
-  // Rate limiting
+  // Rate limiting — emitter detects 429 from response status, no wrap needed.
   if (options.rateLimit !== false) {
-    const rateLimitOpts: RateLimitOptions = typeof options.rateLimit === 'object' 
-      ? options.rateLimit 
+    const rateLimitOpts: RateLimitOptions = typeof options.rateLimit === 'object'
+      ? options.rateLimit
       : {};
     const rateLimiter = createRateLimiter(rateLimitOpts);
     middlewares.push(rateLimiter);
     cleanupFns.push(() => rateLimiter.close());
   }
 
-  // Input sanitization (last, after body parsing)
+  // Input sanitization — wrap with telemetry tap so SecurityThreatError
+  // populates req.__arcis with vector/rule/severity for the emitter.
   if (options.sanitize !== false) {
-    const sanitizeOpts: SanitizeOptions = typeof options.sanitize === 'object' 
-      ? options.sanitize 
+    const sanitizeOpts: SanitizeOptions = typeof options.sanitize === 'object'
+      ? options.sanitize
       : {};
-    middlewares.push(createSanitizer(sanitizeOpts));
+    const sanitizer = createSanitizer(sanitizeOpts);
+    middlewares.push(telemetryClient ? tapSanitizerThreats(sanitizer) : sanitizer);
   }
 
   // Attach close() directly on the array so callers can clean up without any-casts.
