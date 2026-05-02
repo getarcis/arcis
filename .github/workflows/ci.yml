@@ -20,6 +20,10 @@ jobs:
           cache-dependency-path: packages/arcis-node/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      # Build before tests — tests/cli/arcis.test.ts invokes the built
+      # dispatcher (dist/cli/arcis.mjs) as a subprocess and beforeAll
+      # aborts if the artifact is missing.
+      - run: npm run build
       - run: npm test -- --run
 
   python:
