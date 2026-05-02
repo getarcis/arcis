@@ -210,6 +210,72 @@ describe('TelemetryClient', () => {
     });
   });
 
+  describe('queue overflow (drop-oldest)', () => {
+    it('caps the queue at maxQueueSize when fetch hangs', async () => {
+      // Hold fetch open so the worker can't drain. record() then has to
+      // hit the cap and drop-oldest the surplus.
+      let resolveFetch: ((r: Response) => void) | undefined;
+      fetchSpy.mockImplementation(
+        () => new Promise<Response>((res) => { resolveFetch = res; }),
+      );
+
+      const client = new TelemetryClient({
+        endpoint: ENDPOINT,
+        batchSize: 3,        // flush triggers every 3 events
+        maxQueueSize: 5,     // queue cap
+      });
+
+      for (let i = 0; i < 50; i++) {
+        client.record(sampleEvent({ path: `/p${i}` }));
+      }
+      // First 3 events drained into in-flight batch; remaining 47
+      // funnel into a queue capped at 5. Drop-oldest keeps the latest 5.
+      expect(client.pendingCount).toBeLessThanOrEqual(5);
+
+      resolveFetch?.(okResponse());
+      await client.close();
+    });
+
+    it('invokes onQueueOverflow with cumulative drop count', () => {
+      const onQueueOverflow = vi.fn();
+      // Stub fetch to a never-resolving promise so the queue actually fills.
+      fetchSpy.mockImplementation(() => new Promise<Response>(() => {}));
+
+      const client = new TelemetryClient({
+        endpoint: ENDPOINT,
+        batchSize: 3,
+        maxQueueSize: 5,
+        onQueueOverflow,
+      });
+
+      for (let i = 0; i < 20; i++) {
+        client.record(sampleEvent({ path: `/p${i}` }));
+      }
+      // First 3 drained into in-flight, 5 remain in queue, ~12 dropped.
+      expect(onQueueOverflow).toHaveBeenCalled();
+      const lastDropCount = onQueueOverflow.mock.calls.at(-1)![0];
+      expect(lastDropCount).toBeGreaterThanOrEqual(10);
+      void client.close();
+    });
+
+    it('floors maxQueueSize at batchSize', () => {
+      // Misconfiguration: maxQueueSize < batchSize would mean flush can
+      // never assemble a full batch. Client raises maxQueueSize to match.
+      // batchSize=10 not reached → no flush → all 5 events sit in queue.
+      const client = new TelemetryClient({
+        endpoint: ENDPOINT,
+        batchSize: 10,
+        maxQueueSize: 2,
+      });
+
+      for (let i = 0; i < 5; i++) {
+        client.record(sampleEvent({ path: `/p${i}` }));
+      }
+      expect(client.pendingCount).toBe(5);
+      void client.close();
+    });
+  });
+
   describe('close()', () => {
     it('attempts a final flush', async () => {
       const client = new TelemetryClient({ endpoint: ENDPOINT, batchSize: 100 });

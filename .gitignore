@@ -28,6 +28,7 @@ site-packages/
 .coverage
 .coverage.*
 coverage.xml
+coverage/
 htmlcov/
 *.lcov
 .nyc_output/
@@ -83,3 +84,6 @@ docs/
 arcis.sln
 AUDIT_SYSTEM.md
 CLAUDE.md
+
+# ─── Dashboard (kept local; not published with the SDKs) ───────────────────
+dashboard/

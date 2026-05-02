@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+
+  <title>Changelog · Arcis</title>
+  <meta name="description" content="Release history for Arcis security middleware. Every version, every vector closed.">
+  <meta property="og:title" content="Arcis · Changelog">
+  <meta property="og:description" content="Release history for Arcis security middleware.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #e4e5e0;
+      --bg-alt: #efefea;
+      --border: #d4d4d0;
+      --text: #14110f;
+      --text-soft: #5a5752;
+      --text-muted: #8a8780;
+      --primary: #00996D;
+      --primary-soft: rgba(0, 153, 109, 0.08);
+      --critical: #b91c1c;
+      --code: #1a1a1a;
+      --code-text: #f5f5f0;
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 880px; margin: 0 auto; padding: 0 1.5rem; }
+
+    /* ─── Two-pane layout: version index on the left, releases on the
+       right. The index is sticky so it stays visible while the user
+       scrolls through long histories. Collapses to a single column
+       below 920px (where the sidebar would crowd the content). */
+    .layout {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 3rem;
+      align-items: start;
+    }
+    .version-nav {
+      position: sticky;
+      top: 80px;
+      max-height: calc(100vh - 100px);
+      overflow-y: auto;
+      padding-right: 0.5rem;
+    }
+    .version-nav-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.85rem;
+      padding-left: 0.75rem;
+    }
+    .version-nav ul { list-style: none; padding: 0; margin: 0; }
+    .version-nav li { margin: 0; }
+    .version-nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      color: var(--text-soft);
+      font-size: 0.85rem;
+      font-family: 'JetBrains Mono', monospace;
+      transition: all 0.15s ease;
+      border-left: 2px solid transparent;
+    }
+    .version-nav-link:hover {
+      background: var(--bg-alt);
+      color: var(--text);
+      text-decoration: none;
+    }
+    .version-nav-link.active {
+      background: var(--primary-soft);
+      color: var(--primary);
+      border-left-color: var(--primary);
+    }
+    .version-nav-version { font-weight: 600; }
+    .version-nav-date {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+    }
+    @media (max-width: 920px) {
+      .layout { grid-template-columns: 1fr; gap: 1.5rem; }
+      .version-nav { position: static; max-height: none; padding-right: 0; }
+      .version-nav-title { margin-top: 1rem; }
+    }
+    /* Anchor offset — when jumping via #v1-4-4 the release card must
+       sit below the fixed nav, not under it. */
+    .release { scroll-margin-top: 96px; }
+
+    /* ─── Navigation — mirrors index.html so the navbar feels
+       continuous across pages. Same vars, same heights, same
+       Try/Star CTA on the right. */
+    .nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 64px;
+      background: rgba(228, 229, 224, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      z-index: 1000;
+      transition: box-shadow 0.3s ease;
+    }
+    .nav.scrolled { box-shadow: 0 1px 20px rgba(0,0,0,0.06); }
+    .nav-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-logo {
+      font-family: 'EB Garamond', serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .nav-logo span { color: var(--primary); }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      list-style: none;
+    }
+    .nav-links a {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-soft);
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .nav-cta { display: flex; align-items: center; gap: 0.75rem; }
+    .btn-star {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-soft);
+      background: var(--bg-alt);
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .btn-star:hover { border-color: var(--text-muted); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-decoration: none; }
+    .btn-star svg { width: 16px; height: 16px; }
+    .btn-star .star-count {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.55rem 1.25rem;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    .btn-primary:hover { background: #007a57; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0, 153, 109, 0.25); text-decoration: none; }
+    .hamburger {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+    }
+    .hamburger span { display: block; width: 22px; height: 2px; background: var(--text); border-radius: 2px; transition: all 0.3s; }
+    /* Push content below the fixed nav so the hero doesn't disappear under it. */
+    body { padding-top: 64px; }
+    @media (max-width: 768px) {
+      .nav-links, .nav-cta { display: none; }
+      .hamburger { display: flex; }
+    }
+
+    /* ─── Hero ─────────────────────── */
+    .hero { padding: 4rem 0 2.5rem; text-align: center; }
+    .hero-eyebrow {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--text-muted); margin-bottom: 0.75rem;
+    }
+    .hero h1 {
+      font-family: 'EB Garamond', serif;
+      font-size: clamp(2.4rem, 5vw, 3.6rem);
+      font-weight: 600; letter-spacing: -0.02em; line-height: 1.05;
+      margin-bottom: 1rem;
+    }
+    .hero p {
+      font-size: 1.05rem; color: var(--text-soft);
+      max-width: 580px; margin: 0 auto 1.25rem;
+    }
+    .hero-pill {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 0.9rem; border-radius: 999px;
+      background: var(--primary-soft); color: var(--primary);
+      font-size: 0.8rem; font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ─── Release list ─────────────────────── */
+    .releases { padding: 1rem 0 6rem; }
+
+    .release {
+      background: var(--bg-alt);
+      border: 1px solid var(--border); border-radius: 14px;
+      padding: 1.75rem 1.75rem; margin-bottom: 1.25rem;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .release:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px rgba(20, 17, 15, 0.04);
+    }
+    .release-header {
+      display: flex; align-items: center; gap: 0.85rem;
+      flex-wrap: wrap; margin-bottom: 0.75rem;
+    }
+    .release-version {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem; font-weight: 700; color: var(--text);
+      background: var(--bg); padding: 0.3rem 0.7rem; border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .release.latest .release-version {
+      background: var(--primary); color: #fff; border-color: var(--primary);
+    }
+    .release-date {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem; color: var(--text-muted); letter-spacing: 0.05em;
+    }
+    .release-latest-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+      padding: 0.25rem 0.55rem; border-radius: 999px;
+      background: var(--primary); color: #fff;
+    }
+    .release-summary {
+      color: var(--text); font-size: 1rem; margin-bottom: 0.75rem;
+      line-height: 1.55;
+    }
+    .release-details {
+      list-style: none; padding: 0; margin-top: 0.6rem;
+      border-top: 1px dashed var(--border); padding-top: 0.85rem;
+    }
+    .release-details li {
+      position: relative; padding-left: 1.25rem; margin-bottom: 0.45rem;
+      color: var(--text-soft); font-size: 0.92rem; line-height: 1.55;
+    }
+    .release-details li::before {
+      content: ''; position: absolute; left: 0; top: 0.65rem;
+      width: 0.4rem; height: 0.4rem; border-radius: 50%;
+      background: var(--primary); opacity: 0.6;
+    }
+    .release-details code {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.85em;
+      background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .release-packages {
+      display: flex; flex-wrap: wrap; gap: 0.4rem;
+      margin-top: 0.85rem;
+    }
+    .release-pkg {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: 6px;
+      background: var(--bg); color: var(--text-soft);
+      border: 1px solid var(--border);
+    }
+
+    /* ─── Footer — same dark surface as index.html so the bottom of
+       every page on the site reads as one continuous brand. Vars are
+       declared inline since changelog.html doesn't pull in docs.css. */
+    .footer {
+      background: #141413;
+      color: rgba(255,255,255,0.5);
+      padding: 3.5rem 0 2rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      margin-top: 4rem;
+    }
+    .footer .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 2rem;
+    }
+    .footer-brand { max-width: 300px; }
+    .footer-logo {
+      font-family: 'EB Garamond', serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.75rem;
+    }
+    .footer-logo span { color: #68D970; }
+    .footer-tagline { font-size: 0.85rem; line-height: 1.55; color: rgba(255,255,255,0.5); }
+    .footer-badges { display: flex; gap: 0.75rem; margin-top: 1.25rem; }
+    .footer-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.75rem;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: rgba(255,255,255,0.6);
+    }
+    .footer-columns { display: flex; gap: 4rem; flex-wrap: wrap; }
+    .footer-col h4 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 0.75rem;
+    }
+    .footer-col ul { list-style: none; padding: 0; margin: 0; }
+    .footer-col li { margin-bottom: 0.4rem; }
+    .footer-col a { font-size: 0.85rem; color: rgba(255,255,255,0.5); text-decoration: none; transition: color 0.2s; }
+    .footer-col a:hover { color: rgba(255,255,255,0.9); text-decoration: none; }
+    .footer-bottom {
+      margin-top: 2.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .footer-social { display: flex; gap: 1rem; }
+    .footer-social a {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.06);
+      transition: all 0.2s;
+    }
+    .footer-social a:hover { background: rgba(255,255,255,0.12); }
+    .footer-social svg { width: 16px; height: 16px; fill: rgba(255,255,255,0.6); }
+
+    /* ─── Loading + error states ─────────────────────── */
+    .loading {
+      text-align: center; color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+      padding: 3rem 0;
+    }
+    .err {
+      background: rgba(185, 28, 28, 0.06);
+      border: 1px solid rgba(185, 28, 28, 0.15);
+      color: var(--critical);
+      padding: 1.25rem; border-radius: 10px; text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="/arcis/" class="nav-logo">Arcis<span>.</span></a>
+      <ul class="nav-links">
+        <li><a href="/arcis/#how-it-works">How It Works</a></li>
+        <li><a href="/arcis/#languages">Languages</a></li>
+        <li><a href="/arcis/#threats">Threats</a></li>
+        <li><a href="/arcis/#comparison">Compare</a></li>
+        <li><a href="/arcis/documentation/">Docs</a></li>
+      </ul>
+      <div class="nav-cta">
+        <a href="https://github.com/GagancM/arcis" target="_blank" rel="noopener" class="btn-star">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="/arcis/#get-started" class="btn-primary">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <div class="hero-eyebrow">Release history</div>
+      <h1>Changelog</h1>
+      <p>Every Arcis release closes real bypass vectors found during security audits. Versions ship simultaneously to npm, PyPI, and Go modules.</p>
+      <span class="hero-pill" id="latest-pill">Loading latest…</span>
+    </div>
+  </header>
+
+  <section class="releases">
+    <div class="layout">
+      <aside class="version-nav" aria-label="Version index">
+        <div class="version-nav-title">Versions</div>
+        <ul id="versionList">
+          <li><span class="version-nav-link" style="color: var(--text-muted);">Loading…</span></li>
+        </ul>
+      </aside>
+      <div id="releases" class="loading">Loading releases…</div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <div class="footer-logo">Arcis<span>.</span></div>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, zero dependencies.</p>
+          <div class="footer-badges">
+            <span class="footer-badge">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+              MIT License
+            </span>
+            <span class="footer-badge">Open Source</span>
+          </div>
+        </div>
+        <div class="footer-columns">
+          <div class="footer-col">
+            <h4>Product</h4>
+            <ul>
+              <li><a href="/arcis/#how-it-works">How It Works</a></li>
+              <li><a href="/arcis/#languages">Languages</a></li>
+              <li><a href="/arcis/#threats">Threat Coverage</a></li>
+              <li><a href="/arcis/#comparison">Comparison</a></li>
+              <li><a href="/arcis/#get-started">Get Started</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>SDKs</h4>
+            <ul>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm &mdash; @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI &mdash; arcis</a></li>
+              <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Resources</h4>
+            <ul>
+              <li><a href="/arcis/documentation/">Documentation</a></li>
+              <li><a href="/arcis/changelog.html">Changelog</a></li>
+              <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+              <li><a href="https://github.com/Gagancm/arcis/issues" target="_blank" rel="noopener">Issues</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>MIT License &middot; Built by <a href="https://github.com/Gagancm" target="_blank" rel="noopener" style="color: rgba(255,255,255,0.7);">Gagan</a></span>
+        <div class="footer-social">
+          <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          </a>
+          <a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener" aria-label="npm">
+            <svg viewBox="0 0 16 16"><path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Render changelog from changelog.json. Single source of truth shared
+    // with the index page's "Recently shipped" section, so adding a new
+    // release here automatically appears in both places.
+    function escape(s) {
+      return String(s).replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+    }
+
+    function fmtDate(iso) {
+      try {
+        const d = new Date(iso + 'T00:00:00Z');
+        return d.toLocaleDateString('en-US', {
+          year: 'numeric', month: 'long', day: 'numeric'
+        });
+      } catch { return iso; }
+    }
+
+    // Slug a version like "1.4.4" into "v1-4-4" for use as the
+    // release card's id and the sidebar link's hash target.
+    function slugVersion(v) {
+      return 'v' + String(v).replace(/\./g, '-');
+    }
+
+    function renderRelease(r, isLatest) {
+      const detailsHtml = (r.details || [])
+        .map(d => `<li>${escape(d)}</li>`).join('');
+      const packagesHtml = (r.packages || [])
+        .map(p => `<span class="release-pkg">${escape(p)}</span>`).join('');
+      const latestTag = isLatest
+        ? '<span class="release-latest-tag">Latest</span>' : '';
+
+      return `
+        <article class="release${isLatest ? ' latest' : ''}" id="${slugVersion(r.version)}">
+          <div class="release-header">
+            <span class="release-version">v${escape(r.version)}</span>
+            <span class="release-date">${escape(fmtDate(r.date))}</span>
+            ${latestTag}
+          </div>
+          <p class="release-summary">${escape(r.summary)}</p>
+          ${detailsHtml ? `<ul class="release-details">${detailsHtml}</ul>` : ''}
+          ${packagesHtml ? `<div class="release-packages">${packagesHtml}</div>` : ''}
+        </article>
+      `;
+    }
+
+    // Render the left-side version index. Each link jumps to the
+    // matching release card via hash anchor; the active state syncs
+    // with whatever the user is currently scrolling through.
+    function renderVersionList(releases) {
+      const list = document.getElementById('versionList');
+      list.innerHTML = releases
+        .map(r => `
+          <li>
+            <a href="#${slugVersion(r.version)}" class="version-nav-link" data-version="${escape(r.version)}">
+              <span class="version-nav-version">v${escape(r.version)}</span>
+              <span class="version-nav-date">${escape(fmtDate(r.date).replace(/, \d{4}$/, ''))}</span>
+            </a>
+          </li>
+        `).join('');
+    }
+
+    // Highlight whichever version's card is currently in view. Uses
+    // IntersectionObserver so we don't manually compute scroll offsets.
+    function activateScrollSpy() {
+      const links = Array.from(document.querySelectorAll('.version-nav-link'));
+      const cards = Array.from(document.querySelectorAll('.release'));
+      if (cards.length === 0) return;
+
+      const setActive = (id) => {
+        links.forEach(l => l.classList.toggle(
+          'active',
+          l.getAttribute('href') === '#' + id,
+        ));
+      };
+
+      const observer = new IntersectionObserver(entries => {
+        // Pick the highest visible card so as the user scrolls down,
+        // the active marker advances cleanly version-by-version.
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.target.offsetTop - b.target.offsetTop);
+        if (visible.length > 0) setActive(visible[0].target.id);
+      }, { rootMargin: '-100px 0px -60% 0px', threshold: 0 });
+
+      cards.forEach(c => observer.observe(c));
+      // Initial state so the first card is highlighted before any scroll.
+      setActive(cards[0].id);
+    }
+
+    fetch('changelog.json', { cache: 'no-cache' })
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(data => {
+        const releases = data.releases || [];
+        const target = document.getElementById('releases');
+        const pill = document.getElementById('latest-pill');
+
+        if (releases.length === 0) {
+          target.innerHTML = '<div class="err">No releases yet.</div>';
+          pill.textContent = 'No releases';
+          document.getElementById('versionList').innerHTML = '';
+          return;
+        }
+
+        pill.textContent = `Latest · v${releases[0].version} · ${fmtDate(releases[0].date)}`;
+        target.classList.remove('loading');
+        target.innerHTML = releases
+          .map((r, i) => renderRelease(r, i === 0))
+          .join('');
+        renderVersionList(releases);
+        // Activate the spy after the DOM has settled so the cards have
+        // their final layout / scroll positions.
+        requestAnimationFrame(activateScrollSpy);
+      })
+      .catch(err => {
+        document.getElementById('releases').innerHTML =
+          `<div class="err">Failed to load changelog: ${escape(err.message)}<br>` +
+          `<a href="https://github.com/GagancM/arcis/releases">View on GitHub</a></div>`;
+      });
+
+    // Populate the navbar star count from GitHub. Fails silently — the
+    // button still works as a plain link if the API is rate-limited.
+    fetch('https://api.github.com/repos/Gagancm/arcis')
+      .then(r => r.json())
+      .then(data => {
+        const count = document.getElementById('starCount');
+        if (count && data.stargazers_count !== undefined) {
+          count.textContent = data.stargazers_count;
+        }
+      })
+      .catch(() => {});
+
+    // Add the .scrolled state to the nav once the user scrolls past the
+    // hero so the shadow lifts in — same behaviour as index.html.
+    const nav = document.getElementById('nav');
+    if (nav) {
+      const onScroll = () => {
+        nav.classList.toggle('scrolled', window.scrollY > 8);
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+    }
+  </script>
+</body>
+</html>

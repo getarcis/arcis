@@ -123,8 +123,11 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
   // populates req.__arcis with vector/rule/severity for the emitter.
   if (options.sanitize !== false) {
     const sanitizeOpts: SanitizeOptions = typeof options.sanitize === 'object'
-      ? options.sanitize
+      ? { ...options.sanitize }
       : {};
+    if (options.block && sanitizeOpts.block === undefined) {
+      sanitizeOpts.block = true;
+    }
     const sanitizer = createSanitizer(sanitizeOpts);
     middlewares.push(telemetryClient ? tapSanitizerThreats(sanitizer) : sanitizer);
   }

@@ -395,11 +395,23 @@ var DetectPathTraversal = sanitizers.DetectPathTraversal
 // DetectCommandInjection checks if a string contains command injection patterns.
 var DetectCommandInjection = sanitizers.DetectCommandInjection
 
+// DetectSSTI checks if a string contains server-side template injection patterns.
+var DetectSSTI = sanitizers.DetectSSTI
+
+// DetectXXE checks if a string contains XML external entity injection patterns.
+var DetectXXE = sanitizers.DetectXXE
+
 // DetectNoSQLInjection checks if a map contains NoSQL injection operators.
 var DetectNoSQLInjection = sanitizers.DetectNoSQLInjection
 
 // DetectPrototypePollution checks if a map contains prototype pollution keys.
 var DetectPrototypePollution = sanitizers.DetectPrototypePollution
+
+// ThreatHit describes the first attack pattern found while scanning a request.
+type ThreatHit = sanitizers.ThreatHit
+
+// ScanThreats walks data and returns the first threat hit found, or nil.
+var ScanThreats = sanitizers.ScanThreats
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
 

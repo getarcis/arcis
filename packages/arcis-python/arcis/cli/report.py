@@ -112,6 +112,12 @@ def print_report(
             note  = c(f"  {v.note}", DIM)
             print(f"      {label} {status_str}{note}")
 
+            # On vulnerable rows, show the payload that got through so the
+            # user can reproduce + test their fix without hunting elsewhere.
+            if not v.blocked:
+                payload_preview = v.payload if len(v.payload) <= 70 else v.payload[:67] + "..."
+                print(c(f"        Payload  {payload_preview}", DIM))
+
     # ── Summary ───────────────────────────────────────────────────────────────
     print()
     print(c(line, DIM))
@@ -129,10 +135,28 @@ def print_report(
         print(f"  Vulnerable        0")
     else:
         print(f"  Protected         {total_blocked}")
-        vuln_str = c(f"{total_vulnerable}  {CROSS}  Add Arcis middleware to fix", RED, BOLD)
+        vuln_str = c(f"{total_vulnerable}  {CROSS}  needs middleware", RED, BOLD)
         print(f"  Vulnerable        {vuln_str}")
 
     print(f"  Duration          {duration:.1f}s")
     print()
     print(c(line, DIM))
-    print()
+
+    # Mirror audit's Problem / Fix layout when there's something to fix.
+    if total_vulnerable > 0:
+        print()
+        print(c("  Problem", BOLD, RED))
+        print(f"    {total_vulnerable} attack payload(s) reached your app and weren't blocked.")
+        print()
+        print(c("  Fix", BOLD, GREEN))
+        print("    Install Arcis middleware with detect-and-block enabled:")
+        print(c("      Node    app.use(arcis({ block: true }))", DIM))
+        print(c("      Python  app.add_middleware(ArcisMiddleware, block=True)", DIM))
+        print(c("      Go      r.Use(arcisgin.MiddlewareWithConfig(arcisgin.Config{Block: true, ...}))", DIM))
+        print()
+        print(c("    Then re-run this scan -- every payload should come back PROTECTED.", DIM))
+        print()
+        print(c(line, DIM))
+        print()
+    else:
+        print()

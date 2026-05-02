@@ -41,13 +41,20 @@ _THREAT_TO_VECTOR: dict[str, str] = {
 }
 
 
+#: Attribute name used to stash the per-request telemetry marker on
+#: ``request.state`` (FastAPI) or ``flask.g`` (Flask). Single leading
+#: underscore so Python's class-scope name mangling doesn't rewrite
+#: ``request.state.__name`` to ``_OuterClass__name`` in callers.
+ARCIS_MARKER_ATTR = "_arcis_marker"
+
+
 @dataclass
 class ArcisTelemetryMarker:
     """Per-request attribution written by inner middlewares (sanitizer,
     rate limiter, validators) and read by the emitter on response complete.
 
-    On Starlette/FastAPI: stored at ``request.state.__arcis``.
-    On Flask:             stored at ``flask.g.__arcis``.
+    On Starlette/FastAPI: stored at ``request.state._arcis_marker``.
+    On Flask:             stored at ``flask.g._arcis_marker``.
 
     A marker is optional. If absent, the emitter infers ``decision`` from the
     response status code (see ``infer_decision``).
@@ -166,6 +173,54 @@ def extract_starlette_ip(request: Any) -> str:
     return host or "0.0.0.0"
 
 
+def tag_marker(
+    request: Any,
+    *,
+    vector: str,
+    rule: str,
+    reason: str,
+    severity: TelemetrySeverity = "high",
+) -> None:
+    """Best-effort write of an ArcisTelemetryMarker to the per-request
+    attribute that the dashboard emitter reads.
+
+    Supports both Starlette/FastAPI ``request.state`` and Flask ``g`` —
+    the helper figures out which framework the caller is in. Silent on
+    any failure; telemetry tagging must NEVER break a response.
+
+    Used by the deny paths of ``BotProtection``, ``CsrfProtection``, and
+    ``SignupProtection`` so the dashboard surfaces the right vector
+    instead of falling back to ``vector=null``.
+    """
+    try:
+        marker = ArcisTelemetryMarker(
+            vector=vector,
+            rule=rule,
+            severity=severity,
+            decision="deny",
+            reason=reason,
+        )
+        # Starlette / FastAPI request — most common case.
+        state = getattr(request, "state", None)
+        if state is not None:
+            try:
+                setattr(state, ARCIS_MARKER_ATTR, marker)
+                return
+            except Exception:
+                pass
+        # Flask request — write to flask.g (only valid in a request ctx).
+        try:
+            from flask import g, has_request_context  # type: ignore[import-untyped]
+            if has_request_context():
+                setattr(g, ARCIS_MARKER_ATTR, marker)
+                return
+        except Exception:
+            pass
+    except Exception:
+        # Never let telemetry break the response.
+        return
+
+
 def telemetry_options_from_env() -> Optional[TelemetryOptions]:
     """Build TelemetryOptions from ``ARCIS_*`` env vars.
 
@@ -205,7 +260,9 @@ def telemetry_options_from_env() -> Optional[TelemetryOptions]:
 
 
 __all__ = [
+    "ARCIS_MARKER_ATTR",
     "ArcisTelemetryMarker",
+    "tag_marker",
     "threat_to_vector",
     "infer_decision",
     "build_event",

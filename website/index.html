@@ -1650,31 +1650,76 @@
         Arcis is actively maintained and hardened continuously. Every release closes real bypass vectors found during security audits.
       </p>
 
-      <div class="changelog-list">
+      <!-- Hydrated by JS from changelog.json on load. The static items
+           below are the fallback if fetch fails (offline / file://).
+           Source of truth: changelog.json. Adding a release there auto-
+           updates this section + changelog.html in one step. -->
+      <div class="changelog-list" id="changelog-list">
         <div class="changelog-item reveal">
+          <span class="changelog-version">v1.4.4</span>
+          <span class="changelog-text">Detect-and-block middleware across all 3 SDKs. Block-mode 403s land on the dashboard with full vector attribution.</span>
+        </div>
+        <div class="changelog-item reveal reveal-delay-1">
+          <span class="changelog-version">v1.4.3</span>
+          <span class="changelog-text">Telemetry pipeline shipped. Self-hosted dashboard accepts decision events from running middleware (Node + Python).</span>
+        </div>
+        <div class="changelog-item reveal reveal-delay-2">
           <span class="changelog-version">v1.4.2</span>
           <span class="changelog-text">12 security bypass vectors closed. SSTI and XXE parity added to Go. Unicode path traversal bypass fixed across all SDKs.</span>
         </div>
-        <div class="changelog-item reveal reveal-delay-1">
+        <div class="changelog-item reveal reveal-delay-3">
           <span class="changelog-version">v1.4.1</span>
           <span class="changelog-text">LDAP injection protection added. Filter operator and DN character escaping across Node.js, Python, and Go.</span>
-        </div>
-        <div class="changelog-item reveal reveal-delay-2">
-          <span class="changelog-version">v1.4.0</span>
-          <span class="changelog-text">HPP (HTTP Parameter Pollution) protection. CSRF hardening with double-submit cookie and HMAC. 14 static analysis audit rules.</span>
-        </div>
-        <div class="changelog-item reveal reveal-delay-3">
-          <span class="changelog-version">v1.3.0</span>
-          <span class="changelog-text">Supply chain attack scanner (arcis sca). Context-aware output encoding. 15 security headers including COOP, CORP, COEP.</span>
         </div>
       </div>
 
       <div style="text-align: center; margin-top: 2.5rem;">
-        <a href="https://github.com/Gagancm/arcis/releases" target="_blank" rel="noopener" class="btn-outline">
-          View all releases
+        <a href="changelog.html" class="btn-outline">
+          View full changelog
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 0.4rem; vertical-align: middle;"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
         </a>
       </div>
+
+      <script>
+        // Hydrate Recently Shipped with the top 4 entries from
+        // changelog.json. Bumping a release becomes a one-file change
+        // (the JSON), not three (this list + the hero badge + the page).
+        (function () {
+          var list = document.getElementById('changelog-list');
+          if (!list) return;
+          var esc = function (s) {
+            return String(s).replace(/[&<>"']/g, function (ch) {
+              return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+            });
+          };
+          fetch('changelog.json', { cache: 'no-cache' })
+            .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function (data) {
+              var releases = (data.releases || []).slice(0, 4);
+              if (releases.length === 0) return;
+              list.innerHTML = releases.map(function (r, i) {
+                var delayCls = i === 0 ? '' : ' reveal-delay-' + i;
+                return '<div class="changelog-item reveal' + delayCls + '">'
+                  + '<span class="changelog-version">v' + esc(r.version) + '</span>'
+                  + '<span class="changelog-text">' + esc(r.summary) + '</span>'
+                  + '</div>';
+              }).join('');
+
+              // Also hydrate the hero badge to the latest version + summary.
+              var badge = document.querySelector('.hero-badge');
+              if (badge && releases[0]) {
+                var latest = releases[0];
+                // Truncate the summary so the badge stays one line.
+                var blurb = latest.summary.length > 70
+                  ? latest.summary.slice(0, 67) + '...'
+                  : latest.summary;
+                badge.innerHTML = '<span class="dot"></span> v'
+                  + esc(latest.version) + ' — ' + esc(blurb);
+              }
+            })
+            .catch(function () { /* keep SSR fallback */ });
+        })();
+      </script>
     </div>
   </section>
 

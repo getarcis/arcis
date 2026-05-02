@@ -78,6 +78,30 @@
         Arcis ships with three command-line tools that scan your codebase and dependencies for security issues. All are offline, CI-friendly, and ship with the Python package.
       </p>
 
+      <h2 id="discover">Discovery</h2>
+      <p>Don't remember the flags? Every command supports <code>--list</code> to print exactly what it will check, before you run it.</p>
+<pre><code><span class="c"># Top-level catalog: scan, audit, sca with examples</span>
+arcis
+arcis --list
+
+<span class="c"># Per-command coverage</span>
+arcis scan --list      <span class="c"># all 8 attack categories + payloads</span>
+arcis audit --list     <span class="c"># all 14 detection rules, grouped by language</span>
+arcis sca --list       <span class="c"># full bundled threat database</span>
+
+<span class="c"># Stay current</span>
+arcis update           <span class="c"># check PyPI for a newer release</span>
+arcis update --apply   <span class="c"># check, then run pip install --upgrade arcis</span>
+arcis update --check   <span class="c"># CI mode: exit 1 if outdated</span></code></pre>
+
+      <p>Each command also streams live progress to stderr (per-route status for <code>scan</code>, a progress bar for <code>audit</code>, current manifest for <code>sca</code>) and ends with a per-severity summary block.</p>
+
+      <h3>Interactive mode (optional)</h3>
+      <p>Install with the <code>interactive</code> extra to get an arrow-key picker when running <code>arcis</code> with no args. Useful for demos and one-off use; the static catalog (zero-deps) is the default.</p>
+<pre><code>pip install <span class="s">"arcis[interactive]"</span>
+arcis    <span class="c"># pops up: scan / audit / sca picker, then prompts for path or URL</span></code></pre>
+      <p>Non-TTY runs (CI, piped input) skip the picker and fall back to the static catalog automatically — scripts never hang.</p>
+
       <h2 id="install">Installation</h2>
       <p>The CLI is included in the Python package:</p>
 <pre><code>pip install arcis
@@ -137,6 +161,10 @@ arcis sca --list-threats</code></pre>
         <p><strong>Offline by design.</strong> No network calls, no telemetry. The threat database is bundled with the package. Every detection is auditable in <code>arcis/data/threat-db.json</code>.</p>
       </div>
 
+      <div class="callout">
+        <p><strong>Did it actually scan?</strong> Green output starts with <code>Scanned N manifest(s): ...</code>. If you see <code>no supported manifests found</code> instead, run from your project root (the directory containing <code>package-lock.json</code>, <code>yarn.lock</code>, <code>requirements.txt</code>, etc.) or pass <code>--system</code> to scan installed packages.</p>
+      </div>
+
       <h2 id="audit">arcis audit — Static Analysis</h2>
       <p>Scans your source code for dangerous patterns: unsafe functions, weak crypto, user-controlled paths, unsafe deserializers.</p>
 
@@ -177,22 +205,40 @@ arcis audit /path/to/project --format json</code></pre>
         </tbody>
       </table>
 
+      <div class="callout">
+        <p><strong>Did it actually scan?</strong> Green output starts with <code>Scanned N file(s) [N python, N typescript] against 14 rule(s).</code> If you see <code>no scannable files found</code> instead, point at a directory containing <code>.py</code>/<code>.js</code>/<code>.ts</code> files. Use <code>--language python</code> to narrow scope when a project mixes languages.</p>
+      </div>
+
       <h2 id="scan">arcis scan — Vulnerability Scanner</h2>
       <p>Sends live attack payloads to your running application and reports which ones get through.</p>
 
       <h3>Usage</h3>
-<pre><code><span class="c"># Scan a local app</span>
-arcis scan http://localhost:3000
+<pre><code><span class="c"># Scan a specific endpoint (the bare URL form scans POST / and</span>
+<span class="c"># will 404 on most apps — pass --route for real endpoints)</span>
+arcis scan http://localhost:8000 --route POST:/api/login --field username --field password
 
-<span class="c"># Scan with auth</span>
-arcis scan http://localhost:3000 --header <span class="s">"Authorization: Bearer ..."</span>
+<span class="c"># Scan multiple endpoints at once</span>
+arcis scan http://localhost:8000 \
+  --route POST:/api/users \
+  --route GET:/search \
+  --field q --field email
 
-<span class="c"># Only XSS and SQL tests</span>
-arcis scan http://localhost:3000 --only xss,sql</code></pre>
+<span class="c"># Only run XSS and SQL payloads</span>
+arcis scan http://localhost:8000 --route POST:/echo --field q --categories xss sql
+
+<span class="c"># Try every payload variant per category (slower, more thorough)</span>
+arcis scan http://localhost:8000 --route POST:/echo --field q --thorough</code></pre>
 
       <div class="callout warning">
         <p><strong>Only scan your own applications.</strong> Running <code>arcis scan</code> against systems you don't own is illegal in most jurisdictions.</p>
       </div>
+
+      <div class="callout">
+        <p><strong>Got "404 not found" on every route?</strong> The default route is <code>POST /</code>, which most apps don't expose. Always pass <code>--route METHOD:/path</code> for endpoints that actually exist in your app.</p>
+      </div>
+
+      <h3>How to read the output</h3>
+      <p>With Arcis middleware running with <code>block: true</code>, every payload should come back as <code>403</code> — that's the success signal. Each row in the report shows the category, payload, status, and whether Arcis blocked or sanitized it.</p>
 
       <h2 id="ci">Using in CI/CD</h2>
       <p>Arcis CLI tools return exit code 1 on findings, making them easy to add to CI pipelines.</p>
@@ -216,10 +262,64 @@ arcis scan http://localhost:3000 --only xss,sql</code></pre>
     </main>
   </div>
 
-  <footer class="docs-footer">
-    <div>© 2026 Arcis. MIT Licensed.</div>
-    <div><a href="../">Home</a> · <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></div>
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <div class="footer-logo">Arcis<span>.</span></div>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, zero dependencies.</p>
+          <div class="footer-badges">
+            <span class="footer-badge">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+              MIT License
+            </span>
+            <span class="footer-badge">Open Source</span>
+          </div>
+        </div>
+        <div class="footer-columns">
+          <div class="footer-col">
+            <h4>Product</h4>
+            <ul>
+              <li><a href="../#how-it-works">How It Works</a></li>
+              <li><a href="../#languages">Languages</a></li>
+              <li><a href="../#threats">Threat Coverage</a></li>
+              <li><a href="../#comparison">Comparison</a></li>
+              <li><a href="../#get-started">Get Started</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>SDKs</h4>
+            <ul>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm &mdash; @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI &mdash; arcis</a></li>
+              <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Resources</h4>
+            <ul>
+              <li><a href="./">Documentation</a></li>
+              <li><a href="../changelog.html">Changelog</a></li>
+              <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+              <li><a href="https://github.com/Gagancm/arcis/issues" target="_blank" rel="noopener">Issues</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>MIT License &middot; Built by <a href="https://github.com/Gagancm" target="_blank" rel="noopener" style="color: rgba(255,255,255,0.7);">Gagan</a></span>
+        <div class="footer-social">
+          <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          </a>
+          <a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener" aria-label="npm">
+            <svg viewBox="0 0 16 16"><path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
   </footer>
+
 
   <script>
     fetch('https://api.github.com/repos/Gagancm/arcis')

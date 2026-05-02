@@ -35,6 +35,10 @@ SanitizeOptions {
   nosql: boolean    // Default: true - Remove MongoDB operator patterns ($gt, $where, etc.)
   path: boolean     // Default: true - Remove path traversal patterns (../)
   proto: boolean    // Default: true - Block prototype pollution keys
+  block: boolean    // Default: false - When true, scan body/query/path for attacks and
+                    //                   respond 403 with { code: "SECURITY_THREAT", vector }
+                    //                   instead of silently sanitizing. Writes telemetry
+                    //                   marker (decision=deny) for dashboard attribution.
 }
 ```
 
@@ -55,6 +59,29 @@ Recursively sanitizes all string values in an object.
 - Recursively process nested objects and arrays
 - If `proto=true`: Skip keys `__proto__`, `constructor`, `prototype`
 - If `nosql=true`: Skip keys starting with `$` (MongoDB operators)
+
+#### Detection helpers (block-mode primitives)
+
+All three SDKs expose pure detection functions that return `true` on threat
+without modifying input. These power `block: true` mode.
+
+- `detect_xss(value: string) -> bool`
+- `detect_sql(value: string) -> bool`
+- `detect_path_traversal(value: string) -> bool`
+- `detect_command_injection(value: string) -> bool`
+- `detect_nosql(data) -> bool` — walks string/dict/list, matches MongoDB operators
+- `detect_prototype_pollution(data) -> bool` — walks dict/list for `__proto__`, `constructor`, etc.
+- `scan_threats(data) -> ThreatHit | None` — walks any value, returns the first
+  `(vector, rule, matched_pattern)` triple. Vector ordering matches across SDKs:
+  key-based `prototype` → `nosql` (any nesting), then per-string
+  `xss` → `ssti` → `xxe` → `sql` → `path` → `command` → `nosql`.
+
+  **NOT scanned at the request boundary** (sink-context vectors that produce
+  too many false positives on arbitrary body strings):
+  - `ldap` — LDAP filter metacharacters `*()` appear in nearly every string
+  - `header` — CRLF/null bytes are only attacks when reflected into a
+    response header. Use `detect_header_injection` at the response-write
+    site, not on inbound request bodies.
 
 #### `create_sanitizer(options?: SanitizeOptions) -> Middleware`
 Creates a middleware that sanitizes `request.body`, `request.query`, and `request.params`.

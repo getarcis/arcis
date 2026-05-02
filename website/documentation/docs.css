@@ -440,7 +440,96 @@ a:hover { color: var(--accent-hover); }
   color: var(--text);
 }
 
-/* ─── Footer ──────────────────────────────────────── */
+/* ─── Footer — shared across every page on the site so the bottom of
+   the doc, changelog, and landing pages all read as the same surface.
+   Mirrors index.html's footer; values stay in sync via the variables
+   already defined at the top of this file (--bg-dark, --accent-light,
+   --serif, --border-dark). */
+.footer {
+  background: var(--bg-dark);
+  color: rgba(255,255,255,0.5);
+  padding: 3.5rem 0 2rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: 4rem;
+}
+.footer .container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+.footer-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 2rem;
+}
+.footer-brand { max-width: 300px; }
+.footer-logo {
+  font-family: var(--serif, 'EB Garamond', serif);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.75rem;
+}
+.footer-logo span { color: var(--accent-light); }
+.footer-tagline { font-size: 0.85rem; line-height: 1.55; color: rgba(255,255,255,0.5); }
+.footer-badges {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.footer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.6);
+}
+.footer-columns { display: flex; gap: 4rem; flex-wrap: wrap; }
+.footer-col h4 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 0.75rem;
+}
+.footer-col ul { list-style: none; padding: 0; margin: 0; }
+.footer-col li { margin-bottom: 0.4rem; }
+.footer-col a { font-size: 0.85rem; color: rgba(255,255,255,0.5); text-decoration: none; transition: color 0.2s; }
+.footer-col a:hover { color: rgba(255,255,255,0.9); }
+.footer-bottom {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  font-size: 0.8rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.footer-social { display: flex; gap: 1rem; }
+.footer-social a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  transition: all 0.2s;
+}
+.footer-social a:hover { background: rgba(255,255,255,0.12); }
+.footer-social svg { width: 16px; height: 16px; fill: rgba(255,255,255,0.6); }
+
+/* Legacy slim footer kept as a fallback for pages that haven't been
+   migrated yet. New pages should use .footer above. */
 .docs-footer {
   max-width: 1400px;
   margin: 0 auto;

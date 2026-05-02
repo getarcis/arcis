@@ -507,6 +507,29 @@ def _scan_pth_backdoors() -> List[Finding]:
 # ── Unified scanner ──────────────────────────────────────────────────────────
 
 
+def discover_manifests(path: str) -> List[str]:
+    """List supported manifest/lockfile paths that exist under `path`.
+
+    Returned values are absolute paths. Used by the CLI to print a
+    "Scanned X" line so green output is unambiguous.
+    """
+    candidates = [
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "node_modules",
+        "requirements.txt",
+        "Pipfile.lock",
+        "poetry.lock",
+    ]
+    found: List[str] = []
+    for name in candidates:
+        full = os.path.join(path, name)
+        if os.path.exists(full):
+            found.append(full)
+    return found
+
+
 def scan_project(path: str, check_system: bool = False) -> List[Finding]:
     """
     Run all supply chain checks against a project directory.
@@ -705,14 +728,20 @@ def main() -> None:
         help="Also scan globally installed packages and site-packages for backdoor artifacts",
     )
     parser.add_argument(
-        "--list-threats",
+        "--list-threats", "--list",
         action="store_true",
-        help="List all threats in the database and exit",
+        dest="list_threats",
+        help="List all threats in the bundled database and exit.",
     )
     parser.add_argument(
         "--no-color",
         action="store_true",
         help="Disable colored output",
+    )
+    parser.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        help="Suppress progress output (still prints findings + summary).",
     )
 
     args = parser.parse_args()
@@ -727,10 +756,87 @@ def main() -> None:
         print(f"arcis sca: path not found: {path}")
         sys.exit(1)
 
+    manifests = discover_manifests(path)
+    if not manifests and not args.system:
+        msg = (
+            f"arcis sca: no supported manifests found in {path}\n"
+            "  Looked for: package-lock.json, yarn.lock, pnpm-lock.yaml, node_modules,\n"
+            "             requirements.txt, Pipfile.lock, poetry.lock\n"
+            "  Run from your project root, or pass --system to scan installed packages."
+        )
+        if args.no_color:
+            print(msg)
+        else:
+            print(f"\033[33m{msg}\033[0m")
+        sys.exit(2)
+
+    # Live progress: stream which manifest is being read so users see
+    # work happening instead of staring at a frozen prompt.
+    show_progress = not args.quiet and sys.stderr.isatty() and not args.no_color
     start = time.time()
+    if show_progress and manifests:
+        for m in manifests:
+            sys.stderr.write(f"\r\033[2K\033[2m  Reading {os.path.relpath(m, path)}...\033[0m")
+            sys.stderr.flush()
+        if args.system:
+            sys.stderr.write("\r\033[2K\033[2m  Scanning installed packages...\033[0m")
+            sys.stderr.flush()
+        sys.stderr.write("\r\033[2K")
     findings = scan_project(path, check_system=args.system)
     duration = time.time() - start
 
+    # Tell the user exactly what got inspected so green is unambiguous.
+    if manifests:
+        rels = [os.path.relpath(m, path) for m in manifests]
+        scanned_line = f"Scanned {len(manifests)} manifest(s): {', '.join(rels)}"
+        if args.no_color:
+            print(scanned_line)
+        else:
+            print(f"\033[2m{scanned_line}\033[0m")
+
     print_sca_report(path, findings, duration, no_color=args.no_color)
+
+    # Upload to dashboard. SCA results live in the same UI surface as
+    # `arcis audit` (both are "static analysis"); language="sca" is the
+    # taxonomy marker the frontend filters on.
+    try:
+        from .dashboard import upload as dashboard_upload
+        dashboard_findings = [
+            {
+                "package": f.package,
+                "ecosystem": f.ecosystem,
+                "version": f.version,
+                "severity": f.severity,
+                "location": f.location,
+                "attackVector": (f.attack_vector or "")[:500],
+                "remediation": (f.remediation or "")[:500],
+                "source": f.source,
+                "findingType": f.finding_type,
+            }
+            for f in findings[:200]
+        ]
+        sev_counts: Dict[str, int] = {}
+        for f in findings:
+            sev_counts[f.severity] = sev_counts.get(f.severity, 0) + 1
+        dashboard_upload(
+            kind="audits",
+            body={
+                "language": "sca",
+                "target": path,
+                "summary": {
+                    "manifestsScanned": len(manifests),
+                    "manifests": [os.path.relpath(m, path) for m in manifests],
+                    "threatDbSize": len(THREAT_DB),
+                    "durationSeconds": round(duration, 3),
+                    "bySeverity": sev_counts,
+                    "findings": dashboard_findings,
+                    "truncated": len(findings) > len(dashboard_findings),
+                },
+                "findingsCount": len(findings),
+            },
+            quiet=args.quiet,
+        )
+    except Exception:
+        pass
 
     sys.exit(1 if findings else 0)

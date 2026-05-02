@@ -7,11 +7,12 @@
 
 # Arcis: Security Middleware for Every Backend
 
-[![npm version](https://img.shields.io/npm/v/@arcis/node.svg)](https://www.npmjs.com/package/@arcis/node)
-[![PyPI version](https://img.shields.io/pypi/v/arcis.svg)](https://pypi.org/project/arcis/)
+[![npm version](https://img.shields.io/npm/v/@arcis/node.svg?label=%40arcis%2Fnode&color=00996D)](https://www.npmjs.com/package/@arcis/node)
+[![npm downloads](https://img.shields.io/npm/dm/@arcis/node.svg?label=npm%20downloads&color=00996D)](https://www.npmjs.com/package/@arcis/node)
+[![PyPI version](https://img.shields.io/pypi/v/arcis.svg?label=arcis%20%28PyPI%29&color=00996D)](https://pypi.org/project/arcis/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/arcis.svg?label=pip%20downloads&color=00996D)](https://pypi.org/project/arcis/)
+[![GitHub stars](https://img.shields.io/github/stars/GagancM/arcis?style=flat&color=00996D)](https://github.com/GagancM/arcis/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg?branch=nwl)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-2800%2B-brightgreen.svg)](https://github.com/Gagancm/arcis)
 
 Arcis is a zero-dependency security middleware for Node.js, Python, and Go. <br />
 One line of code protects your application against XSS, SQL injection, SSRF, CSRF, HPP, path traversal, and 15+ more attack types at runtime.

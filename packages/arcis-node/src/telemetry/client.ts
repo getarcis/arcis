@@ -5,8 +5,10 @@ const MAX_BATCH_SIZE = 500; // matches server Zod schema upper bound
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const MIN_FLUSH_INTERVAL_MS = 500;
 const FLUSH_TIMEOUT_MS = 10_000;
+const DEFAULT_MAX_QUEUE_SIZE = 10_000;
 
 type Listener = (err: Error) => void;
+type OverflowListener = (droppedCount: number) => void;
 
 /**
  * In-memory batching client that ships `TelemetryEvent` objects to an
@@ -27,11 +29,17 @@ export class TelemetryClient {
   private readonly workspaceId: string | undefined;
   private readonly batchSize: number;
   private readonly flushIntervalMs: number;
+  private readonly maxQueueSize: number;
   private readonly onError: Listener;
+  private readonly onQueueOverflow: OverflowListener;
   private timer: ReturnType<typeof setInterval> | undefined;
   private flushing = false;
   private closed = false;
   private signalHandler: (() => void) | undefined;
+  // Counts events dropped since the last successful flush. Resets to 0
+  // each flush so onQueueOverflow callbacks see "drops in this window"
+  // rather than a monotonic lifetime counter.
+  private droppedSinceLastFlush = 0;
 
   constructor(options: TelemetryOptions) {
     if (!options.endpoint || typeof options.endpoint !== 'string') {
@@ -50,8 +58,18 @@ export class TelemetryClient {
       options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
       MIN_FLUSH_INTERVAL_MS,
     );
+    // Cap the in-memory queue to bound memory under sustained dashboard
+    // outage. Drop-oldest semantics preserve the most recent events,
+    // which are usually the most relevant for incident triage.
+    this.maxQueueSize = Math.max(
+      options.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
+      this.batchSize,
+    );
     this.onError = options.onError ?? (() => {
       // default: swallow silently (fail-open)
+    });
+    this.onQueueOverflow = options.onQueueOverflow ?? (() => {
+      // default: silent — operators can opt in to logging
     });
 
     this.startTimer();
@@ -64,6 +82,21 @@ export class TelemetryClient {
   record(event: TelemetryEvent): void {
     if (this.closed) return;
     this.queue.push(event);
+
+    // Cap the queue at maxQueueSize. Drop oldest events (FIFO) so we keep
+    // the freshest signal during a sustained outage. Without this cap, a
+    // 24h dashboard outage at moderate traffic OOMs the worker.
+    if (this.queue.length > this.maxQueueSize) {
+      const drop = this.queue.length - this.maxQueueSize;
+      this.queue.splice(0, drop);
+      this.droppedSinceLastFlush += drop;
+      try {
+        this.onQueueOverflow(this.droppedSinceLastFlush);
+      } catch {
+        // overflow callback errors must not break record()
+      }
+    }
+
     if (this.queue.length >= this.batchSize) {
       // fire and forget
       void this.flush();
@@ -83,6 +116,9 @@ export class TelemetryClient {
     try {
       const batch = this.queue.splice(0, this.batchSize);
       await this.send(batch);
+      // Successful flush — reset overflow counter so subsequent drops
+      // start a fresh window. A connected dashboard "clears" the alert.
+      this.droppedSinceLastFlush = 0;
     } catch (err) {
       this.safeNotify(err);
     } finally {
