@@ -8,10 +8,175 @@ path traversal, and command injection.
 import re
 import types
 import unicodedata
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core.constants import PATTERNS, DEFAULT_MAX_INPUT_SIZE, MAX_RECURSION_DEPTH
 from ..core.errors import InputTooLargeError
+
+
+# ── Module-level compiled detectors ────────────────────────────────────
+# Mirrors Node's per-vector detect* functions. These reuse the shared
+# patterns.json contract so detection stays consistent with sanitization.
+
+def _compile_rules(category: str) -> List[re.Pattern]:
+    compiled: List[re.Pattern] = []
+    cat = PATTERNS.get("patterns", {}).get(category, {})
+    for rule in cat.get("rules", []):
+        flags = re.IGNORECASE if "i" in rule.get("flags", "") else 0
+        pattern_str = rule.get("pattern_safe") or rule.get("pattern")
+        if pattern_str:
+            compiled.append(re.compile(pattern_str, flags))
+    return compiled
+
+
+_XSS_DETECT = _compile_rules("xss")
+_SQL_DETECT = _compile_rules("sql_injection")
+_PATH_DETECT = _compile_rules("path_traversal")
+_COMMAND_DETECT = _compile_rules("command_injection")
+_NOSQL_DETECT = _compile_rules("nosql_injection")
+_NOSQL_KEYS = {
+    k.lower() for k in PATTERNS.get("patterns", {}).get("nosql_injection", {}).get("dangerous_keys", [])
+}
+_PROTO_KEYS = {
+    k.lower() for k in PATTERNS.get("patterns", {}).get("prototype_pollution", {}).get("dangerous_keys", [])
+} or {"__proto__", "constructor", "prototype", "__definegetter__", "__definesetter__", "__lookupgetter__", "__lookupsetter__"}
+
+
+def _first_match(value: str, patterns: List[re.Pattern]) -> Optional[str]:
+    for p in patterns:
+        m = p.search(value)
+        if m:
+            return p.pattern
+    return None
+
+
+def detect_xss(value: str) -> bool:
+    """Return True if `value` contains an XSS pattern."""
+    if not isinstance(value, str):
+        return False
+    return _first_match(value, _XSS_DETECT) is not None
+
+
+def detect_sql(value: str) -> bool:
+    """Return True if `value` contains a SQL-injection pattern."""
+    if not isinstance(value, str):
+        return False
+    return _first_match(value, _SQL_DETECT) is not None
+
+
+def detect_path_traversal(value: str) -> bool:
+    """Return True if `value` contains a path-traversal pattern."""
+    if not isinstance(value, str):
+        return False
+    normalized = unicodedata.normalize('NFKC', value)
+    return _first_match(normalized, _PATH_DETECT) is not None
+
+
+def detect_command_injection(value: str) -> bool:
+    """Return True if `value` contains shell metacharacters / cmd-injection."""
+    if not isinstance(value, str):
+        return False
+    return _first_match(value, _COMMAND_DETECT) is not None
+
+
+def detect_nosql(data: Any) -> bool:
+    """Return True if `data` (str or dict) contains NoSQL operators or keys."""
+    if isinstance(data, str):
+        return _first_match(data, _NOSQL_DETECT) is not None
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if isinstance(k, str) and k.lower() in _NOSQL_KEYS:
+                return True
+            if detect_nosql(v):
+                return True
+        return False
+    if isinstance(data, list):
+        return any(detect_nosql(item) for item in data)
+    return False
+
+
+def detect_prototype_pollution(data: Any) -> bool:
+    """Return True if `data` contains a prototype-pollution dangerous key."""
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if isinstance(k, str) and k.lower() in _PROTO_KEYS:
+                return True
+            if detect_prototype_pollution(v):
+                return True
+        return False
+    if isinstance(data, list):
+        return any(detect_prototype_pollution(item) for item in data)
+    return False
+
+
+def scan_threats(data: Any) -> Optional[Tuple[str, str, str]]:
+    """Walk dict/list/str and return the first (vector, rule, matched_pattern)
+    triple found, or None if nothing matched. Vector names match the dashboard
+    taxonomy.
+
+    Coverage: prototype, nosql (key-based, any nesting); xss, sql, path,
+    command, ssti, xxe (string-based).
+
+    NOT included — sink-context vectors that produce too many false positives
+    when applied to arbitrary request strings:
+        * ldap — every parens-containing string trips ``[*()\\\\\\x00]``
+        * header — CRLF/null bytes are only attacks when reflected into a
+                   response header, not when present in a request body
+
+    These should be enforced at the call sites that pass user input to LDAP
+    filters or response header writes (use ``detect_ldap_injection`` /
+    ``detect_header_injection`` directly).
+    """
+    # Lazy imports avoid a circular dependency: ssti/xxe share core.constants
+    # which is loaded by this module's top.
+    from .ssti import detect_ssti
+    from .xxe import detect_xxe
+
+    # Key-based vectors first (apply at any nesting level)
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if isinstance(k, str):
+                kl = k.lower()
+                if kl in _PROTO_KEYS:
+                    return ("prototype", "prototype/match", k)
+                if kl in _NOSQL_KEYS:
+                    return ("nosql", "nosql/match", k)
+            inner = scan_threats(v)
+            if inner is not None:
+                return inner
+        return None
+    if isinstance(data, list):
+        for item in data:
+            inner = scan_threats(item)
+            if inner is not None:
+                return inner
+        return None
+    if not isinstance(data, str):
+        return None
+
+    # String vectors — order: most specific → least specific so a payload
+    # carrying multiple signals classifies under the highest-severity bucket.
+    m = _first_match(data, _XSS_DETECT)
+    if m:
+        return ("xss", "xss/match", m)
+    if detect_ssti(data):
+        return ("ssti", "ssti/match", data[:80])
+    if detect_xxe(data):
+        return ("xxe", "xxe/match", data[:80])
+    m = _first_match(data, _SQL_DETECT)
+    if m:
+        return ("sql", "sql/match", m)
+    normalized = unicodedata.normalize('NFKC', data)
+    m = _first_match(normalized, _PATH_DETECT)
+    if m:
+        return ("path", "path/match", m)
+    m = _first_match(data, _COMMAND_DETECT)
+    if m:
+        return ("command", "command/match", m)
+    m = _first_match(data, _NOSQL_DETECT)
+    if m:
+        return ("nosql", "nosql/match", m)
+    return None
 
 
 class Sanitizer:

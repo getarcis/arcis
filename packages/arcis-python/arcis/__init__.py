@@ -108,6 +108,13 @@ from .sanitizers import (
     sanitize_nosql,
     sanitize_path,
     sanitize_command,
+    detect_xss,
+    detect_sql,
+    detect_nosql,
+    detect_path_traversal,
+    detect_command_injection,
+    detect_prototype_pollution,
+    scan_threats,
     sanitize_ssti,
     detect_ssti,
     sanitize_xxe,
@@ -164,7 +171,7 @@ try:
 except ImportError:
     _HAS_ASYNC = False
 
-__version__ = "1.4.3"
+__version__ = "1.4.4"
 __all__ = [
     # Main class
     "Arcis",
@@ -194,6 +201,13 @@ __all__ = [
     "sanitize_nosql",
     "sanitize_path",
     "sanitize_command",
+    "detect_xss",
+    "detect_sql",
+    "detect_nosql",
+    "detect_path_traversal",
+    "detect_command_injection",
+    "detect_prototype_pollution",
+    "scan_threats",
     "sanitize_ssti",
     "detect_ssti",
     "sanitize_header_value",

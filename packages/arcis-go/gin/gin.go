@@ -66,8 +66,13 @@ Alternatively, register cleanup with a defer or shutdown hook:
 package gin
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,6 +80,81 @@ import (
 
 	arcis "github.com/GagancM/arcis"
 )
+
+// scanRequestForThreats peeks at JSON body, query params, and URL path for
+// the gin/echo block-mode middlewares. Returns the first hit or nil.
+// Restores the request body so handlers can re-read it.
+func scanRequestForThreats(req *http.Request) *arcis.ThreatHit {
+	// 1. Body (JSON or form). Read once, restore unconditionally so the
+	// downstream handler can re-bind regardless of whether we found a
+	// threat, the JSON parsed, or the body was empty. Bug history: an
+	// earlier version only restored the body inside `if err == nil &&
+	// len(raw) > 0`, which broke empty POSTs and non-JSON requests sent
+	// with `Content-Type: application/json`.
+	ct := req.Header.Get("Content-Type")
+	if req.Body != nil && (strings.HasPrefix(ct, "application/json") ||
+		strings.HasPrefix(ct, "application/x-www-form-urlencoded")) {
+		raw, err := io.ReadAll(req.Body)
+		if err == nil {
+			// Always restore the body and re-set Content-Length so frameworks
+			// that double-check the header against actual bytes pass through.
+			req.Body = io.NopCloser(bytes.NewReader(raw))
+			req.ContentLength = int64(len(raw))
+
+			if len(raw) > 0 && strings.HasPrefix(ct, "application/json") {
+				var parsed interface{}
+				if json.Unmarshal(raw, &parsed) == nil {
+					if hit := arcis.ScanThreats(parsed); hit != nil {
+						return hit
+					}
+				}
+			} else if len(raw) > 0 && strings.HasPrefix(ct, "application/x-www-form-urlencoded") {
+				// Form data: reflect into a map[string]interface{} so ScanThreats
+				// can walk it the same way as JSON. Errors are non-fatal.
+				if values, err := url.ParseQuery(string(raw)); err == nil {
+					form := make(map[string]interface{}, len(values))
+					for k, vals := range values {
+						if len(vals) == 1 {
+							form[k] = vals[0]
+						} else {
+							arr := make([]interface{}, len(vals))
+							for i, v := range vals {
+								arr[i] = v
+							}
+							form[k] = arr
+						}
+					}
+					if hit := arcis.ScanThreats(form); hit != nil {
+						return hit
+					}
+				}
+			}
+		}
+	}
+	// 2. Query params
+	q := map[string]interface{}{}
+	for k, vals := range req.URL.Query() {
+		if len(vals) == 1 {
+			q[k] = vals[0]
+		} else {
+			arr := make([]interface{}, len(vals))
+			for i, v := range vals {
+				arr[i] = v
+			}
+			q[k] = arr
+		}
+	}
+	if len(q) > 0 {
+		if hit := arcis.ScanThreats(q); hit != nil {
+			return hit
+		}
+	}
+	// 3. URL path
+	if hit := arcis.ScanThreats(req.URL.Path); hit != nil {
+		return hit
+	}
+	return nil
+}
 
 // Config holds Arcis middleware configuration for Gin.
 type Config struct {
@@ -86,6 +166,11 @@ type Config struct {
 	SanitizePath  bool
 	SanitizeCmd   bool
 	MaxInputSize  int
+
+	// Block: when true, scan request body / query / URL path for attack
+	// patterns and abort with 403 instead of letting the request through
+	// to the handler. Opt-in (default false).
+	Block bool
 
 	// Rate limiter options
 	RateLimit       bool
@@ -260,6 +345,18 @@ func MiddlewareWithConfig(config Config) gin.HandlerFunc {
 				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 					"error":      "Too many requests, please try again later.",
 					"retryAfter": int(result.Reset.Seconds()),
+				})
+				return
+			}
+		}
+
+		// Block mode: scan body / query / path for attack patterns.
+		if config.Block {
+			if hit := scanRequestForThreats(c.Request); hit != nil {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error":  "Request blocked for security reasons",
+					"code":   "SECURITY_THREAT",
+					"vector": hit.Vector,
 				})
 				return
 			}

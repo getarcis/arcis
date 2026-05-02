@@ -1,13 +1,22 @@
 # Arcis Python
 
-[![PyPI version](https://img.shields.io/pypi/v/arcis.svg)](https://pypi.org/project/arcis/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/arcis.svg?label=pypi&color=00996D)](https://pypi.org/project/arcis/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/arcis.svg?label=downloads&color=00996D)](https://pypi.org/project/arcis/)
+[![GitHub stars](https://img.shields.io/github/stars/GagancM/arcis?style=flat&color=00996D)](https://github.com/GagancM/arcis/stargazers)
 [![Python 3.9+](https://img.shields.io/pypi/pyversions/arcis.svg)](https://pypi.org/project/arcis/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**One-line security for Python web applications.**
+**One-line security for Python web applications + the canonical `arcis` CLI for scan / audit / supply-chain analysis.**
 
 Arcis is a cross-platform security library that provides drop-in protection against common web vulnerabilities. Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
+
+## What's new in v1.4.4
+
+- **Detect-and-block middleware** — opt in with `app.add_middleware(ArcisMiddleware, block=True)`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
+- **6 new standalone detectors** — `detect_xss / detect_sql / detect_nosql / detect_path_traversal / detect_command_injection / detect_prototype_pollution`.
+- **CLI overhaul** — `arcis --list` discovery, live progress bars, summary blocks, `arcis update` command, optional interactive picker (`pip install "arcis[interactive]"`).
+- **End-to-end CLI → dashboard wiring** — `arcis scan/audit/sca` POST results to the dashboard when `ARCIS_ENDPOINT` is set.
+- See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
 
 ## Installation
 

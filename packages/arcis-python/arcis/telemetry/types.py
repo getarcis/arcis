@@ -88,7 +88,13 @@ class TelemetryOptions:
     workspace_id: Optional[str] = None
     batch_size: int = 50
     flush_interval_ms: int = 5000
+    # Bound the in-memory queue to prevent OOM during sustained dashboard
+    # outage. Drop-oldest semantics keep the most recent events. 10k ~= 10 MB.
+    max_queue_size: int = 10_000
     on_error: Optional[Callable[[Exception], None]] = None
+    # Called once per overflow event with the count of events dropped in
+    # the current outage window. Resets on successful flush.
+    on_queue_overflow: Optional[Callable[[int], None]] = None
 
 
 __all__ = [

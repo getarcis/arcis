@@ -255,6 +255,20 @@ class CsrfProtection:
 
     def _flask_error(self):
         """Return Flask CSRF error response."""
+        # Tag the per-request telemetry marker so the dashboard groups
+        # CSRF denials under vector=csrf instead of vector=null.
+        try:
+            from flask import request
+            from .telemetry import tag_marker
+            tag_marker(
+                request,
+                vector="csrf",
+                rule="csrf/token-mismatch",
+                reason="CSRF token missing or invalid",
+            )
+        except Exception:
+            pass  # never let telemetry break the deny path
+
         if self.on_error:
             from flask import request
             return self.on_error(request)

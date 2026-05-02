@@ -78,6 +78,30 @@
         Arcis ships with three command-line tools that scan your codebase and dependencies for security issues. All are offline, CI-friendly, and ship with the Python package.
       </p>
 
+      <h2 id="discover">Discovery</h2>
+      <p>Don't remember the flags? Every command supports <code>--list</code> to print exactly what it will check, before you run it.</p>
+<pre><code><span class="c"># Top-level catalog: scan, audit, sca with examples</span>
+arcis
+arcis --list
+
+<span class="c"># Per-command coverage</span>
+arcis scan --list      <span class="c"># all 8 attack categories + payloads</span>
+arcis audit --list     <span class="c"># all 14 detection rules, grouped by language</span>
+arcis sca --list       <span class="c"># full bundled threat database</span>
+
+<span class="c"># Stay current</span>
+arcis update           <span class="c"># check PyPI for a newer release</span>
+arcis update --apply   <span class="c"># check, then run pip install --upgrade arcis</span>
+arcis update --check   <span class="c"># CI mode: exit 1 if outdated</span></code></pre>
+
+      <p>Each command also streams live progress to stderr (per-route status for <code>scan</code>, a progress bar for <code>audit</code>, current manifest for <code>sca</code>) and ends with a per-severity summary block.</p>
+
+      <h3>Interactive mode (optional)</h3>
+      <p>Install with the <code>interactive</code> extra to get an arrow-key picker when running <code>arcis</code> with no args. Useful for demos and one-off use; the static catalog (zero-deps) is the default.</p>
+<pre><code>pip install <span class="s">"arcis[interactive]"</span>
+arcis    <span class="c"># pops up: scan / audit / sca picker, then prompts for path or URL</span></code></pre>
+      <p>Non-TTY runs (CI, piped input) skip the picker and fall back to the static catalog automatically — scripts never hang.</p>
+
       <h2 id="install">Installation</h2>
       <p>The CLI is included in the Python package:</p>
 <pre><code>pip install arcis
@@ -137,6 +161,10 @@ arcis sca --list-threats</code></pre>
         <p><strong>Offline by design.</strong> No network calls, no telemetry. The threat database is bundled with the package. Every detection is auditable in <code>arcis/data/threat-db.json</code>.</p>
       </div>
 
+      <div class="callout">
+        <p><strong>Did it actually scan?</strong> Green output starts with <code>Scanned N manifest(s): ...</code>. If you see <code>no supported manifests found</code> instead, run from your project root (the directory containing <code>package-lock.json</code>, <code>yarn.lock</code>, <code>requirements.txt</code>, etc.) or pass <code>--system</code> to scan installed packages.</p>
+      </div>
+
       <h2 id="audit">arcis audit — Static Analysis</h2>
       <p>Scans your source code for dangerous patterns: unsafe functions, weak crypto, user-controlled paths, unsafe deserializers.</p>
 
@@ -177,22 +205,40 @@ arcis audit /path/to/project --format json</code></pre>
         </tbody>
       </table>
 
+      <div class="callout">
+        <p><strong>Did it actually scan?</strong> Green output starts with <code>Scanned N file(s) [N python, N typescript] against 14 rule(s).</code> If you see <code>no scannable files found</code> instead, point at a directory containing <code>.py</code>/<code>.js</code>/<code>.ts</code> files. Use <code>--language python</code> to narrow scope when a project mixes languages.</p>
+      </div>
+
       <h2 id="scan">arcis scan — Vulnerability Scanner</h2>
       <p>Sends live attack payloads to your running application and reports which ones get through.</p>
 
       <h3>Usage</h3>
-<pre><code><span class="c"># Scan a local app</span>
-arcis scan http://localhost:3000
+<pre><code><span class="c"># Scan a specific endpoint (the bare URL form scans POST / and</span>
+<span class="c"># will 404 on most apps — pass --route for real endpoints)</span>
+arcis scan http://localhost:8000 --route POST:/api/login --field username --field password
 
-<span class="c"># Scan with auth</span>
-arcis scan http://localhost:3000 --header <span class="s">"Authorization: Bearer ..."</span>
+<span class="c"># Scan multiple endpoints at once</span>
+arcis scan http://localhost:8000 \
+  --route POST:/api/users \
+  --route GET:/search \
+  --field q --field email
 
-<span class="c"># Only XSS and SQL tests</span>
-arcis scan http://localhost:3000 --only xss,sql</code></pre>
+<span class="c"># Only run XSS and SQL payloads</span>
+arcis scan http://localhost:8000 --route POST:/echo --field q --categories xss sql
+
+<span class="c"># Try every payload variant per category (slower, more thorough)</span>
+arcis scan http://localhost:8000 --route POST:/echo --field q --thorough</code></pre>
 
       <div class="callout warning">
         <p><strong>Only scan your own applications.</strong> Running <code>arcis scan</code> against systems you don't own is illegal in most jurisdictions.</p>
       </div>
+
+      <div class="callout">
+        <p><strong>Got "404 not found" on every route?</strong> The default route is <code>POST /</code>, which most apps don't expose. Always pass <code>--route METHOD:/path</code> for endpoints that actually exist in your app.</p>
+      </div>
+
+      <h3>How to read the output</h3>
+      <p>With Arcis middleware running with <code>block: true</code>, every payload should come back as <code>403</code> — that's the success signal. Each row in the report shows the category, payload, status, and whether Arcis blocked or sanitized it.</p>
 
       <h2 id="ci">Using in CI/CD</h2>
       <p>Arcis CLI tools return exit code 1 on findings, making them easy to add to CI pipelines.</p>

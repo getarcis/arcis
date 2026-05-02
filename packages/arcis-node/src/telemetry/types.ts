@@ -57,6 +57,18 @@ export interface TelemetryOptions {
   batchSize?: number;
   /** Periodic flush interval in milliseconds. Default: 5000. Minimum: 500. */
   flushIntervalMs?: number;
+  /**
+   * Maximum events to hold in the in-memory queue before drop-oldest kicks
+   * in. Prevents OOM during sustained dashboard outages. Default: 10_000
+   * (~10 MB at average event size). Must be >= batchSize.
+   */
+  maxQueueSize?: number;
+  /**
+   * Called once whenever the queue overflows and an event is dropped. Receives
+   * the count of events dropped in the current overflow window. Useful for
+   * surfacing a metric / log line so operators notice the dashboard is down.
+   */
+  onQueueOverflow?: (droppedCount: number) => void;
   /** Error hook for network/HTTP failures. If omitted, errors are swallowed silently. */
   onError?: (err: Error) => void;
 }

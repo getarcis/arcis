@@ -4,7 +4,16 @@ Arcis sanitizers package.
 Provides the Sanitizer class and per-type convenience functions.
 """
 
-from .sanitize import Sanitizer
+from .sanitize import (
+    Sanitizer,
+    detect_xss,
+    detect_sql,
+    detect_nosql,
+    detect_path_traversal,
+    detect_command_injection,
+    detect_prototype_pollution,
+    scan_threats,
+)
 from .ssti import detect_ssti, sanitize_ssti
 from .xxe import detect_xxe, sanitize_xxe
 from .jsonp import sanitize_jsonp_callback, detect_jsonp_injection
@@ -63,6 +72,13 @@ __all__ = [
     "sanitize_nosql",
     "sanitize_path",
     "sanitize_command",
+    "detect_xss",
+    "detect_sql",
+    "detect_nosql",
+    "detect_path_traversal",
+    "detect_command_injection",
+    "detect_prototype_pollution",
+    "scan_threats",
     "sanitize_ssti",
     "detect_ssti",
     "sanitize_xxe",

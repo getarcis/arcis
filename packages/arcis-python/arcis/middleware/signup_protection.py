@@ -144,6 +144,7 @@ class SignupProtection:
     def check(self, request: Any) -> SignupCheckResult:
         result = check_signup(request, **self._opts)
         if not result.allowed:
+            self._tag_marker(request, result)
             if self._on_blocked:
                 self._on_blocked(request, result)
             return result
@@ -157,11 +158,29 @@ class SignupProtection:
                     reason="rate_limited",
                     details={"retry_after": getattr(e, "retry_after", None)},
                 )
+                self._tag_marker(request, rl_result)
                 if self._on_blocked:
                     self._on_blocked(request, rl_result)
                 return rl_result
 
         return result
+
+    def _tag_marker(self, request: Any, result: SignupCheckResult) -> None:
+        """Tag the per-request telemetry marker so the dashboard groups
+        signup-protection denials under vector=signup instead of null.
+        Reason field carries the specific block cause (invalid_email,
+        disposable_email, bot, rate_limited)."""
+        try:
+            from .telemetry import tag_marker
+            tag_marker(
+                request,
+                vector="signup",
+                rule=f"signup/{result.reason}",
+                reason=f"Signup blocked: {result.reason}",
+                severity="medium",
+            )
+        except Exception:
+            pass
 
     def close(self) -> None:
         if self._limiter is not None:

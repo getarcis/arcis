@@ -346,6 +346,14 @@ export function botProtection(options: BotProtectionOptions = {}): RequestHandle
     }
 
     if (denySet.has(result.category)) {
+      // Telemetry attribution: dashboard groups bot denials under vector=bot.
+      req.__arcis = {
+        vector: 'bot',
+        rule: `bot/${result.category.toLowerCase()}`,
+        severity: 'medium',
+        reason: result.name ? `Bot detected: ${result.name}` : 'Bot detected',
+        decision: 'deny',
+      };
       if (onDetected) {
         return onDetected(req, res, result);
       }
@@ -355,6 +363,13 @@ export function botProtection(options: BotProtectionOptions = {}): RequestHandle
 
     // Default action for uncategorized bots
     if (defaultAction === 'deny') {
+      req.__arcis = {
+        vector: 'bot',
+        rule: 'bot/uncategorized',
+        severity: 'medium',
+        reason: 'Uncategorized bot under defaultAction=deny',
+        decision: 'deny',
+      };
       if (onDetected) {
         return onDetected(req, res, result);
       }

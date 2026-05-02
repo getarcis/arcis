@@ -96,6 +96,9 @@ export const XSS_PATTERNS = [
   /<base[\s>]/gi,
   /** link tag injection — stylesheet or preload CSRF attacks */
   /<link[\s>]/gi,
+  /** style tag — CSS expression() / behavior: / IE-era attacks. Mirrors
+   *  Python's xss-style-tag from packages/core/patterns.json. */
+  /<style[\s>]/gi,
 ] as const;
 
 /**

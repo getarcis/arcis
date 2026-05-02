@@ -4,7 +4,8 @@
  */
 
 // Main sanitizer functions
-export { sanitizeString, sanitizeObject, createSanitizer } from './sanitize';
+export { sanitizeString, sanitizeObject, createSanitizer, scanThreats } from './sanitize';
+export type { ThreatHit } from './sanitize';
 
 // Individual sanitizers
 export { sanitizeXss, detectXss } from './xss';

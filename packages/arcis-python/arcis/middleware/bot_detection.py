@@ -294,12 +294,30 @@ class BotProtection:
             return result
 
         if result.category in self.deny:
+            self._tag_marker(request, result)
             raise BotDenied(self.message, result)
 
         if self.default_action == 'deny':
+            self._tag_marker(request, result)
             raise BotDenied(self.message, result)
 
         return result
+
+    def _tag_marker(self, request, result: BotDetectionResult) -> None:
+        """Tag the per-request telemetry marker so the dashboard groups
+        bot denials under ``vector=bot`` rather than ``vector=null``.
+        Lazy-imported to avoid circular dependency at module load."""
+        try:
+            from .telemetry import tag_marker
+            tag_marker(
+                request,
+                vector="bot",
+                rule=f"bot/{result.category.lower()}",
+                reason=f"Bot detected: {result.name}" if result.name else "Bot detected",
+                severity="medium",
+            )
+        except Exception:
+            pass  # never let telemetry break the deny path
 
 
 class BotDenied(Exception):

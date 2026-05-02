@@ -21,6 +21,11 @@ export interface ArcisOptions {
   /** Enable/configure safe logging. Default: true */
   logging?: boolean | LogOptions;
   /**
+   * When true, the sanitizer middleware blocks attack payloads (returns 403)
+   * instead of silently sanitizing. Forwards to SanitizeOptions.block. Opt-in.
+   */
+  block?: boolean;
+  /**
    * Stream decision events to a dashboard endpoint. Opt-in: zero overhead when omitted.
    * See spec/API_SPEC.md §9.
    */
@@ -61,6 +66,12 @@ export interface SanitizeOptions {
   htmlEncode?: boolean;
   /** Freeze sanitized objects with Object.freeze() to prevent mutation. Default: false */
   freeze?: boolean;
+  /**
+   * When true, scan req.body, req.query, req.params for attack patterns and
+   * respond 403 with a SECURITY_THREAT payload instead of silently sanitizing.
+   * Writes the deny decision to the telemetry marker. Default: false (opt-in).
+   */
+  block?: boolean;
 }
 
 /** Result of sanitizing a string */

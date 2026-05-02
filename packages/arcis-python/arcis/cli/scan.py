@@ -198,6 +198,7 @@ examples:
 
     parser.add_argument(
         "url",
+        nargs="?",
         help="Base URL of the running server (e.g. http://localhost:5000)",
     )
     parser.add_argument(
@@ -245,8 +246,27 @@ examples:
         action="store_true",
         help="Disable coloured terminal output",
     )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all attack categories and their payloads, then exit.",
+    )
+    parser.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        help="Suppress per-route progress output (still prints summary).",
+    )
 
     args = parser.parse_args()
+
+    if args.list:
+        _print_payload_catalog(no_color=args.no_color)
+        sys.exit(0)
+
+    if not args.url:
+        parser.print_usage()
+        print("\narcis scan: missing required URL. Run 'arcis scan --list' to see attack categories.")
+        sys.exit(1)
 
     # Parse routes — default to scanning / if none provided
     raw_routes = args.routes or ["POST:/"]
@@ -261,15 +281,95 @@ examples:
     fields = args.fields or DEFAULT_FIELDS
     categories = args.categories  # None = all
 
+    show_progress = not args.quiet and sys.stderr.isatty()
     start = time.time()
     route_results: List[RouteResult] = []
 
-    for method, path in routes:
+    if not args.quiet:
+        sys.stderr.write(
+            f"Scanning {args.url} — {len(routes)} route(s), "
+            f"{len(categories) if categories else len(ATTACK_CATEGORIES)} categories\n"
+        )
+        sys.stderr.flush()
+
+    for i, (method, path) in enumerate(routes, start=1):
+        if show_progress:
+            sys.stderr.write(
+                f"\033[2m  [{i}/{len(routes)}] {method} {path} — probing...\033[0m\n"
+            )
+            sys.stderr.flush()
         rr = scan_route(args.url, method, path, fields, args.timeout, categories, thorough=args.thorough)
         route_results.append(rr)
+        if show_progress:
+            if not rr.reachable:
+                sys.stderr.write(
+                    f"\033[33m       skipped — {rr.error or 'unreachable'}\033[0m\n"
+                )
+            else:
+                blocked = sum(1 for v in rr.vectors if v.blocked)
+                total = len(rr.vectors)
+                sys.stderr.write(
+                    f"\033[2m       fired {total} payload(s) — "
+                    f"{blocked} blocked, {total - blocked} got through\033[0m\n"
+                )
+            sys.stderr.flush()
 
     duration = time.time() - start
     print_report(args.url, route_results, duration, no_color=args.no_color)
+
+    # Upload to dashboard if ARCIS_ENDPOINT is set. Send full per-route
+    # vector results (capped to 500 entries) so the dashboard drill-down
+    # can show which payload reached each route.
+    try:
+        from .dashboard import upload as dashboard_upload
+        dashboard_routes = []
+        upload_vector_count = 0
+        for rr in route_results:
+            route_payload = {
+                "method": rr.method,
+                "path": rr.path,
+                "reachable": rr.reachable,
+                "error": rr.error,
+                "vectors": [],
+            }
+            for v in rr.vectors:
+                if upload_vector_count >= 500:
+                    break
+                route_payload["vectors"].append({
+                    "category": v.category,
+                    "label": v.label,
+                    "payload": (v.payload or "")[:200],
+                    "status": v.status,
+                    "blocked": v.blocked,
+                    "note": v.note,
+                })
+                upload_vector_count += 1
+            dashboard_routes.append(route_payload)
+
+        total_blocked = sum(1 for rr in route_results for v in rr.vectors if v.blocked)
+        total_vulnerable = sum(1 for rr in route_results for v in rr.vectors if not v.blocked)
+        total_vectors = sum(len(rr.vectors) for rr in route_results)
+        dashboard_upload(
+            kind="scans",
+            body={
+                "language": "endpoint-scan",
+                "target": args.url,
+                "summary": {
+                    "routesScanned": sum(1 for rr in route_results if rr.reachable),
+                    "routesTotal": len(route_results),
+                    "totalVectors": total_vectors,
+                    "totalBlocked": total_blocked,
+                    "totalVulnerable": total_vulnerable,
+                    "durationSeconds": round(duration, 3),
+                    "routes": dashboard_routes,
+                    "truncated": upload_vector_count >= 500,
+                },
+                "findingsCount": total_vulnerable,
+            },
+            quiet=args.quiet,
+        )
+    except Exception:
+        pass
 
     # Exit 1 if any vulnerabilities found (useful for CI)
     any_vulnerable = any(
@@ -278,3 +378,27 @@ examples:
         for v in rr.vectors
     )
     sys.exit(1 if any_vulnerable else 0)
+
+
+def _print_payload_catalog(no_color: bool = False) -> None:
+    """Render the attack catalog — what `arcis scan --list` shows."""
+    bold = "" if no_color else "\033[1m"
+    dim = "" if no_color else "\033[2m"
+    cyan = "" if no_color else "\033[36m"
+    reset = "" if no_color else "\033[0m"
+
+    total = sum(len(v) for v in ATTACK_CATEGORIES.values())
+    print()
+    print(f"  {bold}arcis scan — attack catalog ({len(ATTACK_CATEGORIES)} categories, {total} payloads){reset}")
+    print(f"  {dim}Pass --categories to narrow scope, e.g. --categories xss sql{reset}")
+    print()
+    for category, vectors in ATTACK_CATEGORIES.items():
+        slug = category.lower().replace(" ", "")
+        print(f"  {bold}{category}{reset}  {dim}({slug}){reset}")
+        for label, payload in vectors:
+            preview = payload if len(payload) <= 60 else payload[:57] + "..."
+            print(f"    {cyan}{label.ljust(18)}{reset} {preview}")
+        print()
+    print(f"  {bold}Default fields tried (--field overrides){reset}")
+    print(f"    {', '.join(DEFAULT_FIELDS)}")
+    print()

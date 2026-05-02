@@ -236,6 +236,79 @@ func detectProtoDepth(data map[string]interface{}, depth, maxDepth int) bool {
 	return false
 }
 
+// ─── Threat Scanner (block-mode helper) ──────────────────────────────────────
+
+// ThreatHit describes the first attack pattern found while scanning a request.
+type ThreatHit struct {
+	Vector         string // xss | sql | nosql | path | command | prototype
+	Rule           string // e.g. "xss/match"
+	MatchedPattern string // truncated sample of the matched value
+}
+
+// ScanThreats walks data (string, []interface{}, or map[string]interface{}) and
+// returns the first threat hit found. Returns nil if no threat detected.
+//
+// Vector ordering matches the Node and Python SDKs for cross-SDK parity:
+// prototype/nosql key checks first (at any nesting), then per-string vector
+// checks in order: xss, sql, path, command.
+func ScanThreats(data interface{}) *ThreatHit {
+	return scanThreatsDepth(data, 0, 10)
+}
+
+func scanThreatsDepth(data interface{}, depth, maxDepth int) *ThreatHit {
+	if depth > maxDepth {
+		return nil
+	}
+	switch v := data.(type) {
+	case map[string]interface{}:
+		for k, val := range v {
+			lower := strings.ToLower(k)
+			if protoPollutionKeys[lower] {
+				return &ThreatHit{Vector: "prototype", Rule: "prototype/match", MatchedPattern: k}
+			}
+			if nosqlDangerousKeys[lower] {
+				return &ThreatHit{Vector: "nosql", Rule: "nosql/match", MatchedPattern: k}
+			}
+			if hit := scanThreatsDepth(val, depth+1, maxDepth); hit != nil {
+				return hit
+			}
+		}
+		return nil
+	case []interface{}:
+		for _, item := range v {
+			if hit := scanThreatsDepth(item, depth+1, maxDepth); hit != nil {
+				return hit
+			}
+		}
+		return nil
+	case string:
+		sample := v
+		if len(sample) > 80 {
+			sample = sample[:80]
+		}
+		if DetectXSS(v) {
+			return &ThreatHit{Vector: "xss", Rule: "xss/match", MatchedPattern: sample}
+		}
+		if DetectSSTI(v) {
+			return &ThreatHit{Vector: "ssti", Rule: "ssti/match", MatchedPattern: sample}
+		}
+		if DetectXXE(v) {
+			return &ThreatHit{Vector: "xxe", Rule: "xxe/match", MatchedPattern: sample}
+		}
+		if DetectSQL(v) {
+			return &ThreatHit{Vector: "sql", Rule: "sql/match", MatchedPattern: sample}
+		}
+		if DetectPathTraversal(v) {
+			return &ThreatHit{Vector: "path", Rule: "path/match", MatchedPattern: sample}
+		}
+		if DetectCommandInjection(v) {
+			return &ThreatHit{Vector: "command", Rule: "command/match", MatchedPattern: sample}
+		}
+		return nil
+	}
+	return nil
+}
+
 // ─── Helper Functions ────────────────────────────────────────────────────────
 
 // IsDangerousNoSQLKey checks if a key is a dangerous NoSQL operator (case-insensitive).

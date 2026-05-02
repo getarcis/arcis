@@ -1,14 +1,22 @@
 # @arcis/node
 
-[![npm version](https://img.shields.io/npm/v/@arcis/node.svg)](https://www.npmjs.com/package/@arcis/node)
+[![npm version](https://img.shields.io/npm/v/@arcis/node.svg?label=npm&color=00996D)](https://www.npmjs.com/package/@arcis/node)
+[![npm downloads](https://img.shields.io/npm/dm/@arcis/node.svg?label=downloads&color=00996D)](https://www.npmjs.com/package/@arcis/node)
+[![GitHub stars](https://img.shields.io/github/stars/GagancM/arcis?style=flat&color=00996D)](https://github.com/GagancM/arcis/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/Gagancm/arcis/actions/workflows/ci.yml/badge.svg)](https://github.com/Gagancm/arcis/actions/workflows/ci.yml)
 
 **One-line security middleware for Node.js.**
 
 Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
-**45+ security flaws covered. 1,264+ tests. Zero dependencies.**
+**20+ attack vectors covered. 1,451+ tests. Zero dependencies.**
+
+## What's new in v1.4.4
+
+- **Detect-and-block middleware** — opt in with `arcis({ block: true })`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
+- **Telemetry queue cap** — sustained dashboard outage no longer OOMs the worker. Drop-oldest semantics, optional `onQueueOverflow` callback.
+- **`arcis` CLI binary** — `npx arcis --list`, `arcis update`, `arcis scan/audit/sca` (delegates to the Python `arcis` for canonical implementations).
+- See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
 
 ## Installation
 

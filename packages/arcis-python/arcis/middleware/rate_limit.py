@@ -7,6 +7,7 @@ RateLimitExceeded exception and RateLimiter class.
 import time
 import threading
 import atexit
+import weakref
 from typing import Any, Callable, Dict, Optional
 
 from ..stores.memory import InMemoryStore
@@ -19,6 +20,29 @@ class RateLimitExceeded(Exception):
         self.message = message
         self.retry_after = retry_after
         super().__init__(self.message)
+
+
+def _finalize_cleanup(cleanup_event: threading.Event,
+                      cleanup_thread: Optional[threading.Thread],
+                      store: Any) -> None:
+    """Module-level finalizer for RateLimiter. Used via weakref.finalize so
+    GC of a RateLimiter triggers cleanup of its daemon thread + store
+    without keeping the limiter alive. Test reruns and hot-reload now
+    don't leak threads."""
+    try:
+        cleanup_event.set()
+    except Exception:
+        pass
+    try:
+        if cleanup_thread is not None and cleanup_thread.is_alive():
+            cleanup_thread.join(timeout=1.0)
+    except Exception:
+        pass
+    try:
+        if store is not None and hasattr(store, "close"):
+            store.close()
+    except Exception:
+        pass
 
 
 class RateLimiter:
@@ -64,8 +88,15 @@ class RateLimiter:
         if not self._store_provided:
             self._start_cleanup_thread()
 
-        # Register cleanup on exit
+        # Register cleanup on exit (covers normal shutdown).
         atexit.register(self.close)
+        # Also fire close() when the RateLimiter is garbage-collected so
+        # test reruns and hot-reload workflows don't leak daemon threads.
+        # `weakref.finalize` args don't pin `self`; only the store/event
+        # are referenced, which is exactly what cleanup needs.
+        self._finalizer = weakref.finalize(
+            self, _finalize_cleanup, self._cleanup_event, self._cleanup_thread, self.store
+        )
 
     def _start_cleanup_thread(self):
         """Start background cleanup thread."""

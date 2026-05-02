@@ -7,10 +7,12 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { INPUT, DANGEROUS_PROTO_KEYS, NOSQL_DANGEROUS_KEYS } from '../core/constants';
 import { InputTooLargeError, SecurityThreatError } from '../core/errors';
 import type { SanitizeOptions } from '../core/types';
-import { sanitizeXss } from './xss';
+import { sanitizeXss, detectXss } from './xss';
 import { sanitizeSql, detectSql } from './sql';
-import { sanitizePath } from './path';
+import { sanitizePath, detectPathTraversal } from './path';
 import { sanitizeCommand, detectCommandInjection } from './command';
+import { detectSsti } from './ssti';
+import { detectXxe } from './xxe';
 
 /**
  * Sanitize a string value against multiple attack vectors.
@@ -145,6 +147,77 @@ function sanitizeObjectDepth(
   return result;
 }
 
+/** Threat triple returned from scanThreats. */
+export interface ThreatHit {
+  vector:
+    | 'xss'
+    | 'sql'
+    | 'nosql'
+    | 'path'
+    | 'command'
+    | 'prototype'
+    | 'ssti'
+    | 'xxe';
+  rule: string;
+  matchedPattern: string;
+}
+
+/**
+ * Walk a value (string, array, or object) and return the first threat hit
+ * found. Used by block-mode middleware to attribute the deny decision.
+ *
+ * Vector ordering matches Python's scan_threats for cross-SDK parity.
+ */
+export function scanThreats(data: unknown, depth = 0): ThreatHit | null {
+  if (depth > INPUT.MAX_RECURSION_DEPTH) return null;
+
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    for (const key of Object.keys(data as Record<string, unknown>)) {
+      const lower = key.toLowerCase();
+      if (DANGEROUS_PROTO_KEYS.has(lower)) {
+        return { vector: 'prototype', rule: 'prototype/match', matchedPattern: key };
+      }
+      if (NOSQL_DANGEROUS_KEYS.has(key)) {
+        return { vector: 'nosql', rule: 'nosql/match', matchedPattern: key };
+      }
+      const inner = scanThreats((data as Record<string, unknown>)[key], depth + 1);
+      if (inner) return inner;
+    }
+    return null;
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const inner = scanThreats(item, depth + 1);
+      if (inner) return inner;
+    }
+    return null;
+  }
+
+  if (typeof data !== 'string') return null;
+
+  const sample = data.slice(0, 80);
+  if (detectXss(data)) {
+    return { vector: 'xss', rule: 'xss/match', matchedPattern: sample };
+  }
+  if (detectSsti(data)) {
+    return { vector: 'ssti', rule: 'ssti/match', matchedPattern: sample };
+  }
+  if (detectXxe(data)) {
+    return { vector: 'xxe', rule: 'xxe/match', matchedPattern: sample };
+  }
+  if (detectSql(data)) {
+    return { vector: 'sql', rule: 'sql/match', matchedPattern: sample };
+  }
+  if (detectPathTraversal(data)) {
+    return { vector: 'path', rule: 'path/match', matchedPattern: sample };
+  }
+  if (detectCommandInjection(data)) {
+    return { vector: 'command', rule: 'command/match', matchedPattern: sample };
+  }
+  return null;
+}
+
 /**
  * Create Express middleware for request sanitization.
  * Sanitizes req.body, req.query, and req.params.
@@ -159,8 +232,34 @@ function sanitizeObjectDepth(
  * app.use(createSanitizer({ xss: true, sql: true, nosql: true }));
  */
 export function createSanitizer(options: SanitizeOptions = {}): RequestHandler {
-  return (req: Request, _res: Response, next: NextFunction) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Block mode: scan first, return 403 on threat. The telemetry emitter
+      // reads the marker on res.finish to attribute the deny decision.
+      if (options.block) {
+        const hit =
+          scanThreats(req.body) ||
+          scanThreats(req.query) ||
+          scanThreats(req.params) ||
+          scanThreats(req.path);
+        if (hit) {
+          req.__arcis = {
+            vector: hit.vector,
+            rule: hit.rule,
+            severity: 'high',
+            matchedPattern: hit.matchedPattern,
+            reason: `${hit.vector} pattern detected in request`,
+            decision: 'deny',
+          };
+          res.status(403).json({
+            error: 'Request blocked for security reasons',
+            code: 'SECURITY_THREAT',
+            vector: hit.vector,
+          });
+          return;
+        }
+      }
+
       if (req.body && typeof req.body === 'object') {
         req.body = sanitizeObject(req.body, options);
       }

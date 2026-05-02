@@ -7,7 +7,8 @@ corresponds to a vector in TEST_VECTORS.json.
 Note: XSS test vectors in TEST_VECTORS.json expect `&lt;` encoding, but the
 architecture decision is "remove before encode" — so script tags are fully
 removed first. These tests validate the *intent* (dangerous content absent)
-rather than the exact encoding form. See FIND-10 in audit/python.md.
+rather than the exact encoding form. See FIND-10 in
+documents/archive/language-audits/python.md.
 """
 
 import json

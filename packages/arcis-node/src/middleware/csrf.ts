@@ -177,7 +177,15 @@ export function csrfProtection(options: CsrfOptions = {}): RequestHandler {
     domain: options.cookie?.domain,
   };
 
-  const defaultOnError = (_req: Request, res: Response, _next: NextFunction) => {
+  const defaultOnError = (req: Request, res: Response, _next: NextFunction) => {
+    // Telemetry attribution: dashboard groups CSRF denials under vector=csrf.
+    req.__arcis = {
+      vector: 'csrf',
+      rule: 'csrf/token-mismatch',
+      severity: 'high',
+      reason: 'CSRF token missing or invalid',
+      decision: 'deny',
+    };
     res.status(403).json({
       error: 'CSRF token validation failed',
       message: 'Invalid or missing CSRF token. Include the token from the cookie in the X-CSRF-Token header.',

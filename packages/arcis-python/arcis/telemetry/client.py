@@ -163,9 +163,20 @@ class TelemetryClient:
             max(options.flush_interval_ms or _DEFAULT_FLUSH_INTERVAL_MS, _MIN_FLUSH_INTERVAL_MS)
             / 1000.0
         )
+        # Cap the queue to bound memory under sustained dashboard outage.
+        # Bounded queue raises queue.Full on put_nowait; record() catches
+        # that and drop-oldest's the queue to make room for the new event.
+        self._max_queue_size = max(
+            options.max_queue_size if options.max_queue_size else 10_000,
+            self._batch_size,
+        )
         self._on_error: Callable[[Exception], None] = options.on_error or (lambda _e: None)
+        self._on_queue_overflow: Callable[[int], None] = (
+            options.on_queue_overflow or (lambda _n: None)
+        )
+        self._dropped_since_last_flush = 0
 
-        self._queue: "queue.Queue[TelemetryEvent]" = queue.Queue()
+        self._queue: "queue.Queue[TelemetryEvent]" = queue.Queue(maxsize=self._max_queue_size)
         self._closed = threading.Event()
         self._flush_lock = threading.Lock()
         self._wakeup = threading.Event()
@@ -178,12 +189,34 @@ class TelemetryClient:
     # public ----
 
     def record(self, event: TelemetryEvent) -> None:
-        """Enqueue an event. Never raises, never blocks."""
+        """Enqueue an event. Never raises, never blocks.
+
+        Drop-oldest when the queue is full: better to lose stale events
+        than to grow without bound during a dashboard outage. Each drop
+        increments the overflow counter and notifies the caller via
+        ``on_queue_overflow``.
+        """
         if self._closed.is_set():
             return
         try:
             self._queue.put_nowait(event)
-        except Exception:  # pragma: no cover - queue.Queue is unbounded
+        except queue.Full:
+            # Drop the oldest event to make room for the freshest one.
+            try:
+                self._queue.get_nowait()
+                self._dropped_since_last_flush += 1
+                try:
+                    self._on_queue_overflow(self._dropped_since_last_flush)
+                except Exception:
+                    pass
+                self._queue.put_nowait(event)
+            except Exception:
+                # Race: another consumer drained the queue between our
+                # Full and get_nowait. Drop this event silently — we'll
+                # retry on the next record() call.
+                return
+        except Exception:
+            # Any other exception: never break the caller's hot path.
             return
         if self._queue.qsize() >= self._batch_size:
             self._wakeup.set()
@@ -199,6 +232,8 @@ class TelemetryClient:
                 return
             try:
                 self._send(batch)
+                # Connected dashboard "clears" the overflow alert window.
+                self._dropped_since_last_flush = 0
             except Exception as e:
                 self._safe_notify(e)
 
@@ -295,9 +330,17 @@ class AsyncTelemetryClient:
             max(options.flush_interval_ms or _DEFAULT_FLUSH_INTERVAL_MS, _MIN_FLUSH_INTERVAL_MS)
             / 1000.0
         )
+        self._max_queue_size = max(
+            options.max_queue_size if options.max_queue_size else 10_000,
+            self._batch_size,
+        )
         self._on_error: Callable[[Exception], None] = options.on_error or (lambda _e: None)
+        self._on_queue_overflow: Callable[[int], None] = (
+            options.on_queue_overflow or (lambda _n: None)
+        )
+        self._dropped_since_last_flush = 0
 
-        self._queue: "asyncio.Queue[TelemetryEvent]" = asyncio.Queue()
+        self._queue: "asyncio.Queue[TelemetryEvent]" = asyncio.Queue(maxsize=self._max_queue_size)
         self._closed = False
         self._flushing = False
         self._wakeup = asyncio.Event()
@@ -307,11 +350,27 @@ class AsyncTelemetryClient:
     # public ----
 
     def record(self, event: TelemetryEvent) -> None:
-        """Enqueue an event. Sync, non-blocking, never raises."""
+        """Enqueue an event. Sync, non-blocking, never raises.
+
+        Drop-oldest when the queue is full so memory stays bounded under
+        sustained dashboard outage. ``asyncio.Queue.put_nowait`` raises
+        ``QueueFull`` when at capacity.
+        """
         if self._closed:
             return
         try:
             self._queue.put_nowait(event)
+        except asyncio.QueueFull:
+            try:
+                self._queue.get_nowait()
+                self._dropped_since_last_flush += 1
+                try:
+                    self._on_queue_overflow(self._dropped_since_last_flush)
+                except Exception:
+                    pass
+                self._queue.put_nowait(event)
+            except Exception:
+                return
         except Exception:
             return
         if self._queue.qsize() >= self._batch_size:
@@ -329,6 +388,7 @@ class AsyncTelemetryClient:
             if batch:
                 try:
                     await self._send(batch)
+                    self._dropped_since_last_flush = 0
                 except Exception as e:
                     self._safe_notify(e)
         finally:

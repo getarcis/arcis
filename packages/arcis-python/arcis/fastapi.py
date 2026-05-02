@@ -13,11 +13,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
 
-from .sanitizers.sanitize import Sanitizer
+from .sanitizers.sanitize import Sanitizer, scan_threats
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
 from .middleware.headers import SecurityHeaders
 from .middleware.error_handler import ErrorHandler
 from .middleware.telemetry import (
+    ARCIS_MARKER_ATTR,
     ArcisTelemetryMarker,
     build_event,
     extract_starlette_ip,
@@ -377,6 +378,10 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         sanitize_sql: bool = True,
         sanitize_nosql: bool = True,
         sanitize_path: bool = True,
+        # Block mode: when True, scan request body + query for attack
+        # patterns and return 403 (with telemetry attribution) instead of
+        # silently sanitizing. Opt-in for backwards compatibility.
+        block: bool = False,
         # Rate limiter options
         rate_limit: bool = True,
         rate_limit_max: int = DEFAULT_MAX_REQUESTS,
@@ -399,7 +404,9 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         telemetry: Optional[Any] = None,
     ):
         super().__init__(app)
-        
+
+        self.block = block
+
         self.sanitizer = sanitizer or (Sanitizer(
             xss=sanitize_xss,
             sql=sanitize_sql,
@@ -482,7 +489,10 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         telemetry_start: Optional[float] = None
         if self._telemetry_client is not None:
             telemetry_start = time.perf_counter()
-            request.state.__arcis = ArcisTelemetryMarker()
+            # Use setattr+ARCIS_MARKER_ATTR rather than direct dunder syntax —
+            # ``request.state.__arcis`` would be mangled to
+            # ``request.state._ArcisMiddleware__arcis`` inside this class.
+            setattr(request.state, ARCIS_MARKER_ATTR, ArcisTelemetryMarker())
 
         # Rate limiting (async or sync)
         rate_limit_info = None
@@ -510,23 +520,73 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 self._maybe_record(request, response, telemetry_start)
                 return response
         
-        # Store sanitized body in request state if JSON
-        if self.sanitizer:
+        # Read JSON body once (used by both block scan and sanitizer below).
+        body: Any = None
+        body_read = False
+        if (self.block or self.sanitizer):
             content_type = request.headers.get("content-type", "")
             if "application/json" in content_type:
                 try:
                     body = await request.json()
-                    request.state.sanitized_body = self.sanitizer(body)
-                    request.state.json = request.state.sanitized_body
+                    body_read = True
                 except json.JSONDecodeError as e:
-                    # Return 400 for malformed JSON
                     return JSONResponse(
                         content={"error": "Invalid JSON in request body", "detail": str(e)},
                         status_code=400,
                     )
                 except Exception:
-                    # For other errors (empty body, etc.), continue without sanitized body
-                    pass
+                    body = None
+
+        # Block mode: scan body + query params for attack patterns. On match,
+        # write the telemetry marker (so the dashboard records vector/rule)
+        # and return 403 before the handler runs.
+        if self.block:
+            threat = None
+            if body_read and body is not None:
+                threat = scan_threats(body)
+            if threat is None:
+                try:
+                    qp = dict(request.query_params)
+                except Exception:
+                    qp = {}
+                if qp:
+                    threat = scan_threats(qp)
+            if threat is None:
+                threat = scan_threats(request.url.path or "")
+
+            if threat is not None:
+                vector, rule, matched = threat
+                if self._telemetry_client is not None:
+                    marker: Optional[ArcisTelemetryMarker] = getattr(
+                        request.state, ARCIS_MARKER_ATTR, None
+                    )
+                    if marker is None:
+                        marker = ArcisTelemetryMarker()
+                        setattr(request.state, ARCIS_MARKER_ATTR, marker)
+                    marker.vector = vector
+                    marker.rule = rule
+                    marker.severity = "high"
+                    marker.matched_pattern = matched
+                    marker.reason = f"{vector} pattern detected in request"
+                    marker.decision = "deny"
+                response = JSONResponse(
+                    content={
+                        "error": "Request blocked for security reasons",
+                        "code": "SECURITY_THREAT",
+                        "vector": vector,
+                    },
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
+
+        # Store sanitized body in request state if JSON
+        if self.sanitizer and body_read and body is not None:
+            try:
+                request.state.sanitized_body = self.sanitizer(body)
+                request.state.json = request.state.sanitized_body
+            except Exception:
+                pass
         
         # Process request with error handling
         try:
@@ -578,7 +638,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
 
             latency_ms = (time.perf_counter() - start) * 1000.0
             marker: Optional[ArcisTelemetryMarker] = getattr(
-                request.state, "__arcis", None
+                request.state, ARCIS_MARKER_ATTR, None
             )
             user_agent = request.headers.get("user-agent", "") if hasattr(request, "headers") else ""
             event = build_event(
