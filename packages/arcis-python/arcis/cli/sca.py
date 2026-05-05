@@ -76,6 +76,12 @@ class CompromisedPackage:
     trojanized_deps: List[str] = field(default_factory=list)
     persistence_artifacts: List[str] = field(default_factory=list)
     remediation: str = ""
+    # vulnerable_ranges: list of comma-separated constraint strings such as
+    # ">=4.0.0,<4.22.4" or ">=0.0,<1.7.4". Each constraint is `<op><version>`
+    # with op in (==, !=, <, <=, >, >=). Constraints inside one string are
+    # AND-ed; multiple ranges in the list are OR-ed. Empty by default so
+    # legacy entries with only `malicious_versions` keep working.
+    vulnerable_ranges: List[str] = field(default_factory=list)
 
 
 def _load_threat_db() -> List[CompromisedPackage]:
@@ -94,7 +100,7 @@ def _load_threat_db() -> List[CompromisedPackage]:
         threats.append(CompromisedPackage(
             ecosystem=entry["ecosystem"],
             name=entry["name"],
-            malicious_versions=entry["malicious_versions"],
+            malicious_versions=entry.get("malicious_versions", []),
             attack_vector=entry["attack_vector"],
             severity=entry["severity"],
             cve=entry.get("cve", ""),
@@ -104,11 +110,121 @@ def _load_threat_db() -> List[CompromisedPackage]:
             trojanized_deps=entry.get("trojanized_deps", []),
             persistence_artifacts=entry.get("persistence_artifacts", []),
             remediation=entry.get("remediation", ""),
+            vulnerable_ranges=entry.get("vulnerable_ranges", []),
         ))
     return threats
 
 
 THREAT_DB: List[CompromisedPackage] = _load_threat_db()
+
+
+# ── Version range matcher ────────────────────────────────────────────────────
+# Best-effort SemVer / PEP 440 subset. Handles the version shapes we actually
+# encounter in seed entries: dotted ints with optional pre-release suffix
+# (e.g. 1.0.0-rc1, 1.7.0). Pre-release sorts lower than the equivalent
+# release. Not a full implementation — but matches GHSA range strings cleanly.
+
+_VERSION_LEAD_RE = re.compile(r"^[vV]?(.+)$")
+
+
+def _normalize_name(name: str, ecosystem: str) -> str:
+    """Canonicalize a package name for case- and separator-insensitive
+    comparison. PyPI normalizes `_` and `-` to be equivalent and folds case;
+    npm only folds case. Run this on both threat.name and the matched
+    package name before comparing."""
+    n = name.strip().lower()
+    if ecosystem == "pypi":
+        n = n.replace("_", "-")
+    return n
+
+
+def _version_key(v: str) -> tuple:
+    """Comparable tuple for a version string. Numeric parts win against
+    non-numeric in the same slot; pre-release suffixes sort lower than the
+    same base with no suffix."""
+    if not v:
+        return ((0, ""), (0, ""))
+    v = _VERSION_LEAD_RE.sub(r"\1", v.strip()).split("+", 1)[0]
+    base, _, suffix = v.partition("-")
+    parts = []
+    for p in base.split("."):
+        if p.isdigit():
+            parts.append((1, int(p)))
+        else:
+            digits = "".join(c for c in p if c.isdigit())
+            tail = "".join(c for c in p if not c.isdigit())
+            if digits:
+                parts.append((1, int(digits)))
+                if tail:
+                    parts.append((0, tail))
+            else:
+                parts.append((0, p))
+    if suffix:
+        # pre-release suffix: tag with 0 so it sorts below the release marker
+        parts.append((0, suffix))
+    else:
+        parts.append((2, ""))
+    return tuple(parts)
+
+
+_OPS = ("<=", ">=", "!=", "==", "<", ">")
+
+
+def _matches_constraint(version: str, constraint: str) -> bool:
+    """Single constraint match like '<4.22.4' or '==1.7.0'."""
+    constraint = constraint.strip()
+    if not constraint:
+        return True
+    for op in _OPS:
+        if constraint.startswith(op):
+            target = constraint[len(op):].strip()
+            v = _version_key(version)
+            t = _version_key(target)
+            if op == "<":
+                return v < t
+            if op == "<=":
+                return v <= t
+            if op == ">":
+                return v > t
+            if op == ">=":
+                return v >= t
+            if op == "==":
+                return v == t
+            if op == "!=":
+                return v != t
+    # No operator: bare version means exact match.
+    return _version_key(version) == _version_key(constraint)
+
+
+def _matches_range(version: str, range_expr: str) -> bool:
+    """Comma-separated constraints AND-ed together: '>=4.0.0,<4.22.4'."""
+    parts = [c for c in range_expr.split(",") if c.strip()]
+    if not parts:
+        return False
+    return all(_matches_constraint(version, c) for c in parts)
+
+
+def _matches_any_range(version: str, ranges: List[str]) -> bool:
+    """OR across multiple range strings."""
+    return any(_matches_range(version, r) for r in ranges)
+
+
+def _is_compromised(version: str, threat: CompromisedPackage) -> bool:
+    """True iff version falls under any of the threat's match expressions.
+
+    Two-track matching, in order:
+      1. Exact version list (legacy, used by trojanized-package entries
+         where attackers pushed specific malicious versions).
+      2. vulnerable_ranges (used by high-severity-CVE entries where every
+         version below a fix release is exploitable).
+    """
+    if not version:
+        return False
+    if version in threat.malicious_versions:
+        return True
+    if threat.vulnerable_ranges and _matches_any_range(version, threat.vulnerable_ranges):
+        return True
+    return False
 
 
 # ── Data models ──────────────────────────────────────────────────────────────
@@ -154,12 +270,16 @@ def _scan_package_lock(path: str) -> List[Finding]:
         if threat.ecosystem != "npm":
             continue
 
+        threat_norm = _normalize_name(threat.name, "npm")
+        trojanized_norm = {_normalize_name(d, "npm") for d in threat.trojanized_deps}
+
         # Check v2/v3 packages
         for pkg_path, pkg_info in packages.items():
             pkg_name = pkg_path.split("node_modules/")[-1] if "node_modules/" in pkg_path else ""
+            pkg_norm = _normalize_name(pkg_name, "npm")
             version = pkg_info.get("version", "")
 
-            if pkg_name == threat.name and version in threat.malicious_versions:
+            if pkg_norm == threat_norm and _is_compromised(version, threat):
                 findings.append(Finding(
                     package=threat.name,
                     ecosystem="npm",
@@ -172,25 +292,25 @@ def _scan_package_lock(path: str) -> List[Finding]:
                     references=threat.references,
                 ))
 
-            for dep_name in threat.trojanized_deps:
-                if pkg_name == dep_name:
-                    findings.append(Finding(
-                        package=dep_name,
-                        ecosystem="npm",
-                        version=version,
-                        severity=threat.severity,
-                        location=lockfile,
-                        attack_vector=f"Trojanized dependency of {threat.name}: {threat.attack_vector}",
-                        remediation=threat.remediation,
-                        source=threat.source,
-                        references=threat.references,
-                        finding_type="trojanized_dep",
-                    ))
+            if pkg_norm in trojanized_norm:
+                findings.append(Finding(
+                    package=pkg_name,
+                    ecosystem="npm",
+                    version=version,
+                    severity=threat.severity,
+                    location=lockfile,
+                    attack_vector=f"Trojanized dependency of {threat.name}: {threat.attack_vector}",
+                    remediation=threat.remediation,
+                    source=threat.source,
+                    references=threat.references,
+                    finding_type="trojanized_dep",
+                ))
 
         # Check v1 dependencies
         for dep_name, dep_info in dependencies.items():
+            dep_norm = _normalize_name(dep_name, "npm")
             version = dep_info.get("version", "")
-            if dep_name == threat.name and version in threat.malicious_versions:
+            if dep_norm == threat_norm and _is_compromised(version, threat):
                 findings.append(Finding(
                     package=threat.name,
                     ecosystem="npm",
@@ -223,13 +343,19 @@ def _scan_yarn_lock(path: str) -> List[Finding]:
         if threat.ecosystem != "npm":
             continue
 
-        for mal_ver in threat.malicious_versions:
-            pattern = rf'"{re.escape(threat.name)}@[^"]*".*?version\s+"({re.escape(mal_ver)})"'
-            if re.search(pattern, content, re.DOTALL):
+        # Extract every version block for `threat.name` and check each
+        # against the matcher (handles both exact-list and range entries).
+        block_re = re.compile(
+            rf'"{re.escape(threat.name)}@[^"]*".*?version\s+"([^"]+)"',
+            re.DOTALL,
+        )
+        for m in block_re.finditer(content):
+            found_ver = m.group(1)
+            if _is_compromised(found_ver, threat):
                 findings.append(Finding(
                     package=threat.name,
                     ecosystem="npm",
-                    version=mal_ver,
+                    version=found_ver,
                     severity=threat.severity,
                     location=lockfile,
                     attack_vector=threat.attack_vector,
@@ -273,7 +399,7 @@ def _scan_node_modules(path: str) -> List[Finding]:
                 with open(pkg_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 version = data.get("version", "")
-                if version in threat.malicious_versions:
+                if _is_compromised(version, threat):
                     findings.append(Finding(
                         package=threat.name,
                         ecosystem="npm",
@@ -314,6 +440,12 @@ def _scan_requirements(path: str) -> List[Finding]:
     """Scan requirements.txt, Pipfile.lock, poetry.lock for compromised versions."""
     findings: List[Finding] = []
 
+    # Match `pkg ==1.2.3` lines. Pull the version out and run it through
+    # the unified matcher so range entries work too. Comments and extras
+    # are stripped before matching.
+    req_line_re = re.compile(
+        r"^\s*([A-Za-z0-9_.\-]+)\s*(?:\[[^\]]*\])?\s*==\s*([^\s;#]+)",
+    )
     for req_name in ["requirements.txt", "requirements-dev.txt", "requirements-prod.txt"]:
         req_file = os.path.join(path, req_name)
         if not os.path.isfile(req_file):
@@ -321,49 +453,54 @@ def _scan_requirements(path: str) -> List[Finding]:
         try:
             with open(req_file, "r", encoding="utf-8") as f:
                 for line in f:
-                    line = line.strip()
+                    m = req_line_re.match(line)
+                    if not m:
+                        continue
+                    pkg_name = _normalize_name(m.group(1), "pypi")
+                    pkg_ver = m.group(2).strip()
                     for threat in THREAT_DB:
                         if threat.ecosystem != "pypi":
                             continue
-                        for mal_ver in threat.malicious_versions:
-                            if re.match(
-                                rf"^{re.escape(threat.name)}\s*==\s*{re.escape(mal_ver)}",
-                                line,
-                                re.IGNORECASE,
-                            ):
-                                findings.append(Finding(
-                                    package=threat.name,
-                                    ecosystem="pypi",
-                                    version=mal_ver,
-                                    severity=threat.severity,
-                                    location=req_file,
-                                    attack_vector=threat.attack_vector,
-                                    remediation=threat.remediation,
-                                    source=threat.source,
-                                    references=threat.references,
-                                ))
+                        if _normalize_name(threat.name, "pypi") != pkg_name:
+                            continue
+                        if _is_compromised(pkg_ver, threat):
+                            findings.append(Finding(
+                                package=threat.name,
+                                ecosystem="pypi",
+                                version=pkg_ver,
+                                severity=threat.severity,
+                                location=req_file,
+                                attack_vector=threat.attack_vector,
+                                remediation=threat.remediation,
+                                source=threat.source,
+                                references=threat.references,
+                            ))
         except OSError:
             pass
 
-    # poetry.lock
+    # poetry.lock — parse all package blocks once, then match each.
     poetry_lock = os.path.join(path, "poetry.lock")
     if os.path.isfile(poetry_lock):
         try:
             with open(poetry_lock, "r", encoding="utf-8") as f:
                 content = f.read()
-            for threat in THREAT_DB:
-                if threat.ecosystem != "pypi":
-                    continue
-                for mal_ver in threat.malicious_versions:
-                    pattern = (
-                        rf'\[\[package\]\]\s*name\s*=\s*"{re.escape(threat.name)}"'
-                        rf'\s*version\s*=\s*"{re.escape(mal_ver)}"'
-                    )
-                    if re.search(pattern, content, re.DOTALL):
+            block_re = re.compile(
+                r'\[\[package\]\]\s*name\s*=\s*"([^"]+)"\s*version\s*=\s*"([^"]+)"',
+                re.DOTALL,
+            )
+            for m in block_re.finditer(content):
+                pkg_name = _normalize_name(m.group(1), "pypi")
+                pkg_ver = m.group(2)
+                for threat in THREAT_DB:
+                    if threat.ecosystem != "pypi":
+                        continue
+                    if _normalize_name(threat.name, "pypi") != pkg_name:
+                        continue
+                    if _is_compromised(pkg_ver, threat):
                         findings.append(Finding(
                             package=threat.name,
                             ecosystem="pypi",
-                            version=mal_ver,
+                            version=pkg_ver,
                             severity=threat.severity,
                             location=poetry_lock,
                             attack_vector=threat.attack_vector,
@@ -374,7 +511,7 @@ def _scan_requirements(path: str) -> List[Finding]:
         except OSError:
             pass
 
-    # Pipfile.lock
+    # Pipfile.lock — iterate once, normalize-match against every threat.
     pipfile_lock = os.path.join(path, "Pipfile.lock")
     if os.path.isfile(pipfile_lock):
         try:
@@ -382,23 +519,26 @@ def _scan_requirements(path: str) -> List[Finding]:
                 data = json.load(f)
             for section in ("default", "develop"):
                 pkgs = data.get(section, {})
-                for threat in THREAT_DB:
-                    if threat.ecosystem != "pypi":
-                        continue
-                    pkg_info = pkgs.get(threat.name, {})
+                for raw_name, pkg_info in pkgs.items():
+                    pkg_name = _normalize_name(raw_name, "pypi")
                     version = pkg_info.get("version", "").lstrip("=")
-                    if version in threat.malicious_versions:
-                        findings.append(Finding(
-                            package=threat.name,
-                            ecosystem="pypi",
-                            version=version,
-                            severity=threat.severity,
-                            location=pipfile_lock,
-                            attack_vector=threat.attack_vector,
-                            remediation=threat.remediation,
-                            source=threat.source,
-                            references=threat.references,
-                        ))
+                    for threat in THREAT_DB:
+                        if threat.ecosystem != "pypi":
+                            continue
+                        if _normalize_name(threat.name, "pypi") != pkg_name:
+                            continue
+                        if _is_compromised(version, threat):
+                            findings.append(Finding(
+                                package=threat.name,
+                                ecosystem="pypi",
+                                version=version,
+                                severity=threat.severity,
+                                location=pipfile_lock,
+                                attack_vector=threat.attack_vector,
+                                remediation=threat.remediation,
+                                source=threat.source,
+                                references=threat.references,
+                            ))
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -422,12 +562,14 @@ def _scan_pip_installed() -> List[Finding]:
         return findings
 
     for pkg in packages:
-        pkg_name = pkg.get("name", "").lower()
+        pkg_name = _normalize_name(pkg.get("name", ""), "pypi")
         pkg_version = pkg.get("version", "")
         for threat in THREAT_DB:
             if threat.ecosystem != "pypi":
                 continue
-            if pkg_name == threat.name.lower() and pkg_version in threat.malicious_versions:
+            if _normalize_name(threat.name, "pypi") != pkg_name:
+                continue
+            if _is_compromised(pkg_version, threat):
                 findings.append(Finding(
                     package=threat.name,
                     ecosystem="pypi",
