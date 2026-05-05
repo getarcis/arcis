@@ -111,12 +111,11 @@ def _try_interactive_picker() -> bool:
         return True
 
     if choice == "scan":
-        url = Prompt.ask("  Server URL", default="http://localhost:8000")
-        if not url:
-            return True
-        route = Prompt.ask("  Route to test (METHOD:/path)", default="POST:/echo")
-        field = Prompt.ask("  JSON field name to inject into", default="q")
-        sys.argv = ["arcis scan", url, "--route", route, "--field", field]
+        # Phase A auto-discovery handles target + routes inside scan.main().
+        # The picker just hands off so the user gets the full discovery
+        # flow (env / control-plane / port sniff + source-aware routes)
+        # instead of three separate prompts here.
+        sys.argv = ["arcis scan"]
         from arcis.cli.scan import main as scan_main
         scan_main()
         return True

@@ -2,10 +2,13 @@
 arcis scan — HTTP security vulnerability scanner.
 
 Usage:
+    arcis scan                                 # auto-discover server + routes
     arcis scan http://localhost:5000
     arcis scan http://localhost:3000 --route POST:/api/users --route GET:/search
     arcis scan http://localhost:8080 --route /api/login --field username --field password
     arcis scan http://localhost:5000 --categories xss sql nosql
+    arcis scan --yes                           # skip the confirm prompt (CI)
+    arcis scan --no-discovery http://localhost:5000  # opt out of source-aware routes
     arcis scan http://localhost:5000 --no-color
 """
 
@@ -17,12 +20,22 @@ import json
 import sys
 import time
 import urllib.parse
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import List, Optional, Sequence, Tuple
+
+from rich.prompt import Prompt
 
 from arcis.cli.payloads import ATTACK_CATEGORIES, BLOCKED_STATUS_CODES, DEFAULT_FIELDS
 from arcis.cli.report import RouteResult, VectorResult, print_report
 from arcis.cli._console import console, err_console, live_status
+from arcis.cli.discovery import (
+    DiscoveredRoute,
+    TargetCandidate,
+    detect_target,
+    discover_routes,
+)
 
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -181,6 +194,156 @@ def scan_route(
     return result
 
 
+# ── Discovery helpers ────────────────────────────────────────────────────────
+
+def _is_interactive() -> bool:
+    """True only when both stdin and stdout are TTYs. CI / piped runs are
+    treated as non-interactive so we never block on a prompt."""
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _parse_route_args(raw_routes: Sequence[str]) -> List[Tuple[str, str]]:
+    """Turn --route arguments into (METHOD, path) tuples. Bare paths
+    default to POST so `--route /api/login` still works."""
+    out: List[Tuple[str, str]] = []
+    for r in raw_routes:
+        if ":" in r and not r.startswith("http"):
+            method, path = r.split(":", 1)
+            out.append((method.upper(), path))
+        else:
+            out.append(("POST", r))
+    return out
+
+
+def _resolve_target(
+    args: argparse.Namespace,
+    cwd: Path,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Resolve the scan target. Returns (url, source, framework_hint).
+
+    Order of preference (handled by `detect_target`):
+        1. .env / .env.local
+        2. Local control-plane workspace endpoint
+        3. Localhost dev port sniff
+
+    If multiple candidates and the run is interactive (no --yes), the
+    user picks one. CI auto-takes the first.
+    """
+    if args.url:
+        return args.url, "argv", None
+
+    candidates = detect_target(
+        cwd,
+        include_control_plane=not args.no_control_plane,
+    )
+    if not candidates:
+        return None, None, None
+    if len(candidates) == 1 or args.yes or not _is_interactive():
+        c = candidates[0]
+        return c.url, c.source, c.framework
+    return _pick_target(candidates)
+
+
+def _pick_target(
+    candidates: Sequence[TargetCandidate],
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Interactive prompt for choosing among multiple discovered targets."""
+    err_console.print()
+    err_console.print(f"  [bold cyan]Found {len(candidates)} candidate servers:[/]")
+    for i, c in enumerate(candidates, start=1):
+        framework = f" [dim]({c.framework})[/]" if c.framework else ""
+        err_console.print(f"    [bold]{i}.[/] {c.url}  [dim]via {c.source}[/]{framework}")
+    err_console.print()
+    choices = [str(i) for i in range(1, len(candidates) + 1)] + ["q"]
+    answer = Prompt.ask("  Scan which?", choices=choices, default="1")
+    if answer == "q":
+        return None, None, None
+    c = candidates[int(answer) - 1]
+    return c.url, c.source, c.framework
+
+
+def _print_no_target_tip() -> None:
+    """Surrender path: discovery returned nothing usable."""
+    err_console.print()
+    err_console.print("  [yellow][bold]Could not auto-detect a running server.[/][/]")
+    err_console.print("    [dim]No process listening on common dev ports (3000, 5000, 5001, 8000, 8080, 4000, 8888).[/]")
+    err_console.print("    [dim]No PORT or BASE_URL in .env / .env.local.[/]")
+    err_console.print("    [dim]No active workspace at the local control-plane.[/]")
+    err_console.print()
+    err_console.print("  [bold]Tip:[/]  start your server first, or pass the URL explicitly:")
+    err_console.print("    [bold]arcis scan http://localhost:<port>[/]")
+    err_console.print("  Run from the project root so route discovery can find your handlers.")
+    err_console.print()
+
+
+def _print_no_routes_warning(target_url: str) -> None:
+    """Print after a fallback to POST / when discovery yielded nothing."""
+    err_console.print(
+        "[yellow]  No routes discovered from source. Falling back to POST /.[/]"
+    )
+    err_console.print(
+        "[dim]    Tip: pass --route POST:/api/login or similar to scan real endpoints, "
+        "or run from a project root with package.json / pyproject.toml / go.mod.[/]"
+    )
+
+
+def _confirm_plan(
+    *,
+    args: argparse.Namespace,
+    target_url: str,
+    target_source: Optional[str],
+    target_framework: Optional[str],
+    routes: Sequence[Tuple[str, str]],
+    discovered_routes: Sequence[DiscoveredRoute],
+    routes_user_supplied: bool,
+    categories: Optional[List[str]],
+) -> bool:
+    """Print the run plan. Prompt for confirmation only when interactive
+    and `--yes` was not passed. Non-TTY auto-confirms (CI safe)."""
+    err_console.print()
+    framework_tag = f" [dim]({target_framework})[/]" if target_framework else ""
+    source_tag = f"  [dim]via {target_source}[/]" if target_source else ""
+    err_console.print(f"  [bold cyan]Target:[/] {target_url}{source_tag}{framework_tag}")
+
+    if discovered_routes:
+        method_counts = Counter(r.method for r in discovered_routes)
+        breakdown = ", ".join(f"{n} {m}" for m, n in method_counts.most_common())
+        err_console.print(
+            f"  [bold cyan]Routes:[/] {len(discovered_routes)} discovered  [dim]({breakdown})[/]"
+        )
+    elif routes_user_supplied:
+        err_console.print(
+            f"  [bold cyan]Routes:[/] {len(routes)} from --route"
+        )
+    else:
+        err_console.print(
+            "  [bold cyan]Routes:[/] [yellow]none discovered, using POST /[/]"
+        )
+
+    cat_count = len(categories) if categories else len(ATTACK_CATEGORIES)
+    if categories:
+        wanted = {c.lower().replace(" ", "") for c in categories}
+        active_counts = [
+            len(v) for k, v in ATTACK_CATEGORIES.items()
+            if k.lower().replace(" ", "") in wanted
+        ]
+    else:
+        active_counts = [len(v) for v in ATTACK_CATEGORIES.values()]
+    payloads_per_route = sum(active_counts) if args.thorough else len(active_counts)
+    request_count = len(routes) * payloads_per_route
+    err_console.print(
+        f"  [bold cyan]Plan:[/]   {cat_count} attack categor"
+        f"{'y' if cat_count == 1 else 'ies'}, ~{request_count} requests"
+    )
+    err_console.print()
+
+    if args.yes or not _is_interactive():
+        return True
+
+    answer = Prompt.ask("  Continue?", choices=["y", "n"], default="y")
+    return answer.lower().startswith("y")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -190,17 +353,20 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
+  arcis scan                                 # auto-discover server + routes
   arcis scan http://localhost:5000
   arcis scan http://localhost:3000 --route POST:/api/users --route GET:/search
   arcis scan http://localhost:8080 --route /api/login --field username --field password
   arcis scan http://localhost:5000 --categories xss sql nosql
+  arcis scan --yes                           # skip the confirm prompt (CI)
         """,
     )
 
     parser.add_argument(
         "url",
         nargs="?",
-        help="Base URL of the running server (e.g. http://localhost:5000)",
+        help="Base URL of the running server (e.g. http://localhost:5000). "
+             "Omit to auto-detect via .env / control-plane / dev-port sniff.",
     )
     parser.add_argument(
         "--route", "-r",
@@ -209,7 +375,7 @@ examples:
         metavar="[METHOD:]PATH",
         help=(
             "Route to test. Format: 'POST:/api/users' or just '/api/users' (defaults to POST). "
-            "Repeat to test multiple routes."
+            "Repeat to test multiple routes. Skips source-aware discovery when set."
         ),
     )
     parser.add_argument(
@@ -257,6 +423,21 @@ examples:
         action="store_true",
         help="Suppress per-route progress output (still prints summary).",
     )
+    parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip the confirm prompt before scanning (CI-friendly).",
+    )
+    parser.add_argument(
+        "--no-discovery",
+        action="store_true",
+        help="Skip source-aware route discovery; use --route flags or POST / fallback.",
+    )
+    parser.add_argument(
+        "--no-control-plane",
+        action="store_true",
+        help="Skip the local control-plane probe during target discovery.",
+    )
 
     args = parser.parse_args()
 
@@ -264,27 +445,51 @@ examples:
         _print_payload_catalog(no_color=args.no_color)
         sys.exit(0)
 
-    if not args.url:
-        parser.print_usage()
-        print("\narcis scan: missing required URL. Run 'arcis scan --list' to see attack categories.")
-        sys.exit(1)
+    cwd = Path.cwd()
 
-    # Parse routes — default to scanning / if none provided. Track whether
-    # routes were user-supplied vs the GET/POST `/` fallback so we can
-    # print a tip later if the fallback proves useless (which it usually
-    # does on real apps with auth-gated roots).
+    # Resolve target. If discovery yields nothing usable, surrender clearly.
+    target_url, target_source, target_framework = _resolve_target(args, cwd)
+    if target_url is None:
+        _print_no_target_tip()
+        sys.exit(2)
+
+    # Resolve routes. Three paths:
+    #   1. User passed --route flags         -> use them, skip discovery
+    #   2. --no-discovery and no --route     -> POST / fallback
+    #   3. Default: source-aware route walk; if empty, POST / fallback
     routes_user_supplied = bool(args.routes)
-    raw_routes = args.routes or ["POST:/"]
-    routes: List[Tuple[str, str]] = []
-    for r in raw_routes:
-        if ":" in r and not r.startswith("http"):
-            method, path = r.split(":", 1)
-            routes.append((method.upper(), path))
+    discovered_routes: List[DiscoveredRoute] = []
+
+    if routes_user_supplied:
+        routes = _parse_route_args(args.routes)
+    elif args.no_discovery:
+        routes = [("POST", "/")]
+    else:
+        discovered_routes = discover_routes(cwd)
+        if discovered_routes:
+            routes = [(r.method, r.path) for r in discovered_routes]
         else:
-            routes.append(("POST", r))
+            routes = [("POST", "/")]
 
     fields = args.fields or DEFAULT_FIELDS
     categories = args.categories  # None = all
+
+    if not _confirm_plan(
+        args=args,
+        target_url=target_url,
+        target_source=target_source,
+        target_framework=target_framework,
+        routes=routes,
+        discovered_routes=discovered_routes,
+        routes_user_supplied=routes_user_supplied,
+        categories=categories,
+    ):
+        err_console.print("  [dim]Cancelled.[/]")
+        sys.exit(0)
+
+    if not routes_user_supplied and not discovered_routes and not args.no_discovery:
+        # Fallback ran. Make the user aware before the tip prints later.
+        _print_no_routes_warning(target_url)
 
     use_live = not args.quiet and not args.no_color
     start = time.time()
@@ -293,13 +498,8 @@ examples:
     if not args.quiet:
         category_count = len(categories) if categories else len(ATTACK_CATEGORIES)
         err_console.print(
-            f"Scanning {args.url}. {len(routes)} route(s), {category_count} categories"
+            f"Scanning {target_url}. {len(routes)} route(s), {category_count} categories"
         )
-        if not routes_user_supplied:
-            err_console.print(
-                "[dim]  Routes: auto-default (POST /). Pass --route POST:/api/login "
-                "or similar to scan real endpoints.[/]"
-            )
 
     if use_live:
         with live_status(initial="Probing routes...") as status:
@@ -307,7 +507,7 @@ examples:
                 status.update(
                     f"Probing [bold]{method} {path}[/]  ({i}/{len(routes)} routes)"
                 )
-                rr = scan_route(args.url, method, path, fields, args.timeout, categories, thorough=args.thorough)
+                rr = scan_route(target_url, method, path, fields, args.timeout, categories, thorough=args.thorough)
                 route_results.append(rr)
                 if not rr.reachable:
                     err_console.print(
@@ -322,29 +522,28 @@ examples:
                     )
     else:
         for method, path in routes:
-            rr = scan_route(args.url, method, path, fields, args.timeout, categories, thorough=args.thorough)
+            rr = scan_route(target_url, method, path, fields, args.timeout, categories, thorough=args.thorough)
             route_results.append(rr)
 
     duration = time.time() - start
-    print_report(args.url, route_results, duration, no_color=args.no_color)
+    print_report(target_url, route_results, duration, no_color=args.no_color)
 
-    # Empty-run tip: when auto-discovery (no --route flags) yielded only
-    # unreachable routes, the user thinks the scanner is broken. Print an
-    # explicit tip so they know auto-discovery is weak by design and the
-    # fix is one flag away. This was the #1 confusion in pilot wave 1
-    # (Sujay's Burrow Express on :5001 — root 404'd, scan looked dead).
+    # Empty-run tip: when neither user nor discovery contributed routes
+    # and the POST / fallback came back unreachable. Tells the user
+    # exactly which flag they need.
     no_routes_reachable = all(not rr.reachable for rr in route_results)
-    if no_routes_reachable and not routes_user_supplied:
+    fell_back_to_root = not routes_user_supplied and not discovered_routes
+    if no_routes_reachable and fell_back_to_root:
         bold = "" if args.no_color else "\033[1m"
         yellow = "" if args.no_color else "\033[33m"
         dim = "" if args.no_color else "\033[2m"
         reset = "" if args.no_color else "\033[0m"
         print()
         print(f"  {yellow}{bold}Tip{reset}{yellow}: nothing reachable at the default route.{reset}")
-        print(f"  {dim}Auto-discovery only probes POST /. Most apps return 404 there.{reset}")
-        print(f"  {dim}Pass real routes from your app:{reset}")
-        print(f"    {bold}arcis scan {args.url} --route POST:/api/login --field email{reset}")
-        print(f"    {bold}arcis scan {args.url} --route GET:/api/search --field q{reset}")
+        print(f"  {dim}Run from your project root so source-aware discovery can find handlers,{reset}")
+        print(f"  {dim}or pass real routes from your app:{reset}")
+        print(f"    {bold}arcis scan {target_url} --route POST:/api/login --field email{reset}")
+        print(f"    {bold}arcis scan {target_url} --route GET:/api/search --field q{reset}")
         print()
 
     # Upload to dashboard if ARCIS_ENDPOINT is set. Send full per-route
@@ -383,7 +582,7 @@ examples:
             kind="scans",
             body={
                 "language": "endpoint-scan",
-                "target": args.url,
+                "target": target_url,
                 "summary": {
                     "routesScanned": sum(1 for rr in route_results if rr.reachable),
                     "routesTotal": len(route_results),
