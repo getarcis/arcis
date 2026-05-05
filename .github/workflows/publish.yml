@@ -12,8 +12,8 @@ jobs:
       run:
         working-directory: packages/arcis-node
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
@@ -27,7 +27,7 @@ jobs:
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           if npm view "@arcis/node@${PACKAGE_VERSION}" version 2>/dev/null; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "v${PACKAGE_VERSION} already published to npm — skipping"
+            echo "v${PACKAGE_VERSION} already published to npm, skipping"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
@@ -46,8 +46,8 @@ jobs:
       run:
         working-directory: packages/arcis-python
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
       - run: pip install build twine
@@ -58,7 +58,7 @@ jobs:
           PACKAGE_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           if pip index versions arcis 2>/dev/null | grep -q "${PACKAGE_VERSION}"; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "v${PACKAGE_VERSION} already published to PyPI — skipping"
+            echo "v${PACKAGE_VERSION} already published to PyPI, skipping"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
