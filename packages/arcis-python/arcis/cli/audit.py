@@ -32,6 +32,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from arcis.cli._console import (
+    console,
+    err_console,
+    SEVERITY_STYLES,
+    SEVERITY_GLYPH,
+    live_status,
+)
+
 
 @dataclass
 class Finding:
@@ -310,30 +318,20 @@ def _split_message(msg: str) -> Tuple[str, str]:
 
 
 def _print_findings(findings: List[Finding], no_color: bool = False) -> None:
-    """Render findings in a "Problem / Fix / Code" layout per finding,
+    """Render findings in a Problem / Fix / Code layout per finding,
     grouped by file with a path:line header that most editors and modern
-    terminals (VS Code, iTerm2, Windows Terminal) treat as clickable."""
+    terminals (VS Code, iTerm2, Windows Terminal) treat as clickable.
+
+    `no_color` is honored by routing through a fresh non-styled Console
+    so callers passing --no-color get plain text without ANSI codes.
+    """
+    out = console if not no_color else _plain_console()
+
     if not findings:
-        label = "No issues found." if no_color else "\033[32m[OK] No issues found.\033[0m"
-        print()
-        print(f"  {label}")
-        print()
+        out.print()
+        out.print("  [bold green]No issues found.[/]")
+        out.print()
         return
-
-    # Severity colors + 1-char glyph (ASCII, safe on Windows cp1252)
-    sev_color = {
-        "critical": "\033[91m",
-        "high":     "\033[31m",
-        "medium":   "\033[33m",
-        "low":      "\033[36m",
-    }
-    sev_glyph = {"critical": "!!", "high": "!", "medium": "*", "low": "."}
-    bold = "" if no_color else "\033[1m"
-    dim = "" if no_color else "\033[2m"
-    reset = "" if no_color else "\033[0m"
-
-    def c(text: str, color: str) -> str:
-        return text if no_color else f"{color}{text}{reset}"
 
     # Group findings by file so users see "this file has 3 issues" rather
     # than a flat alphabetical stream where the same file repeats.
@@ -341,42 +339,50 @@ def _print_findings(findings: List[Finding], no_color: bool = False) -> None:
     for f in findings:
         by_file.setdefault(f.file, []).append(f)
 
-    print()
+    out.print()
     for filepath, file_findings in by_file.items():
-        # Show a relative path when possible — easier to read, and
-        # editors still resolve it from CWD.
         try:
             rel = os.path.relpath(filepath)
         except ValueError:
             rel = filepath
         n = len(file_findings)
         plural = "s" if n != 1 else ""
-        print(f"  {c(rel, bold)}  {c('(' + str(n) + ' issue' + plural + ')', dim)}")
-        print()
+        out.print(f"  [bold]{_md_safe(rel)}[/]  [dim]({n} issue{plural})[/]")
+        out.print()
 
         for f in file_findings:
             sev = f.severity.lower()
-            color = sev_color.get(sev, "")
-            glyph = sev_glyph.get(sev, "-")
-            # ljust to 9 so CRITICAL (8 chars) still gets a trailing space
-            # before the clickable location.
+            style = SEVERITY_STYLES.get(sev, "default")
+            glyph = SEVERITY_GLYPH.get(sev, "-")
             sev_label = sev.upper().ljust(9)
             problem, fix = _split_message(f.message)
 
-            # path:line format — most terminals make this clickable.
             location = f"{rel}:{f.line}"
-            print(f"    {c(glyph + ' ' + sev_label, color)}{c(location, bold)}  {c(f.rule_id, dim)}")
-            print(f"      {c('Problem ', dim)} {problem}")
+            out.print(
+                f"    [{style}]{glyph} {sev_label}[/][bold]{_md_safe(location)}[/]  [dim]{_md_safe(f.rule_id)}[/]"
+            )
+            out.print(f"      [dim]Problem [/] {_md_safe(problem)}")
             if fix:
-                print(f"      {c('Fix     ', dim)} {fix}")
-            # Render the offending code line indented like a code block.
+                out.print(f"      [dim]Fix     [/] {_md_safe(fix)}")
             snippet = f.snippet.strip() if f.snippet else ""
             if snippet:
-                print(f"      {c('Code    ', dim)} {c(snippet, dim)}")
-            print()
+                out.print(f"      [dim]Code    [/] [dim]{_md_safe(snippet)}[/]")
+            out.print()
 
-    print(f"  {bold}{len(findings)} issue(s) found across {len(by_file)} file(s).{reset}")
-    print()
+    out.print(f"  [bold]{len(findings)} issue(s) found across {len(by_file)} file(s).[/]")
+    out.print()
+
+
+def _plain_console():
+    """Console with all styling/markup disabled — for --no-color paths."""
+    from rich.console import Console as _Console
+    return _Console(no_color=True, markup=False, highlight=False)
+
+
+def _md_safe(text: str) -> str:
+    """Escape rich markup brackets in user-controlled text so a snippet
+    containing literal '[' or ']' doesn't break formatting."""
+    return text.replace("[", r"\[")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -521,27 +527,27 @@ examples:
             no_color=args.no_color,
         )
 
-    # Live progress: progress bar that rewrites itself in place. Goes to
-    # stderr so piping output to a file gives clean findings without
-    # progress noise.
+    # Live progress: spinner + per-file status line pinned to stderr so
+    # piping the result to a file gives clean findings without progress
+    # noise. Auto-disables on non-TTY (CI logs stay clean).
     findings: List[Finding] = []
-    show_progress = not args.quiet and sys.stderr.isatty() and not args.no_color
+    use_live = not args.quiet and not args.no_color
     start = time.time()
-    for i, filepath in enumerate(files, start=1):
-        findings.extend(scan_file(filepath))
-        if show_progress and (i % 10 == 0 or i == len(files)):
-            pct = int(i * 100 / max(1, len(files)))
-            bar_w = 24
-            fill = int(bar_w * i / max(1, len(files)))
-            bar = "#" * fill + "-" * (bar_w - fill)
-            sys.stderr.write(
-                f"\r\033[2m  [{bar}] {pct:3d}%  {i}/{len(files)}\033[0m"
-            )
-            sys.stderr.flush()
+    if use_live:
+        with live_status(initial="Scanning...") as status:
+            for i, filepath in enumerate(files, start=1):
+                try:
+                    rel = os.path.relpath(filepath)
+                except ValueError:
+                    rel = filepath
+                status.update(
+                    f"Auditing [dim cyan]{_md_safe(rel)}[/]  ({i}/{len(files)} files)"
+                )
+                findings.extend(scan_file(filepath))
+    else:
+        for filepath in files:
+            findings.extend(scan_file(filepath))
     duration = time.time() - start
-    if show_progress:
-        sys.stderr.write("\r\033[2K")  # clear progress line
-        sys.stderr.flush()
 
     if args.severity:
         order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -632,15 +638,12 @@ examples:
 
 
 def _print_rule_catalog(no_color: bool = False) -> None:
-    """Render the full rule list — what `arcis audit --list` shows."""
-    sev_color = {"critical": "\033[91m", "high": "\033[31m", "medium": "\033[33m", "low": "\033[36m"}
-    bold = "" if no_color else "\033[1m"
-    dim = "" if no_color else "\033[2m"
-    reset = "" if no_color else "\033[0m"
+    """Render the full rule list. What `arcis audit --list` shows."""
+    out = console if not no_color else _plain_console()
 
-    print()
-    print(f"  {bold}arcis audit — detection rules ({len(RULES)} total){reset}")
-    print()
+    out.print()
+    out.print(f"  [bold]arcis audit detection rules ({len(RULES)} total)[/]")
+    out.print()
 
     by_lang: Dict[str, List[Rule]] = {}
     for rule in RULES:
@@ -649,12 +652,14 @@ def _print_rule_catalog(no_color: bool = False) -> None:
 
     for lang in sorted(by_lang.keys()):
         rules = sorted(by_lang[lang], key=lambda r: ({"critical": 0, "high": 1, "medium": 2, "low": 3}.get(r.severity, 9), r.id))
-        print(f"  {bold}{lang}{reset} ({len(rules)} rules)")
+        out.print(f"  [bold]{lang}[/] ({len(rules)} rules)")
         for r in rules:
             sev = r.severity.upper().ljust(8)
-            sev_col = "" if no_color else sev_color.get(r.severity, "")
-            print(f"    {sev_col}{sev}{reset} {bold}{r.id.ljust(18)}{reset} {r.message}")
-        print()
+            style = SEVERITY_STYLES.get(r.severity, "default")
+            out.print(
+                f"    [{style}]{sev}[/] [bold]{r.id.ljust(18)}[/] {_md_safe(r.message)}"
+            )
+        out.print()
 
 
 def _format_duration(seconds: float) -> str:
@@ -826,27 +831,24 @@ def _print_audit_header(
     severity_filter: Optional[str],
     no_color: bool = False,
 ) -> None:
-    """Run header — printed before scanning starts so users know exactly
+    """Run header. Printed before scanning starts so users know exactly
     what's about to happen. Mirrors the SCA + scan headers for shape."""
-    bold = "" if no_color else "\033[1m"
-    cyan = "" if no_color else "\033[96m"
-    dim = "" if no_color else "\033[2m"
-    reset = "" if no_color else "\033[0m"
+    out = console if not no_color else _plain_console()
     line = "-" * 60
 
     breakdown = ", ".join(f"{n} {lang}" for lang, n in sorted(languages.items()))
     rule_langs = sorted(languages.keys())
     rule_lang_str = ", ".join(rule_langs) if rule_langs else "all"
 
-    print()
-    print(f"  {bold}{cyan}Arcis Audit{reset}")
-    print(f"  {dim}Target:{reset}   {target}")
-    print(f"  {dim}Rules:{reset}    {rule_count} ({rule_lang_str})")
-    print(f"  {dim}Files:{reset}    {file_count} scanned ({breakdown})")
+    out.print()
+    out.print("  [bold cyan]Arcis Audit[/]")
+    out.print(f"  [dim]Target:[/]   {_md_safe(target)}")
+    out.print(f"  [dim]Rules:[/]    {rule_count} ({rule_lang_str})")
+    out.print(f"  [dim]Files:[/]    {file_count} scanned ({breakdown})")
     if severity_filter:
-        print(f"  {dim}Filter:{reset}   severity >= {severity_filter}")
-    print(f"  {dim}{line}{reset}")
-    print()
+        out.print(f"  [dim]Filter:[/]   severity >= {severity_filter}")
+    out.print(f"  [dim]{line}[/]")
+    out.print()
 
 
 def _print_audit_summary(
@@ -860,37 +862,34 @@ def _print_audit_summary(
     severity_filter: Optional[str] = None,
     no_color: bool = False,
 ) -> None:
-    bold = "" if no_color else "\033[1m"
-    dim = "" if no_color else "\033[2m"
-    green = "" if no_color else "\033[32m"
-    reset = "" if no_color else "\033[0m"
+    out = console if not no_color else _plain_console()
     line = "-" * 60
     breakdown = ", ".join(f"{n} {lang}" for lang, n in sorted(languages.items()))
     total = sum(sev_counts.values())
 
-    print(f"{dim}{line}{reset}")
-    print(f"  {bold}Summary{reset}")
-    print(f"    Files scanned   {files_scanned}  [{breakdown}]")
-    print(f"    Rules applied   {rules}")
+    out.print(f"[dim]{line}[/]")
+    out.print("  [bold]Summary[/]")
+    out.print(f"    Files scanned   {files_scanned}  [{breakdown}]")
+    out.print(f"    Rules applied   {rules}")
     if total == 0:
         if severity_filter:
-            # Honest about the filter — user might think the repo is clean
+            # Honest about the filter. User might think the repo is clean
             # when actually they've filtered out lower-severity findings.
-            print(
-                f"    Findings        {green}0 at severity >= {severity_filter}{reset}"
+            out.print(
+                f"    Findings        [bold green]0 at severity >= {severity_filter}[/]"
             )
         else:
-            print(f"    Findings        {green}0  [OK] clean{reset}")
+            out.print("    Findings        [bold green]0  clean[/]")
     else:
         parts = []
         for sev in ("critical", "high", "medium", "low"):
             n = sev_counts.get(sev, 0)
             if n:
                 parts.append(f"{n} {sev}")
-        print(f"    Findings        {bold}{total}{reset}  ({', '.join(parts)})")
-    print(f"    Time            {_format_duration(duration_seconds)}")
+        out.print(f"    Findings        [bold]{total}[/]  ({', '.join(parts)})")
+    out.print(f"    Time            {_format_duration(duration_seconds)}")
 
-    # Top offenders — files with the most findings. Helps the user know
+    # Top offenders. Files with the most findings. Helps the user know
     # where to start fixing. Skipped when there are no findings (nothing
     # to rank) or when there's only one file with findings (trivial).
     if findings:
@@ -898,31 +897,34 @@ def _print_audit_summary(
         rule_in_file: Dict[str, str] = {}
         for f in findings:
             by_file[f.file] = by_file.get(f.file, 0) + 1
-            # Remember the first rule we saw in each file as a hint label.
             rule_in_file.setdefault(f.file, f.rule_id)
         if len(by_file) > 1:
-            print()
-            print(f"  {bold}Top offenders{reset}")
+            out.print()
+            out.print("  [bold]Top offenders[/]")
             top = sorted(by_file.items(), key=lambda kv: -kv[1])[:5]
             max_path_len = max(len(os.path.relpath(fp)) for fp, _ in top)
             for fp, n in top:
                 rel = os.path.relpath(fp).ljust(min(max_path_len, 40))
                 plural = "" if n == 1 else "s"
-                print(
-                    f"    {rel}  {bold}{n}{reset} finding{plural}  "
-                    f"{dim}({rule_in_file[fp]}){reset}"
+                out.print(
+                    f"    {_md_safe(rel)}  [bold]{n}[/] finding{plural}  "
+                    f"[dim]({rule_in_file[fp]})[/]"
                 )
 
-    # Next-step hints — only when relevant. We don't repeat hints the user
+    # Next-step hints. Only when relevant. We don't repeat hints the user
     # already followed (e.g., don't say --severity high if they're already
     # filtering). Keeps the output honest, not spammy.
     if total > 0 and not severity_filter:
         critical_high = sev_counts.get("critical", 0) + sev_counts.get("high", 0)
         if critical_high > 0 and critical_high < total:
-            print()
-            print(f"  {dim}Next:{reset} {bold}arcis audit --severity high{reset}  "
-                  f"{dim}to focus on {critical_high} high-impact{reset}")
-            print(f"        {bold}arcis audit --json{reset}            "
-                  f"{dim}for CI consumption{reset}")
-    print(f"{dim}{line}{reset}")
-    print()
+            out.print()
+            out.print(
+                f"  [dim]Next:[/] [bold]arcis audit --severity high[/]  "
+                f"[dim]to focus on {critical_high} high-impact[/]"
+            )
+            out.print(
+                "        [bold]arcis audit --json[/]            "
+                "[dim]for CI consumption[/]"
+            )
+    out.print(f"[dim]{line}[/]")
+    out.print()

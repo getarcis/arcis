@@ -30,7 +30,9 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: WSGI :: Middleware",
 ]
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "rich>=13.0.0",
+]
 
 [project.optional-dependencies]
 flask = ["flask>=2.0.0"]
@@ -38,7 +40,6 @@ fastapi = ["fastapi>=0.68.0", "starlette>=0.14.0"]
 django = ["django>=3.2"]
 redis = ["redis>=4.0.0"]
 telemetry = ["httpx>=0.24.0"]
-interactive = ["questionary>=2.0.0"]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",

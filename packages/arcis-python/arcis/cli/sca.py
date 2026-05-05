@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from arcis.cli._console import console, err_console, live_status
+
 # ── Terminal formatting ──────────────────────────────────────────────────────
 
 _SUPPORTS_UNICODE = bool(
@@ -807,19 +809,20 @@ def main() -> None:
             print(f"\033[33m{msg}\033[0m")
         sys.exit(2)
 
-    # Live progress: stream which manifest is being read so users see
-    # work happening instead of staring at a frozen prompt.
-    show_progress = not args.quiet and sys.stderr.isatty() and not args.no_color
+    # Live progress: spinner with the current manifest being read. Goes
+    # to stderr so piping the report stays clean. Falls through to a
+    # silent run on non-TTY (CI) and on --quiet / --no-color.
+    use_live = not args.quiet and not args.no_color
     start = time.time()
-    if show_progress and manifests:
-        for m in manifests:
-            sys.stderr.write(f"\r\033[2K\033[2m  Reading {os.path.relpath(m, path)}...\033[0m")
-            sys.stderr.flush()
-        if args.system:
-            sys.stderr.write("\r\033[2K\033[2m  Scanning installed packages...\033[0m")
-            sys.stderr.flush()
-        sys.stderr.write("\r\033[2K")
-    findings = scan_project(path, check_system=args.system)
+    if use_live and (manifests or args.system):
+        with live_status(initial="Reading manifests...") as status:
+            for m in manifests:
+                status.update(f"Reading [dim cyan]{os.path.relpath(m, path)}[/]")
+            if args.system:
+                status.update("Scanning installed packages...")
+            findings = scan_project(path, check_system=args.system)
+    else:
+        findings = scan_project(path, check_system=args.system)
     duration = time.time() - start
 
     # Manifest list is now part of the header inside print_sca_report,

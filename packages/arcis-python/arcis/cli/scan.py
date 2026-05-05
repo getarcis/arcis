@@ -22,6 +22,7 @@ from typing import List, Optional, Tuple
 
 from arcis.cli.payloads import ATTACK_CATEGORIES, BLOCKED_STATUS_CODES, DEFAULT_FIELDS
 from arcis.cli.report import RouteResult, VectorResult, print_report
+from arcis.cli._console import console, err_console, live_status
 
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -285,43 +286,44 @@ examples:
     fields = args.fields or DEFAULT_FIELDS
     categories = args.categories  # None = all
 
-    show_progress = not args.quiet and sys.stderr.isatty()
+    use_live = not args.quiet and not args.no_color
     start = time.time()
     route_results: List[RouteResult] = []
 
     if not args.quiet:
         category_count = len(categories) if categories else len(ATTACK_CATEGORIES)
-        sys.stderr.write(
-            f"Scanning {args.url} — {len(routes)} route(s), {category_count} categories\n"
+        err_console.print(
+            f"Scanning {args.url}. {len(routes)} route(s), {category_count} categories"
         )
         if not routes_user_supplied:
-            sys.stderr.write(
-                "\033[2m  Routes: auto-default (POST /). Pass --route POST:/api/login "
-                "or similar to scan real endpoints.\033[0m\n"
+            err_console.print(
+                "[dim]  Routes: auto-default (POST /). Pass --route POST:/api/login "
+                "or similar to scan real endpoints.[/]"
             )
-        sys.stderr.flush()
 
-    for i, (method, path) in enumerate(routes, start=1):
-        if show_progress:
-            sys.stderr.write(
-                f"\033[2m  [{i}/{len(routes)}] {method} {path} — probing...\033[0m\n"
-            )
-            sys.stderr.flush()
-        rr = scan_route(args.url, method, path, fields, args.timeout, categories, thorough=args.thorough)
-        route_results.append(rr)
-        if show_progress:
-            if not rr.reachable:
-                sys.stderr.write(
-                    f"\033[33m       skipped — {rr.error or 'unreachable'}\033[0m\n"
+    if use_live:
+        with live_status(initial="Probing routes...") as status:
+            for i, (method, path) in enumerate(routes, start=1):
+                status.update(
+                    f"Probing [bold]{method} {path}[/]  ({i}/{len(routes)} routes)"
                 )
-            else:
-                blocked = sum(1 for v in rr.vectors if v.blocked)
-                total = len(rr.vectors)
-                sys.stderr.write(
-                    f"\033[2m       fired {total} payload(s) — "
-                    f"{blocked} blocked, {total - blocked} got through\033[0m\n"
-                )
-            sys.stderr.flush()
+                rr = scan_route(args.url, method, path, fields, args.timeout, categories, thorough=args.thorough)
+                route_results.append(rr)
+                if not rr.reachable:
+                    err_console.print(
+                        f"[yellow]  {method} {path}  skipped: {rr.error or 'unreachable'}[/]"
+                    )
+                else:
+                    blocked = sum(1 for v in rr.vectors if v.blocked)
+                    total = len(rr.vectors)
+                    err_console.print(
+                        f"[dim]  {method} {path}  fired {total} payload(s), "
+                        f"{blocked} blocked, {total - blocked} got through[/]"
+                    )
+    else:
+        for method, path in routes:
+            rr = scan_route(args.url, method, path, fields, args.timeout, categories, thorough=args.thorough)
+            route_results.append(rr)
 
     duration = time.time() - start
     print_report(args.url, route_results, duration, no_color=args.no_color)
