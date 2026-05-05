@@ -91,6 +91,10 @@
       <h2 id="install">Installation</h2>
       <p>Install the package for your language. Arcis has zero runtime dependencies beyond the framework you're already using.</p>
 
+      <div class="callout note">
+        <p><strong>Install in your backend project, not the frontend.</strong> Arcis is server-side middleware. For separated stacks (Next.js + Express, React + FastAPI, etc.), install it in the server folder where your routes are defined. A frontend bundle would leak the API key into client JS and the middleware never runs there.</p>
+      </div>
+
       <div class="tabs">
         <div class="tab-buttons">
           <button class="tab-btn active" data-tab="node">Node.js</button>
@@ -99,20 +103,36 @@
         </div>
 
         <div class="tab-panel active" data-panel="node">
-<pre><code>npm install @arcis/node</code></pre>
+<pre><code>npm install @arcis/node dotenv</code></pre>
           <p>Or with yarn:</p>
-<pre><code>yarn add @arcis/node</code></pre>
+<pre><code>yarn add @arcis/node dotenv</code></pre>
+          <p><code>dotenv</code> loads <code>.env</code> at startup &mdash; vanilla Express does not pick it up automatically.</p>
         </div>
 
         <div class="tab-panel" data-panel="python">
-<pre><code>pip install arcis</code></pre>
+<pre><code>pip install arcis python-dotenv</code></pre>
           <p>For Redis store support:</p>
 <pre><code>pip install "arcis[redis]"</code></pre>
+          <p><code>python-dotenv</code> loads <code>.env</code> at startup &mdash; vanilla FastAPI / Flask do not pick it up automatically.</p>
         </div>
 
         <div class="tab-panel" data-panel="go">
 <pre><code>go get github.com/GagancM/arcis</code></pre>
         </div>
+      </div>
+
+      <h3 id="cli-tools">CLI tools (audit / scan / sca)</h3>
+      <p>The Arcis CLI scanners ship in the <strong>Python package</strong>. Even if your app uses the Node or Go SDK, install the Python package once to get <code>arcis audit</code>, <code>arcis scan</code>, and <code>arcis sca</code> on your shell:</p>
+<pre><code>pip install arcis</code></pre>
+      <p>The threat database, audit rules, and attack payload catalog all live in Python. The Node and Go packages are SDKs only &mdash; they do not put a CLI on your shell PATH.</p>
+
+      <h3 id="env-setup">Environment variables (.env)</h3>
+      <p>The dashboard expects three values in your backend <code>.env</code>:</p>
+<pre><code>ARCIS_KEY=ak_live_...
+ARCIS_WORKSPACE_ID=your-workspace
+ARCIS_ENDPOINT=https://your-dashboard.example.com</code></pre>
+      <div class="callout note">
+        <p><strong>Never prefix these with <code>NEXT_PUBLIC_</code>, <code>VITE_</code>, or <code>REACT_APP_</code>.</strong> Those frameworks bundle prefixed env vars into client JS, which would leak your <code>ARCIS_KEY</code> to anyone viewing your site source. The <code>.env</code> belongs next to your server entry point (<code>package.json</code>, <code>main.py</code>, <code>main.go</code>), and should be listed in <code>.gitignore</code>.</p>
       </div>
 
       <h2 id="basic-setup">Basic setup</h2>
@@ -121,10 +141,14 @@
       <h3>Node.js with Express</h3>
 <pre><code><span class="k">import</span> express <span class="k">from</span> <span class="s">'express'</span><span class="p">;</span>
 <span class="k">import</span> <span class="p">{</span> arcis <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+<span class="k">import</span> <span class="s">'dotenv/config'</span><span class="p">;</span>
 
 <span class="k">const</span> app = <span class="f">express</span><span class="p">();</span>
 app.<span class="f">use</span><span class="p">(</span>express.<span class="f">json</span><span class="p">());</span>
-app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">());</span>  <span class="c">// core protections enabled</span>
+
+<span class="c">// block: true returns 403 on detected attacks. Defaults to false</span>
+<span class="c">// (sanitize + observe) so existing apps don't break on rollout.</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">({</span> block<span class="p">:</span> <span class="k">true</span> <span class="p">}));</span>
 
 app.<span class="f">get</span><span class="p">(</span><span class="s">'/'</span><span class="p">,</span> <span class="p">(</span>req<span class="p">,</span> res<span class="p">)</span> <span class="k">=></span> <span class="p">{</span>
   <span class="c">// req.body and req.query are now sanitized</span>
@@ -136,9 +160,14 @@ app.<span class="f">listen</span><span class="p">(</span><span class="n">3000</s
       <h3>Python with FastAPI</h3>
 <pre><code><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
 <span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware
+<span class="k">from</span> dotenv <span class="k">import</span> load_dotenv
 
+<span class="f">load_dotenv</span><span class="p">()</span>
 app = <span class="f">FastAPI</span><span class="p">()</span>
-app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">)</span>  <span class="c"># core protections enabled</span>
+
+<span class="c"># block=True returns 403 on detected attacks. Defaults to False</span>
+<span class="c"># (sanitize + observe) so existing apps don't break on rollout.</span>
+app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)</span>
 
 <span class="k">@</span>app.<span class="f">get</span><span class="p">(</span><span class="s">"/"</span><span class="p">)</span>
 <span class="k">def</span> <span class="f">root</span><span class="p">():</span>

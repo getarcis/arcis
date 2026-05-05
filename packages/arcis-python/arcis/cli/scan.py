@@ -268,7 +268,11 @@ examples:
         print("\narcis scan: missing required URL. Run 'arcis scan --list' to see attack categories.")
         sys.exit(1)
 
-    # Parse routes — default to scanning / if none provided
+    # Parse routes — default to scanning / if none provided. Track whether
+    # routes were user-supplied vs the GET/POST `/` fallback so we can
+    # print a tip later if the fallback proves useless (which it usually
+    # does on real apps with auth-gated roots).
+    routes_user_supplied = bool(args.routes)
     raw_routes = args.routes or ["POST:/"]
     routes: List[Tuple[str, str]] = []
     for r in raw_routes:
@@ -286,10 +290,15 @@ examples:
     route_results: List[RouteResult] = []
 
     if not args.quiet:
+        category_count = len(categories) if categories else len(ATTACK_CATEGORIES)
         sys.stderr.write(
-            f"Scanning {args.url} — {len(routes)} route(s), "
-            f"{len(categories) if categories else len(ATTACK_CATEGORIES)} categories\n"
+            f"Scanning {args.url} — {len(routes)} route(s), {category_count} categories\n"
         )
+        if not routes_user_supplied:
+            sys.stderr.write(
+                "\033[2m  Routes: auto-default (POST /). Pass --route POST:/api/login "
+                "or similar to scan real endpoints.\033[0m\n"
+            )
         sys.stderr.flush()
 
     for i, (method, path) in enumerate(routes, start=1):
@@ -316,6 +325,25 @@ examples:
 
     duration = time.time() - start
     print_report(args.url, route_results, duration, no_color=args.no_color)
+
+    # Empty-run tip: when auto-discovery (no --route flags) yielded only
+    # unreachable routes, the user thinks the scanner is broken. Print an
+    # explicit tip so they know auto-discovery is weak by design and the
+    # fix is one flag away. This was the #1 confusion in pilot wave 1
+    # (Sujay's Burrow Express on :5001 — root 404'd, scan looked dead).
+    no_routes_reachable = all(not rr.reachable for rr in route_results)
+    if no_routes_reachable and not routes_user_supplied:
+        bold = "" if args.no_color else "\033[1m"
+        yellow = "" if args.no_color else "\033[33m"
+        dim = "" if args.no_color else "\033[2m"
+        reset = "" if args.no_color else "\033[0m"
+        print()
+        print(f"  {yellow}{bold}Tip{reset}{yellow}: nothing reachable at the default route.{reset}")
+        print(f"  {dim}Auto-discovery only probes POST /. Most apps return 404 there.{reset}")
+        print(f"  {dim}Pass real routes from your app:{reset}")
+        print(f"    {bold}arcis scan {args.url} --route POST:/api/login --field email{reset}")
+        print(f"    {bold}arcis scan {args.url} --route GET:/api/search --field q{reset}")
+        print()
 
     # Upload to dashboard if ARCIS_ENDPOINT is set. Send full per-route
     # vector results (capped to 500 entries) so the dashboard drill-down

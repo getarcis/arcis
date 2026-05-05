@@ -15,23 +15,45 @@ Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementat
 
 - **Detect-and-block middleware** — opt in with `arcis({ block: true })`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
 - **Telemetry queue cap** — sustained dashboard outage no longer OOMs the worker. Drop-oldest semantics, optional `onQueueOverflow` callback.
-- **`arcis` CLI binary** — `npx arcis --list`, `arcis update`, `arcis scan/audit/sca` (delegates to the Python `arcis` for canonical implementations).
 - See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
 
 ## Installation
 
 ```bash
-npm install @arcis/node
+npm install @arcis/node dotenv
 ```
+
+> **Install in your backend project, not the frontend.** Arcis is server-side middleware. For separated stacks (Next.js + Express, React + FastAPI, etc.), this package goes in the server folder. A frontend bundle would leak the API key into client JS and the middleware never runs there anyway.
+>
+> **`.env` lives next to your server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_` — those expose values to the browser. Add `.env` to `.gitignore`.
+
+### CLI (audit / scan / sca) is a separate Python install
+
+The Arcis SDK ships in this Node package. The Arcis **CLI** scanners — `arcis audit`, `arcis scan`, `arcis sca` — ship in the [Python package](https://pypi.org/project/arcis/) because the threat database, audit rules, and attack payload catalog all live there. Install the Python package alongside this one to get the CLI on your shell PATH:
+
+```bash
+pip install arcis
+arcis --version
+```
+
+Without `pip install arcis`, typing `arcis` in your shell will fail with "command not found" — the npm package does **not** put a CLI on your PATH. The same Python CLI works for projects using the Node SDK.
 
 ## Quick Start
 
 ### With Express (built-in adapter)
 
 ```js
+import express from 'express';
 import { arcis } from '@arcis/node';
+import 'dotenv/config';
 
-app.use(arcis());
+const app = express();
+
+// block: true returns 403 on detected attacks. Defaults to false
+// (sanitize + observe) so existing apps don't break on rollout.
+app.use(arcis({ block: true }));
+
+app.listen(3000);
 // That's it. Sanitization, rate limiting, and security headers are on.
 ```
 

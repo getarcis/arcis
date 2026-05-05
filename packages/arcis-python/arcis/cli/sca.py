@@ -570,23 +570,46 @@ def print_sca_report(
     findings: List[Finding],
     duration: float,
     no_color: bool = False,
+    manifests: Optional[List[str]] = None,
 ) -> None:
     line = LINE_CHAR * WIDTH
     c = lambda text, *codes: _c(*codes, text=text, no_color=no_color)
 
+    # Build manifest summary line — group by ecosystem so users see "package.json,
+    # package-lock.json (npm)" instead of an opaque path list.
+    manifest_summary = ""
+    if manifests:
+        rels = [os.path.relpath(m, path) for m in manifests]
+        manifest_summary = ", ".join(rels)
+
     print()
     print(c("  Arcis Supply Chain Scanner", BOLD, CYAN))
-    print(c(f"  Target:  {path}", DIM))
-    print(c(f"  DB:      {len(THREAT_DB)} known attack{'s' if len(THREAT_DB) != 1 else ''} · {_THREAT_DB_PATH}", DIM))
-    print(c(f"  Mode:    Offline — reads files only, no network calls, no telemetry", DIM))
+    print(c(f"  Target:    {path}", DIM))
+    if manifest_summary:
+        print(c(f"  Manifests: {manifest_summary}", DIM))
+    print(c(f"  Threat DB: {len(THREAT_DB)} known compromised package{'s' if len(THREAT_DB) != 1 else ''}", DIM))
+    print(c(f"  Mode:      Offline - no network calls, no telemetry", DIM))
     print(c(line, DIM))
 
     if not findings:
+        # Explicit "what we checked" message instead of just "nothing
+        # detected" — closes the "did this actually run?" gap that pilots
+        # ran into when the scanner was silent.
+        manifests_count = len(manifests) if manifests else 0
+        if manifests_count > 0:
+            tail = f"in {manifests_count} manifest{'s' if manifests_count != 1 else ''}"
+        else:
+            tail = "in installed packages"
         print()
-        print(c(f"  {TICK}  No known supply chain compromises detected", GREEN, BOLD))
+        print(c(f"  {TICK}  Clean. No known compromised packages found {tail}.", GREEN, BOLD))
+        print(c(f"     {len(THREAT_DB)} known compromise{'s' if len(THREAT_DB) != 1 else ''} checked, 0 matches.", DIM))
         print()
         print(c(line, DIM))
-        print(f"  Duration          {duration:.1f}s")
+        print(f"  {c('Summary', BOLD)}")
+        if manifests_count:
+            print(f"    Manifests       {manifests_count}")
+        print(f"    Compromised     {c('0', GREEN, BOLD)}")
+        print(f"    Time            {_format_sca_duration(duration)}")
         print(c(line, DIM))
         print()
         return
@@ -639,17 +662,31 @@ def print_sca_report(
     critical = sum(1 for f in findings if f.severity == "critical")
     high = sum(1 for f in findings if f.severity == "high")
 
-    print(f"  Findings          {len(findings)}")
+    print(f"  {c('Summary', BOLD)}")
+    if manifests:
+        print(f"    Manifests       {len(manifests)}")
+    print(f"    Compromised     {c(str(len(findings)), RED, BOLD)}")
     if critical:
-        print(f"  Critical          {c(str(critical), RED, BOLD)}")
+        print(f"    Critical        {c(str(critical), RED, BOLD)}")
     if high:
-        print(f"  High              {c(str(high), YELLOW, BOLD)}")
-    print(f"  Duration          {duration:.1f}s")
+        print(f"    High            {c(str(high), YELLOW, BOLD)}")
+    print(f"    Time            {_format_sca_duration(duration)}")
     print()
     print(c(f"  {CROSS}  Supply chain compromise detected — follow remediation steps above", RED, BOLD))
     print()
     print(c(line, DIM))
     print()
+
+
+def _format_sca_duration(seconds: float) -> str:
+    """Render duration as 89ms / 1.4s / 2m 18s — matches audit/scan."""
+    if seconds < 1:
+        return f"{int(seconds * 1000)}ms"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    mins = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{mins}m {secs}s"
 
 
 def print_threat_list(no_color: bool = False) -> None:
@@ -785,16 +822,9 @@ def main() -> None:
     findings = scan_project(path, check_system=args.system)
     duration = time.time() - start
 
-    # Tell the user exactly what got inspected so green is unambiguous.
-    if manifests:
-        rels = [os.path.relpath(m, path) for m in manifests]
-        scanned_line = f"Scanned {len(manifests)} manifest(s): {', '.join(rels)}"
-        if args.no_color:
-            print(scanned_line)
-        else:
-            print(f"\033[2m{scanned_line}\033[0m")
-
-    print_sca_report(path, findings, duration, no_color=args.no_color)
+    # Manifest list is now part of the header inside print_sca_report,
+    # so the standalone "Scanned X manifests" line is no longer needed.
+    print_sca_report(path, findings, duration, no_color=args.no_color, manifests=manifests)
 
     # Upload to dashboard. SCA results live in the same UI surface as
     # `arcis audit` (both are "static analysis"); language="sca" is the

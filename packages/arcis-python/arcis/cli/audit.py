@@ -24,9 +24,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -423,8 +425,31 @@ examples:
         action="store_true",
         help="Suppress progress output (still prints findings + summary).",
     )
+    parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Emit results as a single JSON document. Suppresses all human-readable output. Intended for CI.",
+    )
+    parser.add_argument(
+        "--sarif",
+        dest="sarif_output",
+        action="store_true",
+        help="Emit results as SARIF 2.1.0 for GitHub Code Scanning auto-upload.",
+    )
 
     args = parser.parse_args()
+
+    if args.json_output and args.sarif_output:
+        print("arcis audit: --json and --sarif are mutually exclusive", file=sys.stderr)
+        sys.exit(2)
+
+    # Machine-readable modes imply --quiet so progress + headers don't
+    # contaminate stdout. Stderr remains available for hard errors only.
+    machine_mode = args.json_output or args.sarif_output
+    if machine_mode:
+        args.quiet = True
+        args.no_color = True
 
     if args.list:
         _print_rule_catalog(no_color=args.no_color)
@@ -440,6 +465,25 @@ examples:
 
     files = _collect_files(args.path, language=args.language)
     if not files:
+        if machine_mode:
+            # Emit a valid empty document so CI pipelines parsing the output
+            # don't choke on a non-JSON error string. Exit 2 still signals
+            # "nothing scanned" to the caller.
+            target_abs = os.path.abspath(args.path)
+            if args.json_output:
+                print(render_json(
+                    target=target_abs,
+                    findings=[],
+                    files_scanned=0,
+                    languages={},
+                    rules_applied=0,
+                    sev_counts={},
+                    duration_seconds=0.0,
+                    severity_filter=args.severity,
+                ))
+            else:
+                print(render_sarif(target=target_abs, findings=[]))
+            sys.exit(2)
         msg = (
             f"arcis audit: no scannable files found in {args.path}"
             + (f" (language={args.language})" if args.language else "")
@@ -451,14 +495,38 @@ examples:
             print(f"\033[33m{msg}\033[0m")
         sys.exit(2)
 
-    # Live progress: print "Scanning N file(s)..." then a progress bar that
-    # rewrites itself in place. Goes to stderr so piping output to a file
-    # gives clean findings without progress noise.
+    # Build language breakdown up front — used by both the header and the
+    # final summary. Computed once so the two views agree.
+    by_lang: Dict[str, int] = {}
+    for fp in files:
+        lang = _detect_language(fp) or "unknown"
+        by_lang[lang] = by_lang.get(lang, 0) + 1
+
+    # Apply language filter to the rule count we report so the header is
+    # honest: if the user passed --language python, we apply Python rules
+    # only and that's the number we should print.
+    applicable_rule_count = (
+        len([r for r in RULES if args.language in r.languages])
+        if args.language
+        else len(RULES)
+    )
+
+    if not args.quiet:
+        _print_audit_header(
+            target=os.path.abspath(args.path),
+            file_count=len(files),
+            languages=by_lang,
+            rule_count=applicable_rule_count,
+            severity_filter=args.severity,
+            no_color=args.no_color,
+        )
+
+    # Live progress: progress bar that rewrites itself in place. Goes to
+    # stderr so piping output to a file gives clean findings without
+    # progress noise.
     findings: List[Finding] = []
     show_progress = not args.quiet and sys.stderr.isatty() and not args.no_color
-    if not args.quiet:
-        sys.stderr.write(f"Scanning {len(files)} file(s)...\n")
-        sys.stderr.flush()
+    start = time.time()
     for i, filepath in enumerate(files, start=1):
         findings.extend(scan_file(filepath))
         if show_progress and (i % 10 == 0 or i == len(files)):
@@ -470,6 +538,7 @@ examples:
                 f"\r\033[2m  [{bar}] {pct:3d}%  {i}/{len(files)}\033[0m"
             )
             sys.stderr.flush()
+    duration = time.time() - start
     if show_progress:
         sys.stderr.write("\r\033[2K")  # clear progress line
         sys.stderr.flush()
@@ -482,31 +551,40 @@ examples:
     severity_key = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     findings.sort(key=lambda f: (severity_key.get(f.severity, 9), f.file, f.line))
 
-    # Show scan summary so green output is unambiguous: user can tell that
-    # files were actually inspected, not silently skipped.
-    by_lang: Dict[str, int] = {}
-    for fp in files:
-        lang = _detect_language(fp) or "unknown"
-        by_lang[lang] = by_lang.get(lang, 0) + 1
-    breakdown = ", ".join(f"{n} {lang}" for lang, n in sorted(by_lang.items()))
-    summary = f"Scanned {len(files)} file(s) [{breakdown}] against {len(RULES)} rule(s)."
-    if args.no_color:
-        print(summary)
-    else:
-        print(f"\033[2m{summary}\033[0m")
-
-    _print_findings(findings, no_color=args.no_color)
-
-    # Final per-severity summary block — same shape across audit/scan/sca.
+    # Per-severity summary counts — used by both the text summary and
+    # the JSON/SARIF renderers below. Compute once.
     sev_counts: Dict[str, int] = {}
     for f in findings:
         sev_counts[f.severity] = sev_counts.get(f.severity, 0) + 1
+
+    if machine_mode:
+        target_abs = os.path.abspath(args.path)
+        if args.json_output:
+            print(render_json(
+                target=target_abs,
+                findings=findings,
+                files_scanned=len(files),
+                languages=by_lang,
+                rules_applied=applicable_rule_count,
+                sev_counts=sev_counts,
+                duration_seconds=duration,
+                severity_filter=args.severity,
+            ))
+        else:
+            print(render_sarif(target=target_abs, findings=findings))
+        sys.exit(1 if findings else 0)
+
+    _print_findings(findings, no_color=args.no_color)
+
     if not args.quiet:
         _print_audit_summary(
             files_scanned=len(files),
             languages=by_lang,
-            rules=len(RULES),
+            rules=applicable_rule_count,
             sev_counts=sev_counts,
+            findings=findings,
+            duration_seconds=duration,
+            severity_filter=args.severity,
             no_color=args.no_color,
         )
 
@@ -579,12 +657,207 @@ def _print_rule_catalog(no_color: bool = False) -> None:
         print()
 
 
+def _format_duration(seconds: float) -> str:
+    """Render duration as 312ms / 1.4s / 2m 18s — matches what users
+    expect from CLI timers. Sub-second runs read as ms; everything else
+    in seconds with one decimal."""
+    if seconds < 1:
+        return f"{int(seconds * 1000)}ms"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    mins = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{mins}m {secs}s"
+
+
+def render_json(
+    *,
+    target: str,
+    findings: List[Finding],
+    files_scanned: int,
+    languages: Dict[str, int],
+    rules_applied: int,
+    sev_counts: Dict[str, int],
+    duration_seconds: float,
+    severity_filter: Optional[str] = None,
+) -> str:
+    """Render the audit result as a JSON document for CI consumption.
+
+    Schema is intentionally flat and stable. Top-level fields:
+      - tool, version, target, durationMs
+      - summary: filesScanned, rulesApplied, byLanguage, bySeverity, totalFindings
+      - findings[]: ruleId, severity, message, file, line, snippet
+    """
+    try:
+        from arcis import __version__ as _v
+    except Exception:
+        _v = "unknown"
+
+    doc = {
+        "tool": "arcis-audit",
+        "version": _v,
+        "target": target,
+        "durationMs": int(duration_seconds * 1000),
+        "severityFilter": severity_filter,
+        "summary": {
+            "filesScanned": files_scanned,
+            "rulesApplied": rules_applied,
+            "byLanguage": languages,
+            "bySeverity": sev_counts,
+            "totalFindings": len(findings),
+        },
+        "findings": [
+            {
+                "ruleId": f.rule_id,
+                "severity": f.severity,
+                "message": f.message,
+                "file": f.file,
+                "line": f.line,
+                "snippet": f.snippet,
+            }
+            for f in findings
+        ],
+    }
+    return json.dumps(doc, indent=2)
+
+
+def render_sarif(
+    *,
+    target: str,
+    findings: List[Finding],
+) -> str:
+    """Render the audit result as SARIF 2.1.0 for GitHub Code Scanning.
+
+    Spec: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
+    Only the fields GitHub Code Scanning actually consumes are populated.
+    """
+    try:
+        from arcis import __version__ as _v
+    except Exception:
+        _v = "unknown"
+
+    # SARIF severity maps to "error" / "warning" / "note".
+    sev_to_level = {
+        "critical": "error",
+        "high": "error",
+        "medium": "warning",
+        "low": "note",
+    }
+
+    # Build the rules table from the rules referenced in findings — keeps
+    # the SARIF doc minimal and avoids shipping rules unused by this run.
+    rule_ids = []
+    seen: Dict[str, bool] = {}
+    rules_by_id: Dict[str, Rule] = {r.id: r for r in RULES}
+    for f in findings:
+        if f.rule_id not in seen:
+            seen[f.rule_id] = True
+            rule_ids.append(f.rule_id)
+
+    sarif_rules = []
+    for rid in rule_ids:
+        rule = rules_by_id.get(rid)
+        msg = rule.message if rule else rid
+        sarif_rules.append({
+            "id": rid,
+            "name": rid,
+            "shortDescription": {"text": msg.split(" — ")[0][:120]},
+            "fullDescription": {"text": msg},
+            "defaultConfiguration": {
+                "level": sev_to_level.get(rule.severity if rule else "medium", "warning"),
+            },
+        })
+
+    results = []
+    for f in findings:
+        # SARIF wants forward-slash relative URIs.
+        try:
+            rel = os.path.relpath(f.file).replace(os.sep, "/")
+        except ValueError:
+            rel = f.file.replace(os.sep, "/")
+        results.append({
+            "ruleId": f.rule_id,
+            "level": sev_to_level.get(f.severity, "warning"),
+            "message": {"text": f.message},
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": {"uri": rel},
+                    "region": {
+                        "startLine": f.line,
+                        "snippet": {"text": f.snippet} if f.snippet else None,
+                    },
+                },
+            }],
+        })
+
+    # Strip None snippet entries — SARIF validators reject null fields.
+    for r in results:
+        region = r["locations"][0]["physicalLocation"]["region"]
+        if region.get("snippet") is None:
+            region.pop("snippet", None)
+
+    doc = {
+        "version": "2.1.0",
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "arcis-audit",
+                    "version": _v,
+                    "informationUri": "https://arcis.dev",
+                    "rules": sarif_rules,
+                },
+            },
+            "results": results,
+            "originalUriBaseIds": {
+                "TARGET": {"uri": target.replace(os.sep, "/").rstrip("/") + "/"},
+            },
+        }],
+    }
+    return json.dumps(doc, indent=2)
+
+
+def _print_audit_header(
+    *,
+    target: str,
+    file_count: int,
+    languages: Dict[str, int],
+    rule_count: int,
+    severity_filter: Optional[str],
+    no_color: bool = False,
+) -> None:
+    """Run header — printed before scanning starts so users know exactly
+    what's about to happen. Mirrors the SCA + scan headers for shape."""
+    bold = "" if no_color else "\033[1m"
+    cyan = "" if no_color else "\033[96m"
+    dim = "" if no_color else "\033[2m"
+    reset = "" if no_color else "\033[0m"
+    line = "-" * 60
+
+    breakdown = ", ".join(f"{n} {lang}" for lang, n in sorted(languages.items()))
+    rule_langs = sorted(languages.keys())
+    rule_lang_str = ", ".join(rule_langs) if rule_langs else "all"
+
+    print()
+    print(f"  {bold}{cyan}Arcis Audit{reset}")
+    print(f"  {dim}Target:{reset}   {target}")
+    print(f"  {dim}Rules:{reset}    {rule_count} ({rule_lang_str})")
+    print(f"  {dim}Files:{reset}    {file_count} scanned ({breakdown})")
+    if severity_filter:
+        print(f"  {dim}Filter:{reset}   severity >= {severity_filter}")
+    print(f"  {dim}{line}{reset}")
+    print()
+
+
 def _print_audit_summary(
     *,
     files_scanned: int,
     languages: Dict[str, int],
     rules: int,
     sev_counts: Dict[str, int],
+    findings: List[Finding],
+    duration_seconds: float,
+    severity_filter: Optional[str] = None,
     no_color: bool = False,
 ) -> None:
     bold = "" if no_color else "\033[1m"
@@ -595,13 +868,19 @@ def _print_audit_summary(
     breakdown = ", ".join(f"{n} {lang}" for lang, n in sorted(languages.items()))
     total = sum(sev_counts.values())
 
-    print()
     print(f"{dim}{line}{reset}")
-    print(f"  {bold}Audit summary{reset}")
+    print(f"  {bold}Summary{reset}")
     print(f"    Files scanned   {files_scanned}  [{breakdown}]")
     print(f"    Rules applied   {rules}")
     if total == 0:
-        print(f"    Findings        {green}0  [OK] clean{reset}")
+        if severity_filter:
+            # Honest about the filter — user might think the repo is clean
+            # when actually they've filtered out lower-severity findings.
+            print(
+                f"    Findings        {green}0 at severity >= {severity_filter}{reset}"
+            )
+        else:
+            print(f"    Findings        {green}0  [OK] clean{reset}")
     else:
         parts = []
         for sev in ("critical", "high", "medium", "low"):
@@ -609,5 +888,41 @@ def _print_audit_summary(
             if n:
                 parts.append(f"{n} {sev}")
         print(f"    Findings        {bold}{total}{reset}  ({', '.join(parts)})")
+    print(f"    Time            {_format_duration(duration_seconds)}")
+
+    # Top offenders — files with the most findings. Helps the user know
+    # where to start fixing. Skipped when there are no findings (nothing
+    # to rank) or when there's only one file with findings (trivial).
+    if findings:
+        by_file: Dict[str, int] = {}
+        rule_in_file: Dict[str, str] = {}
+        for f in findings:
+            by_file[f.file] = by_file.get(f.file, 0) + 1
+            # Remember the first rule we saw in each file as a hint label.
+            rule_in_file.setdefault(f.file, f.rule_id)
+        if len(by_file) > 1:
+            print()
+            print(f"  {bold}Top offenders{reset}")
+            top = sorted(by_file.items(), key=lambda kv: -kv[1])[:5]
+            max_path_len = max(len(os.path.relpath(fp)) for fp, _ in top)
+            for fp, n in top:
+                rel = os.path.relpath(fp).ljust(min(max_path_len, 40))
+                plural = "" if n == 1 else "s"
+                print(
+                    f"    {rel}  {bold}{n}{reset} finding{plural}  "
+                    f"{dim}({rule_in_file[fp]}){reset}"
+                )
+
+    # Next-step hints — only when relevant. We don't repeat hints the user
+    # already followed (e.g., don't say --severity high if they're already
+    # filtering). Keeps the output honest, not spammy.
+    if total > 0 and not severity_filter:
+        critical_high = sev_counts.get("critical", 0) + sev_counts.get("high", 0)
+        if critical_high > 0 and critical_high < total:
+            print()
+            print(f"  {dim}Next:{reset} {bold}arcis audit --severity high{reset}  "
+                  f"{dim}to focus on {critical_high} high-impact{reset}")
+            print(f"        {bold}arcis audit --json{reset}            "
+                  f"{dim}for CI consumption{reset}")
     print(f"{dim}{line}{reset}")
     print()

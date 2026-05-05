@@ -78,6 +78,10 @@
         Arcis ships with three command-line tools that scan your codebase and dependencies for security issues. All are offline, CI-friendly, and ship with the Python package.
       </p>
 
+      <div class="callout note">
+        <p><strong>The CLI is Python-only.</strong> Even if your app uses the Node SDK (<code>@arcis/node</code>) or the Go SDK, the <code>audit</code>, <code>scan</code>, and <code>sca</code> commands ship in the Python package because the threat database, audit rules, and attack payload catalog all live there. Run <code>pip install arcis</code> alongside your SDK to get the CLI on your shell PATH. The Node and Go packages do not put a CLI on your PATH.</p>
+      </div>
+
       <h2 id="discover">Discovery</h2>
       <p>Don't remember the flags? Every command supports <code>--list</code> to print exactly what it will check, before you run it.</p>
 <pre><code><span class="c"># Top-level catalog: scan, audit, sca with examples</span>

@@ -122,31 +122,52 @@ At the checkpoint, Arcis:
 ### Install
 
 ```bash
-npm install @arcis/node          # Node.js
-pip install arcis                # Python
-go get github.com/GagancM/arcis  # Go
+npm install @arcis/node          # Node.js SDK
+pip install arcis                # Python SDK + the CLI (audit / scan / sca)
+go get github.com/GagancM/arcis  # Go SDK
 ```
+
+> **Heads up — three rules that catch every newcomer:**
+> 1. **Install in your backend project, not the frontend.** Arcis is server-side middleware. Bundling it into a React / Vite / Next.js client folder leaks the API key into client JS and the middleware never runs there anyway.
+> 2. **`.env` lives next to the server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_` — those expose values to the browser. Add `.env` to `.gitignore`.
+> 3. **The CLI ships in the Python package only.** `audit`, `scan`, and `sca` rely on the threat database and audit rules that live in Python. Even if your app uses the Node or Go SDK, run `pip install arcis` once to get the CLI on your shell PATH. The Node and Go packages are SDKs only — they do not put a CLI on your PATH.
 
 ### Protect Your App (One Line)
 
 **Node.js (Express):**
 ```js
+import express from 'express';
 import { arcis } from '@arcis/node';
-app.use(arcis());
+import 'dotenv/config';
+
+const app = express();
+// block: true returns 403 on detected attacks. Default is false
+// (sanitize + observe) so existing apps don't break on rollout.
+app.use(arcis({ block: true }));
 // Core active: sanitization, rate limiting, security headers.
 // Optional: corsProtection(), csrfProtection(), botProtection(), cookieSecurity()
 ```
 
 **Python (FastAPI):**
 ```python
+from fastapi import FastAPI
 from arcis import ArcisMiddleware
-app.add_middleware(ArcisMiddleware)
+from dotenv import load_dotenv
+
+load_dotenv()
+app = FastAPI()
+app.add_middleware(ArcisMiddleware, block=True)
 ```
 
 **Python (Flask):**
 ```python
+from flask import Flask
 from arcis import Arcis
-Arcis(app)
+from dotenv import load_dotenv
+
+load_dotenv()
+app = Flask(__name__)
+Arcis(app, block=True)
 ```
 
 **Python (Django):**
@@ -157,12 +178,12 @@ Arcis(app)
 
 **Go (Gin):**
 ```go
-r.Use(arcisgin.Middleware())
+r.Use(arcisgin.Middleware(arcis.Config{Block: true}))
 ```
 
 **Go (Echo):**
 ```go
-e.Use(arcisecho.Middleware())
+e.Use(arcisecho.Middleware(arcis.Config{Block: true}))
 ```
 
 That's it. Your application is now protected against 20+ security flaws.
@@ -174,10 +195,12 @@ That's it. Your application is now protected against 20+ security flaws.
 ### Node.js (Express)
 
 ```js
+import express from 'express';
 import { arcis } from '@arcis/node';
+import 'dotenv/config';
 
 const app = express();
-app.use(arcis());
+app.use(arcis({ block: true }));
 ```
 
 ### Node.js (Fastify, Koa, Hono, etc.)
