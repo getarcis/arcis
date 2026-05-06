@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audit;
 pub mod sca;
 pub mod threat_db;
 pub mod version;
