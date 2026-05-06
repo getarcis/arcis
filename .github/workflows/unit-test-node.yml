@@ -10,7 +10,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [18, 20, 22, 24]
+        # Node 18 dropped: EOL April 2025; vitest/rolldown transitive dep
+        # imports node:util.styleText, which only exists on Node 20+.
+        node-version: [20, 22, 24]
     # Redis is exposed at localhost:6379 so store-backed rate-limit /
     # session tests can run for real instead of mocks. Tests that read
     # REDIS_URL pick it up automatically; everything else continues to
