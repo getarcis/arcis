@@ -11,7 +11,6 @@ import subprocess
 import sys
 import tempfile
 
-import pytest
 
 from arcis.cli.audit import Finding, render_json, render_sarif
 

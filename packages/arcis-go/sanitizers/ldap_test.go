@@ -7,9 +7,9 @@ import (
 
 func TestSanitizeLdapFilter(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		contains []string
+		name        string
+		input       string
+		contains    []string
 		notContains []string
 	}{
 		{
@@ -31,14 +31,14 @@ func TestSanitizeLdapFilter(t *testing.T) {
 			notContains: []string{")"},
 		},
 		{
-			name:        "escapes backslash",
-			input:       `ad\min`,
-			contains:    []string{`\5c`},
+			name:     "escapes backslash",
+			input:    `ad\min`,
+			contains: []string{`\5c`},
 		},
 		{
-			name:        "escapes NUL byte",
-			input:       "ad\x00min",
-			contains:    []string{`\00`},
+			name:     "escapes NUL byte",
+			input:    "ad\x00min",
+			contains: []string{`\00`},
 		},
 		{
 			name:        "OR bypass payload neutralized",

@@ -1,6 +1,5 @@
 """Tests for arcis.sanitizers.pii — PII detection and redaction."""
 
-import pytest
 from arcis.sanitizers.pii import (
     scan_pii,
     detect_pii,

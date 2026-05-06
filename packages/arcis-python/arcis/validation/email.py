@@ -18,7 +18,7 @@ Examples:
 
 import re
 import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 # RFC 5321 limits

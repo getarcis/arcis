@@ -14,12 +14,10 @@ threat DB. Covers:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
 
-from arcis.cli import sca
 from arcis.cli.sca import (
     CompromisedPackage,
     THREAT_DB,

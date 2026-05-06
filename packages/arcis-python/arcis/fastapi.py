@@ -273,8 +273,7 @@ class AsyncRateLimiter:
         
         key = self.key_func(request)
         now = time.time()
-        now_ms = now * 1000
-        
+
         entry = await self.store.get(key)
         
         if not entry or entry.reset_time < now:

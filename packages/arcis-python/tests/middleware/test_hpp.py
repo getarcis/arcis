@@ -3,7 +3,6 @@ HPP (HTTP Parameter Pollution) Protection tests.
 Tests for arcis/middleware/hpp.py
 """
 
-import pytest
 from arcis.middleware.hpp import HppProtection, create_hpp
 
 

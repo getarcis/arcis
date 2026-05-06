@@ -29,7 +29,7 @@ from rich.prompt import Prompt
 
 from arcis.cli.payloads import ATTACK_CATEGORIES, BLOCKED_STATUS_CODES, DEFAULT_FIELDS
 from arcis.cli.report import RouteResult, VectorResult, print_report
-from arcis.cli._console import console, err_console, live_status
+from arcis.cli._console import err_console, live_status
 from arcis.cli.discovery import (
     DiscoveredRoute,
     TargetCandidate,

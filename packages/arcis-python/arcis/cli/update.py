@@ -182,7 +182,7 @@ examples:
     if args.check:
         # Quiet single-line CI mode.
         if latest is None:
-            print(f"arcis: could not reach PyPI to check for updates", file=sys.stderr)
+            print("arcis: could not reach PyPI to check for updates", file=sys.stderr)
             sys.exit(2)
         cur_t = _parse_version(current)
         lat_t = _parse_version(latest)

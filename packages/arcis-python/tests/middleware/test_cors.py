@@ -3,7 +3,6 @@ SafeCors tests — covers origin validation, null blocking, credentials, preflig
 """
 
 import re
-import pytest
 from arcis.middleware.cors import SafeCors, create_cors, _is_origin_allowed
 
 
