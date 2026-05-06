@@ -1,0 +1,209 @@
+name: Rust CLI Release
+
+# Phase C1 of `documents/plans/rust-cli.md`. Builds cross-arch binaries
+# from the Rust workspace and uploads them to a GitHub Release. The
+# distribution wrapper (`@arcis/cli` on npm, Phase C2) downloads the
+# matching archive at install time.
+#
+# Trigger: `cli-v*` tag pushes (e.g. `cli-v0.2.0`). The `cli-` prefix
+# keeps Rust binary releases distinct from the Python `v*` tag stream
+# during the soft-deprecation window. Once the cutover lands and the
+# Python CLI has been removed (Phase C3), this can move to plain `v*`
+# tags. `workflow_dispatch` is also accepted so we can sanity-check the
+# build pipeline before the first real release — that path uploads
+# artifacts only (no GitHub Release is created).
+#
+# Targets (matches `documents/plans/rust-cli.md` Phase C1):
+#   * x86_64-unknown-linux-musl   — static, runs on Alpine + scratch
+#   * aarch64-unknown-linux-musl  — ARM64 Linux, static
+#   * aarch64-apple-darwin        — macOS arm64
+#   * x86_64-pc-windows-msvc      — Windows x64
+
+on:
+  push:
+    tags:
+      - "cli-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without v prefix (e.g. 0.2.0). Produces artifacts only — does not publish a GitHub Release."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            use-cross: true
+            archive: tar.gz
+            binary: arcis
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            use-cross: true
+            archive: tar.gz
+            binary: arcis
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            use-cross: false
+            archive: tar.gz
+            binary: arcis
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            use-cross: false
+            archive: zip
+            binary: arcis.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: packages/arcis-rust
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # dtolnay/rust-toolchain@stable is intentionally unpinned — see the
+      # comment in `rust.yml` for the full reasoning. `targets:` adds the
+      # cross-compile target without needing a separate `rustup target add`.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/arcis-rust/target
+          key: cargo-release-${{ matrix.target }}-${{ hashFiles('packages/arcis-rust/**/Cargo.toml', 'packages/arcis-rust/**/Cargo.lock') }}
+          restore-keys: |
+            cargo-release-${{ matrix.target }}-
+            cargo-${{ matrix.os }}-
+
+      # `cross` provides musl Docker images preconfigured with the right
+      # C cross-toolchains. Installing via `cargo install --locked` is
+      # slower than a SHA-pinned third-party action, but keeps the action
+      # surface (and the audit-pinning burden) minimal.
+      - name: Install cross
+        if: matrix.use-cross
+        run: cargo install cross --locked --version 0.2.5
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          if [ "${{ matrix.use-cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }} --bin arcis
+          else
+            cargo build --release --target ${{ matrix.target }} --bin arcis
+          fi
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v="${{ inputs.version }}"
+          else
+            # tag is `cli-vX.Y.Z` -> X.Y.Z
+            v="${GITHUB_REF_NAME#cli-v}"
+          fi
+          if [ -z "$v" ]; then
+            echo "Could not determine version" >&2
+            exit 1
+          fi
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Package artifact
+        id: pkg
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          target="${{ matrix.target }}"
+          name="arcis-${version}-${target}"
+          mkdir -p "dist/${name}"
+          cp "target/${target}/release/${{ matrix.binary }}" "dist/${name}/"
+          # Best-effort: include LICENSE + README if present at the repo root.
+          # Distribution layout is just the binary; these are nice-to-have.
+          cp ../../LICENSE "dist/${name}/" 2>/dev/null || true
+          cp ../../README.md "dist/${name}/" 2>/dev/null || true
+          cd dist
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            # 7z is preinstalled on windows-latest and ubuntu-latest.
+            7z a -mx=9 "${name}.zip" "${name}" >/dev/null
+            file="${name}.zip"
+          else
+            tar -czf "${name}.tar.gz" "${name}"
+            file="${name}.tar.gz"
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${file}" > "${file}.sha256"
+          else
+            shasum -a 256 "${file}" > "${file}.sha256"
+          fi
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "file=${file}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@de65e23aa2b7e23d713bb51fbfcb6d502f8667d8 # v4.6.2
+        with:
+          name: ${{ steps.pkg.outputs.name }}
+          path: |
+            packages/arcis-rust/dist/${{ steps.pkg.outputs.file }}
+            packages/arcis-rust/dist/${{ steps.pkg.outputs.file }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  # Tag-pushes only. workflow_dispatch produces artifacts and stops there
+  # so we can inspect a dry-run without polluting the Releases page.
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist
+
+      - name: Flatten + aggregate SHA256SUMS
+        shell: bash
+        run: |
+          cd dist
+          # Each per-target artifact landed in its own subdir; flatten.
+          find . -mindepth 2 -name 'arcis-*.tar.gz' -exec mv {} . \;
+          find . -mindepth 2 -name 'arcis-*.zip' -exec mv {} . \;
+          # Combined SHA256SUMS file pinned at the release root.
+          : > SHA256SUMS
+          for f in arcis-*.tar.gz arcis-*.zip; do
+            if [ -e "$f" ]; then
+              sha256sum "$f" >> SHA256SUMS
+            fi
+          done
+          # Drop the now-redundant per-file checksums.
+          find . -mindepth 2 -name '*.sha256' -delete
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS
+          echo "=== Files ==="
+          ls -la
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#cli-v}"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Arcis CLI ${version}" \
+            --generate-notes \
+            dist/arcis-*.tar.gz dist/arcis-*.zip dist/SHA256SUMS
