@@ -121,7 +121,7 @@ arcis sca .   # works on any project — Python, Node, Go — by reading lockfil
 `arcis sca` is language-agnostic at the lockfile layer. It reads
 `go.sum`, `package-lock.json`, `requirements.txt`, etc. directly. The
 binary is the canonical install path regardless of which SDK you deploy
-in your app. (Before v2.0.0, the CLI shipped inside the Python SDK; that's
+in your app. (Before v1.5.0, the CLI shipped inside the Python SDK; that's
 no longer the case.)
 
 ## See also

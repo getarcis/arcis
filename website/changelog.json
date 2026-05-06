@@ -2,7 +2,7 @@
   "_comment": "Single source of truth for the website's Recently Shipped section + the standalone changelog page. The dashboard's 'Changelog' sidebar link also points at the rendered HTML view. Add new versions to the top of `releases`. Keep summaries one sentence; full bullets in `details`.",
   "releases": [
     {
-      "version": "2.0.0",
+      "version": "1.5.0",
       "date": "2026-05-06",
       "summary": "CLI moves to its own native-binary npm package. Python SDK becomes runtime-only with zero dependencies.",
       "details": [

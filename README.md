@@ -132,7 +132,7 @@ npm install -g @arcis/cli        # CLI: audit / scan / sca (single static binary
 > **Heads up — three rules that catch every newcomer:**
 > 1. **Install in your backend project, not the frontend.** Arcis is server-side middleware. Bundling it into a React / Vite / Next.js client folder leaks the API key into client JS and the middleware never runs there anyway.
 > 2. **`.env` lives next to the server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_` — those expose values to the browser. Add `.env` to `.gitignore`.
-> 3. **The CLI is its own package.** `audit`, `scan`, and `sca` ship as a native binary via `npm install -g @arcis/cli`. It works regardless of whether your app is Node, Python, or Go. (Before v2.0.0 the CLI shipped inside the Python SDK; that's no longer the case.)
+> 3. **The CLI is its own package.** `audit`, `scan`, and `sca` ship as a native binary via `npm install -g @arcis/cli`. It works regardless of whether your app is Node, Python, or Go. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case.)
 
 ### Protect Your App (One Line)
 
