@@ -72,20 +72,31 @@ the request without parser issues.
 
 ## Status
 
-The Go SDK ships **detection + block middleware + standalone detectors**.
-Two surfaces present in the Node and Python SDKs are not yet shipped in
-Go:
+The Go SDK ships **detection + block middleware + standalone detectors +
+telemetry**. One surface present in the Node and Python SDKs is not yet
+shipped in Go:
 
-### No telemetry pipeline yet
+## Telemetry (v1.5.0+)
 
-The Node and Python SDKs ship a `TelemetryClient` that batches + flushes
-decision events to a self-hosted Arcis dashboard. The Go SDK does **not**
-include this yet — block-mode 403s in Go services are real but don't
-appear on the dashboard's Live Requests page.
+Stream allow / deny decisions from the gin or echo middleware to a
+self-hosted Arcis dashboard. Stdlib only; opt-in (nil = zero overhead).
 
-If you need dashboard visibility today, front Go services with a
-Node/Python proxy that runs the Arcis middleware. Native Go telemetry is
-planned for v1.5.0.
+```go
+import "github.com/GagancM/arcis/telemetry"
+
+tc, _ := telemetry.NewClient(telemetry.Options{
+    Endpoint: "https://arcis.mycorp.com/v1/events",
+})
+defer tc.Close(context.Background())
+
+cfg := arcisgin.DefaultConfig()
+cfg.Telemetry = tc
+r.Use(arcisgin.MiddlewareWithConfig(cfg))
+```
+
+(Same shape for echo: `arcisecho.MiddlewareWithConfig(cfg)`.) Each
+request emits one `TelemetryEvent` matching `spec/API_SPEC.md` §9 — same
+wire shape Node and Python ship, batched and POSTed in the background.
 
 ### No native SCA scanner
 

@@ -79,6 +79,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	arcis "github.com/GagancM/arcis"
+	"github.com/GagancM/arcis/telemetry"
 )
 
 // scanRequestForThreats peeks at JSON body, query params, and URL path for
@@ -192,6 +193,11 @@ type Config struct {
 
 	// Error handler options
 	IsDev bool
+
+	// Telemetry, if non-nil, receives one Event per request after the
+	// middleware decision. Nil = zero overhead (no defer registered, no
+	// allocations) per spec/API_SPEC.md §9 Guarantees.
+	Telemetry *telemetry.Client
 }
 
 // DefaultConfig returns the default Arcis configuration for Gin.
@@ -330,6 +336,46 @@ func MiddlewareWithConfig(config Config) gin.HandlerFunc {
 	registerInstance(instance)
 
 	return func(c *gin.Context) {
+		start := time.Now()
+		// Per-request telemetry locals. Deny branches mutate these before
+		// returning; the deferred emit (registered only when Telemetry is
+		// configured) reads them on function exit.
+		var (
+			decision    = telemetry.DecisionAllow
+			evtVector   string
+			evtRule     string
+			evtMatched  string
+			evtReason   string
+			evtSeverity telemetry.Severity
+		)
+		if config.Telemetry != nil {
+			defer func() {
+				status := c.Writer.Status()
+				if status == 0 {
+					status = http.StatusOK
+				}
+				latency := float64(time.Since(start)) / float64(time.Millisecond)
+				if latency < 0 {
+					latency = 0
+				}
+				config.Telemetry.Send(telemetry.Event{
+					Ts:             time.Now().UTC().Format(time.RFC3339),
+					IP:             c.ClientIP(),
+					Method:         c.Request.Method,
+					Path:           c.Request.URL.Path,
+					Decision:       decision,
+					Vector:         evtVector,
+					Rule:           evtRule,
+					MatchedPattern: evtMatched,
+					Reason:         evtReason,
+					Severity:       evtSeverity,
+					UserAgent:      c.GetHeader("User-Agent"),
+					Status:         status,
+					LatencyMs:      latency,
+				})
+			}()
+		}
+
 		// Skip function check for rate limiting
 		skipRateLimit := config.RateLimitSkip != nil && config.RateLimitSkip(c)
 
@@ -341,6 +387,12 @@ func MiddlewareWithConfig(config Config) gin.HandlerFunc {
 			c.Header("X-RateLimit-Reset", strconv.Itoa(int(result.Reset.Seconds())))
 
 			if !result.Allowed {
+				decision = telemetry.DecisionDeny
+				evtVector = "rate-limit"
+				evtRule = "rate-limit/exceeded"
+				evtSeverity = telemetry.SeverityMedium
+				evtReason = "Rate limit exceeded"
+
 				c.Header("Retry-After", strconv.Itoa(int(result.Reset.Seconds())))
 				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 					"error":      "Too many requests, please try again later.",
@@ -353,6 +405,13 @@ func MiddlewareWithConfig(config Config) gin.HandlerFunc {
 		// Block mode: scan body / query / path for attack patterns.
 		if config.Block {
 			if hit := scanRequestForThreats(c.Request); hit != nil {
+				decision = telemetry.DecisionDeny
+				evtVector = hit.Vector
+				evtRule = hit.Rule
+				evtMatched = hit.MatchedPattern
+				evtSeverity = telemetry.SeverityHigh
+				evtReason = "Detected " + hit.Vector + " pattern"
+
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 					"error":  "Request blocked for security reasons",
 					"code":   "SECURITY_THREAT",
