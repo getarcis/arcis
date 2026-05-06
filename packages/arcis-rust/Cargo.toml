@@ -3,13 +3,8 @@
 # Three crates:
 #   * arcis-cli     — the `arcis` binary (clap dispatcher)
 #   * arcis-engine  — shared logic (sanitizers, rule matching, version parser).
-#                     Empty in Phase A; populated as commands are ported.
 #   * arcis-data    — embedded JSON data (threat DB, audit rules, attack
-#                     vectors) loaded via include_bytes!(). Same files the
-#                     Python CLI reads, no drift possible.
-#
-# Phase A acceptance: `arcis --version` and `arcis --help` parity-green
-# against the Python CLI via `tests/parity/run.py`.
+#                     vectors) loaded via include_bytes!().
 
 [workspace]
 resolver = "2"

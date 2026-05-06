@@ -1,6 +1,0 @@
-{
-  "name": "audit: --json and --sarif together (exit 2 + stderr message)",
-  "args": ["audit", ".", "--json", "--sarif"],
-  "exit_code": 2,
-  "stderr_pattern": "mutually exclusive"
-}

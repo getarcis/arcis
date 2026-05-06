@@ -1,6 +1,0 @@
-{
-  "name": "audit: multi-rule findings, --sarif (rules table dedup)",
-  "args": ["audit", "tests/parity/projects/audit-multi-rule", "--sarif"],
-  "exit_code": 1,
-  "byte_equal_audit_sarif": true
-}

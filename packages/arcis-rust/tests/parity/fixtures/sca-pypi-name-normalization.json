@@ -1,6 +1,0 @@
-{
-  "name": "sca: python3_dateutil underscore form normalises to dash",
-  "args": ["sca", "--no-color", "tests/parity/projects/sca-py3dateutil"],
-  "exit_code": 1,
-  "byte_equal_strip_time": true
-}

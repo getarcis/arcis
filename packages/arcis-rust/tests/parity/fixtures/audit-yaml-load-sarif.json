@@ -1,6 +1,0 @@
-{
-  "name": "audit: yaml.load finding, --sarif (exit 1)",
-  "args": ["audit", "tests/parity/projects/audit-yaml-load", "--sarif"],
-  "exit_code": 1,
-  "byte_equal_audit_sarif": true
-}

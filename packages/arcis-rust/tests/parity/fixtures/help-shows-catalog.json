@@ -1,6 +1,0 @@
-{
-  "name": "--help shows the catalog with all four commands",
-  "args": ["--help"],
-  "exit_code": 0,
-  "stdout_pattern": "(?s)Arcis.*Commands.*scan.*audit.*sca.*update.*Discovery"
-}

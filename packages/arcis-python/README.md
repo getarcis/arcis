@@ -6,22 +6,20 @@
 [![Python 3.9+](https://img.shields.io/pypi/pyversions/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**One-line security for Python web applications + the canonical `arcis` CLI for scan / audit / supply-chain analysis.**
+**One-line security middleware for Python web applications. Zero runtime dependencies.**
 
 Arcis is a cross-platform security library that provides drop-in protection against common web vulnerabilities. Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
-## What's new in v1.4.4
+## What's new in v2.0.0
 
-- **Detect-and-block middleware** — opt in with `app.add_middleware(ArcisMiddleware, block=True)`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
-- **6 new standalone detectors** — `detect_xss / detect_sql / detect_nosql / detect_path_traversal / detect_command_injection / detect_prototype_pollution`.
-- **CLI overhaul** — `arcis --list` discovery, live progress bars, summary blocks, `arcis update` command, optional interactive picker (`pip install "arcis[interactive]"`).
-- **End-to-end CLI → dashboard wiring** — `arcis scan/audit/sca` POST results to the dashboard when `ARCIS_ENDPOINT` is set.
+- **SDK-only release.** `pip install arcis` now ships the runtime middleware only — zero runtime dependencies. The CLI moved to its own package: `npm install -g @arcis/cli`. See "CLI" below.
+- The middleware API is unchanged. Existing `Arcis(app)` / `app.add_middleware(ArcisMiddleware, ...)` code keeps working.
 - See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
 
 ## Installation
 
 ```bash
-# Core library + CLI (audit / scan / sca)
+# Core middleware (zero runtime deps)
 pip install arcis python-dotenv
 
 # With framework integrations
@@ -36,8 +34,19 @@ pip install arcis[dev]
 > **Install in your backend project, not the frontend.** Arcis is server-side middleware. Bundling it into a frontend build would leak the API key into client JS and the middleware never runs there.
 >
 > **`.env` lives next to your server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...` and call `load_dotenv()` at startup. Add `.env` to `.gitignore`.
->
-> **CLI lives in this package.** `arcis audit`, `arcis scan`, and `arcis sca` are part of `pip install arcis`. The Node and Go SDKs do not ship a CLI — `pip install arcis` is the canonical install for the scanners regardless of which SDK your app uses.
+
+## CLI
+
+The Arcis scanner (`arcis audit`, `arcis scan`, `arcis sca`) is now a standalone native binary distributed via npm:
+
+```bash
+npm install -g @arcis/cli
+arcis --help
+```
+
+This works regardless of whether your app is Node, Python, or Go. The CLI is a single static binary with the threat database embedded. No Python required.
+
+If you previously relied on `pip install arcis` shipping the `arcis` command, switch to the npm install above.
 
 ## Quick Start
 

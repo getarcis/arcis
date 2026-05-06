@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arcis"
-version = "1.4.4"
-description = "Zero-dependency security middleware for Python. Protects against XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and 15+ more attack types. Works with Flask, FastAPI, and Django."
+version = "2.0.0"
+description = "Zero-dependency security middleware for Python. Protects against XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and 15+ more attack types. Works with Flask, FastAPI, and Django. The CLI ships separately at npm install -g @arcis/cli."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -30,9 +30,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: WSGI :: Middleware",
 ]
 requires-python = ">=3.9"
-dependencies = [
-    "rich>=13.0.0",
-]
+dependencies = []
 
 [project.optional-dependencies]
 flask = ["flask>=2.0.0"]
@@ -51,9 +49,6 @@ dev = [
     "fastapi>=0.68.0",
     "httpx>=0.24.0",
 ]
-
-[project.scripts]
-arcis = "arcis.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/GagancM/arcis"

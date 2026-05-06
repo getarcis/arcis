@@ -1,6 +1,0 @@
-{
-  "name": "unknown command exits 1 with a clear message",
-  "args": ["definitely-not-a-real-command"],
-  "exit_code": 1,
-  "stdout_pattern": "unknown command"
-}

@@ -1,6 +1,0 @@
-{
-  "name": "audit: no scannable files, --json (exit 2 + empty doc)",
-  "args": ["audit", "tests/parity/projects/audit-empty", "--json"],
-  "exit_code": 2,
-  "byte_equal_audit_json": true
-}

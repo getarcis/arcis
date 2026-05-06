@@ -1,6 +1,0 @@
-{
-  "name": "sca: clean project (1 manifest, 0 findings)",
-  "args": ["sca", "--no-color", "tests/parity/projects/sca-clean"],
-  "exit_code": 0,
-  "byte_equal_strip_time": true
-}

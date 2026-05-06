@@ -122,9 +122,9 @@
       </div>
 
       <h3 id="cli-tools">CLI tools (audit / scan / sca)</h3>
-      <p>The Arcis CLI scanners ship in the <strong>Python package</strong>. Even if your app uses the Node or Go SDK, install the Python package once to get <code>arcis audit</code>, <code>arcis scan</code>, and <code>arcis sca</code> on your shell:</p>
-<pre><code>pip install arcis</code></pre>
-      <p>The threat database, audit rules, and attack payload catalog all live in Python. The Node and Go packages are SDKs only &mdash; they do not put a CLI on your shell PATH.</p>
+      <p>The Arcis CLI scanners ship as a <strong>single static binary</strong> distributed via npm. The binary works regardless of whether your app is Node, Python, or Go:</p>
+<pre><code>npm install -g @arcis/cli</code></pre>
+      <p>The threat database, audit rules, and attack payload catalog are all embedded in the binary &mdash; no Python or other runtime required. (Before v2.0.0 the CLI shipped inside the Python SDK; that's no longer the case.)</p>
 
       <h3 id="env-setup">Environment variables (.env)</h3>
       <p>The dashboard expects three values in your backend <code>.env</code>:</p>

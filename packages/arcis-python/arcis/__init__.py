@@ -171,7 +171,7 @@ try:
 except ImportError:
     _HAS_ASYNC = False
 
-__version__ = "1.4.4"
+__version__ = "2.0.0"
 __all__ = [
     # Main class
     "Arcis",

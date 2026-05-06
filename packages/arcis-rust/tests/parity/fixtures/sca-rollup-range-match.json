@@ -1,6 +1,0 @@
-{
-  "name": "sca: rollup@4.21.0 vulnerable_ranges hit (range matcher)",
-  "args": ["sca", "--no-color", "tests/parity/projects/sca-rollup"],
-  "exit_code": 1,
-  "byte_equal_strip_time": true
-}

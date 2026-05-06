@@ -1,20 +1,16 @@
 name: Rust CLI
 
-# Phase A of `documents/plans/rust-cli.md` — bootstrap the Rust workspace
-# and the Python<->Rust parity harness. Runs on every push to a Rust-CLI
-# branch and on PRs targeting the integration branches.
-#
-# Two stages: build (matrix across linux/macos/windows) uploads the
-# release binary; parity (linux only) downloads the linux artifact and
-# diffs its output against the Python CLI for each fixture in
-# packages/arcis-rust/tests/parity/fixtures/.
+# Builds the Rust CLI workspace across linux/macos/windows on every push
+# to a Rust-CLI branch and on PRs targeting the integration branches.
+# Each runner runs `cargo fmt --check`, `cargo clippy -D warnings`,
+# `cargo test --workspace --release`, and a release build, then uploads
+# the release binary as an artifact.
 
 on:
   pull_request:
     branches: [nwl, "feat/v1.5"]
     paths:
       - "packages/arcis-rust/**"
-      - "packages/arcis-python/arcis/data/**"
       - ".github/workflows/rust.yml"
   push:
     branches:
@@ -79,35 +75,3 @@ jobs:
           path: packages/arcis-rust/target/release/${{ matrix.binary }}
           if-no-files-found: error
           retention-days: 7
-
-  # ─── Parity job ──────────────────────────────────────────────────────
-  # Linux-only; running parity on every OS would triple the test cost
-  # without changing the answer. Cross-platform output-shape divergence
-  # is rare and would surface in the macOS / Windows build steps anyway.
-  parity:
-    name: Parity (Python vs Rust)
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.12"
-
-      - name: Install Python CLI in editable mode
-        working-directory: packages/arcis-python
-        run: pip install -e .
-
-      - name: Download Rust binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: arcis-linux-x86_64
-          path: ${{ runner.temp }}/rust-bin
-
-      - name: Make Rust binary executable
-        run: chmod +x "$RUNNER_TEMP/rust-bin/arcis"
-
-      - name: Run parity harness
-        working-directory: packages/arcis-rust
-        run: python tests/parity/run.py --rust-bin "$RUNNER_TEMP/rust-bin/arcis"
