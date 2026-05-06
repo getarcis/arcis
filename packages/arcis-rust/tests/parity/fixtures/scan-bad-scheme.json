@@ -1,0 +1,6 @@
+{
+  "name": "scan: rejects non-http URL scheme (exit 2 + stderr scheme message)",
+  "args": ["scan", "ftp://localhost:5000", "--yes", "--no-color"],
+  "exit_code": 2,
+  "stderr_pattern": "(?i)scheme"
+}

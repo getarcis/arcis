@@ -1,0 +1,6 @@
+{
+  "name": "scan: --list catalog matches Python byte-for-byte (no-color)",
+  "args": ["scan", "--list", "--no-color"],
+  "exit_code": 0,
+  "byte_equal": true
+}
