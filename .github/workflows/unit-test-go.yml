@@ -1,0 +1,26 @@
+name: Unit tests — Go
+
+on:
+  workflow_call:
+
+jobs:
+  go:
+    name: Go (${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Single-version matrix because go.mod declares `go 1.25.0`.
+        # Widening requires lowering the directive first.
+        go-version: ["1.25"]
+    defaults:
+      run:
+        working-directory: packages/arcis-go
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: false
+      - run: go mod tidy
+      - run: go test -v -race ./...

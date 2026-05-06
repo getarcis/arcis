@@ -3,14 +3,12 @@ Email validation tests.
 Tests for arcis/validation/email.py
 """
 
-import pytest
 from arcis.validation.email import (
     validate_email_address,
     is_valid_email_syntax,
     verify_email_mx,
     EmailValidationResult,
     MAX_EMAIL_LENGTH,
-    MAX_LOCAL_LENGTH,
     DISPOSABLE_DOMAINS,
     FREE_PROVIDERS,
     DOMAIN_TYPOS,

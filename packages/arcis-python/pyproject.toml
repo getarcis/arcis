@@ -30,7 +30,9 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: WSGI :: Middleware",
 ]
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "rich>=13.0.0",
+]
 
 [project.optional-dependencies]
 flask = ["flask>=2.0.0"]
@@ -38,7 +40,6 @@ fastapi = ["fastapi>=0.68.0", "starlette>=0.14.0"]
 django = ["django>=3.2"]
 redis = ["redis>=4.0.0"]
 telemetry = ["httpx>=0.24.0"]
-interactive = ["questionary>=2.0.0"]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -74,6 +75,27 @@ asyncio_mode = "auto"
 [tool.black]
 line-length = 100
 target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py and explicit re-export shims expose the public API by
+# importing names from internal modules. Ruff cannot tell those imports
+# from genuine unused ones, so silence F401 on those files.
+"**/__init__.py" = ["F401"]
+"arcis/sanitizer.py" = ["F401"]
+"arcis/django.py" = ["F401"]
+"arcis/fastapi.py" = ["F401"]
+# arcis/cli/ ships the legacy Python CLI scheduled for deletion in the
+# v2.0.0 cut on feat/rust-cli; small stylistic violations (lambdas, locals
+# kept for readability) are not worth touching on the way out.
+"arcis/cli/**" = ["E731", "F841"]
+# Test files commonly use lambdas as throwaway hooks, leave a captured
+# response object for a planned later assertion, and conditionally import
+# inside a try/except guard — those forms aren't worth rewriting.
+"tests/**" = ["E731", "F841", "E402"]
 
 [tool.mypy]
 python_version = "3.9"

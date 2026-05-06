@@ -11,13 +11,13 @@ import (
 
 // FingerprintOptions configures which components are included in request fingerprinting.
 type FingerprintOptions struct {
-	IP               bool              // Include client IP (default: true)
-	UserAgent        bool              // Include User-Agent header (default: true)
-	Accept           bool              // Include Accept header (default: true)
-	AcceptLanguage   bool              // Include Accept-Language header (default: true)
-	AcceptEncoding   bool              // Include Accept-Encoding header (default: true)
-	Custom           []string          // Additional custom components
-	IPOptions        *DetectIPOptions  // Options for IP detection
+	IP             bool             // Include client IP (default: true)
+	UserAgent      bool             // Include User-Agent header (default: true)
+	Accept         bool             // Include Accept header (default: true)
+	AcceptLanguage bool             // Include Accept-Language header (default: true)
+	AcceptEncoding bool             // Include Accept-Encoding header (default: true)
+	Custom         []string         // Additional custom components
+	IPOptions      *DetectIPOptions // Options for IP detection
 }
 
 // DefaultFingerprintOptions returns fingerprint options with all defaults enabled.

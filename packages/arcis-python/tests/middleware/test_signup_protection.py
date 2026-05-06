@@ -3,7 +3,6 @@ Tests for SignupProtection / check_signup — composite signup-endpoint protecti
 Closes the Arcjet `protectSignup` gap while staying fully local.
 """
 
-import pytest
 
 from arcis.middleware.signup_protection import (
     SignupProtection,

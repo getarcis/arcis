@@ -176,10 +176,10 @@ func TestValidateFile_CustomMaxSize(t *testing.T) {
 		Mimetype: "image/jpeg",
 		Size:     2000,
 	}, &ValidateFileOptions{
-		MaxSize:          1000,
-		BlockExecutables: true,
-		ValidateMagicBytes: true,
-		BlockNoExtension: true,
+		MaxSize:               1000,
+		BlockExecutables:      true,
+		ValidateMagicBytes:    true,
+		BlockNoExtension:      true,
 		BlockDoubleExtensions: true,
 	})
 
@@ -236,9 +236,9 @@ func TestValidateFile_ExecutableAllowed(t *testing.T) {
 		Mimetype: "text/plain",
 		Size:     100,
 	}, &ValidateFileOptions{
-		BlockExecutables:     false,
-		ValidateMagicBytes:   true,
-		BlockNoExtension:     true,
+		BlockExecutables:      false,
+		ValidateMagicBytes:    true,
+		BlockNoExtension:      true,
 		BlockDoubleExtensions: true,
 	})
 
@@ -265,9 +265,9 @@ func TestValidateFile_NoExtensionAllowed(t *testing.T) {
 		Mimetype: "text/plain",
 		Size:     100,
 	}, &ValidateFileOptions{
-		BlockNoExtension:     false,
-		BlockExecutables:     true,
-		ValidateMagicBytes:   true,
+		BlockNoExtension:      false,
+		BlockExecutables:      true,
+		ValidateMagicBytes:    true,
 		BlockDoubleExtensions: true,
 	})
 
@@ -319,10 +319,10 @@ func TestValidateFile_AllowedMimeType(t *testing.T) {
 		Mimetype: "image/jpeg",
 		Size:     1024,
 	}, &ValidateFileOptions{
-		AllowedTypes:       []string{"image/jpeg", "image/png"},
-		BlockExecutables:   true,
-		ValidateMagicBytes: true,
-		BlockNoExtension:   true,
+		AllowedTypes:          []string{"image/jpeg", "image/png"},
+		BlockExecutables:      true,
+		ValidateMagicBytes:    true,
+		BlockNoExtension:      true,
 		BlockDoubleExtensions: true,
 	})
 
@@ -337,10 +337,10 @@ func TestValidateFile_DisallowedMimeType(t *testing.T) {
 		Mimetype: "application/pdf",
 		Size:     1024,
 	}, &ValidateFileOptions{
-		AllowedTypes:       []string{"image/jpeg", "image/png"},
-		BlockExecutables:   true,
-		ValidateMagicBytes: true,
-		BlockNoExtension:   true,
+		AllowedTypes:          []string{"image/jpeg", "image/png"},
+		BlockExecutables:      true,
+		ValidateMagicBytes:    true,
+		BlockNoExtension:      true,
 		BlockDoubleExtensions: true,
 	})
 
@@ -355,10 +355,10 @@ func TestValidateFile_AllowedExtension(t *testing.T) {
 		Mimetype: "image/jpeg",
 		Size:     1024,
 	}, &ValidateFileOptions{
-		AllowedExtensions:  []string{".jpg", ".png"},
-		BlockExecutables:   true,
-		ValidateMagicBytes: true,
-		BlockNoExtension:   true,
+		AllowedExtensions:     []string{".jpg", ".png"},
+		BlockExecutables:      true,
+		ValidateMagicBytes:    true,
+		BlockNoExtension:      true,
 		BlockDoubleExtensions: true,
 	})
 
@@ -373,10 +373,10 @@ func TestValidateFile_DisallowedExtension(t *testing.T) {
 		Mimetype: "application/pdf",
 		Size:     1024,
 	}, &ValidateFileOptions{
-		AllowedExtensions:  []string{".jpg", ".png"},
-		BlockExecutables:   true,
-		ValidateMagicBytes: true,
-		BlockNoExtension:   true,
+		AllowedExtensions:     []string{".jpg", ".png"},
+		BlockExecutables:      true,
+		ValidateMagicBytes:    true,
+		BlockNoExtension:      true,
 		BlockDoubleExtensions: true,
 	})
 
@@ -430,9 +430,9 @@ func TestValidateFile_MagicBytesSkipped(t *testing.T) {
 		Size:     1024,
 		Content:  fakeContent,
 	}, &ValidateFileOptions{
-		ValidateMagicBytes:   false,
-		BlockExecutables:     true,
-		BlockNoExtension:     true,
+		ValidateMagicBytes:    false,
+		BlockExecutables:      true,
+		BlockNoExtension:      true,
 		BlockDoubleExtensions: true,
 	})
 

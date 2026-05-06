@@ -78,14 +78,19 @@
         Arcis has built-in adapters for the most popular web frameworks. The core functions are framework-agnostic, so Arcis also works with any framework that isn't listed here.
       </p>
 
+      <div class="callout note">
+        <p><strong>Install in your backend project, not the frontend.</strong> All the snippets below are server-side. The <code>.env</code> with <code>ARCIS_KEY</code> goes next to the server entry point. Do not prefix the key with <code>NEXT_PUBLIC_</code>, <code>VITE_</code>, or <code>REACT_APP_</code> &mdash; those bundle into client JS.</p>
+      </div>
+
       <h2 id="express">Express (Node.js)</h2>
       <p>The primary Node.js adapter. Works with Express 4 and 5.</p>
 <pre><code><span class="k">import</span> express <span class="k">from</span> <span class="s">'express'</span><span class="p">;</span>
 <span class="k">import</span> <span class="p">{</span> arcis <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+<span class="k">import</span> <span class="s">'dotenv/config'</span><span class="p">;</span>
 
 <span class="k">const</span> app = <span class="f">express</span><span class="p">();</span>
 app.<span class="f">use</span><span class="p">(</span>express.<span class="f">json</span><span class="p">());</span>
-app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">());</span></code></pre>
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">({</span> block<span class="p">:</span> <span class="k">true</span> <span class="p">}));</span></code></pre>
 
       <h2 id="fastify-koa-hono">Fastify / Koa / Hono (Node.js)</h2>
       <p>Built-in adapters are on the roadmap. Today, use the core sanitize functions directly:</p>
@@ -100,9 +105,11 @@ fastify.<span class="f">addHook</span><span class="p">(</span><span class="s">'p
       <h2 id="fastapi">FastAPI (Python)</h2>
 <pre><code><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
 <span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware
+<span class="k">from</span> dotenv <span class="k">import</span> load_dotenv
 
+<span class="f">load_dotenv</span><span class="p">()</span>
 app = <span class="f">FastAPI</span><span class="p">()</span>
-app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">)</span></code></pre>
+app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)</span></code></pre>
       <p>For custom config:</p>
 <pre><code><span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware<span class="p">,</span> Config
 
@@ -117,9 +124,11 @@ app.<span class="f">add_middleware</span><span class="p">(</span>
       <h2 id="flask">Flask (Python)</h2>
 <pre><code><span class="k">from</span> flask <span class="k">import</span> Flask
 <span class="k">from</span> arcis <span class="k">import</span> Arcis
+<span class="k">from</span> dotenv <span class="k">import</span> load_dotenv
 
+<span class="f">load_dotenv</span><span class="p">()</span>
 app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p">)</span>
-<span class="f">Arcis</span><span class="p">(</span>app<span class="p">)</span></code></pre>
+<span class="f">Arcis</span><span class="p">(</span>app<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)</span></code></pre>
 
       <h2 id="django">Django (Python)</h2>
       <p>Add to <code>MIDDLEWARE</code> in <code>settings.py</code>:</p>
@@ -140,7 +149,7 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
 
 <span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
     r := gin.<span class="f">Default</span><span class="p">()</span>
-    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">())</span>
+    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">(</span>arcis.Config<span class="p">{</span>Block<span class="p">:</span> <span class="k">true</span><span class="p">}))</span>
     r.<span class="f">Run</span><span class="p">()</span>
 <span class="p">}</span></code></pre>
 

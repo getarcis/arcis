@@ -28,10 +28,9 @@ import json
 import logging
 import queue
 import threading
-import time
 import urllib.error
 import urllib.request
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from .types import TelemetryEvent, TelemetryOptions
 

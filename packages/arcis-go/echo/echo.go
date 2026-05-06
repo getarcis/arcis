@@ -80,6 +80,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	arcis "github.com/GagancM/arcis"
+	"github.com/GagancM/arcis/telemetry"
 )
 
 // scanRequestForThreats is a shared helper for block-mode middleware that
@@ -181,6 +182,11 @@ type Config struct {
 
 	// Error handler options
 	IsDev bool
+
+	// Telemetry, if non-nil, receives one Event per request after the
+	// middleware decision. Nil = zero overhead (no defer registered, no
+	// allocations) per spec/API_SPEC.md §9 Guarantees.
+	Telemetry *telemetry.Client
 }
 
 // DefaultConfig returns the default Arcis configuration for Echo.
@@ -274,6 +280,55 @@ func registerInstance(instance *arcisInstance) {
 	activeInstances = append(activeInstances, instance)
 }
 
+// RateLimitOption configures a standalone rate-limit middleware
+// (RateLimit, RateLimitWithStore, RateLimitWithSkip). Use WithTelemetry
+// to attach a telemetry client.
+type RateLimitOption func(*rateLimitOpts)
+
+type rateLimitOpts struct {
+	telemetry *telemetry.Client
+}
+
+// WithTelemetry returns a RateLimitOption that attaches a telemetry
+// client to a standalone rate-limit middleware. On 429, one
+// TelemetryEvent is emitted with vector="rate-limit",
+// rule="rate-limit/exceeded", severity="medium" — matching the
+// MiddlewareWithConfig wire format.
+//
+// Standalone helpers emit only on deny. Allow events come from
+// MiddlewareWithConfig; emitting them here would duplicate when
+// composing RateLimit + Sanitizer + Validate with telemetry on each.
+func WithTelemetry(tc *telemetry.Client) RateLimitOption {
+	return func(o *rateLimitOpts) { o.telemetry = tc }
+}
+
+// emitRateLimitDeny ships one TelemetryEvent for a 429 from a standalone
+// rate-limit helper. Callers register a deferred call so the latency
+// includes the JSON write, matching MiddlewareWithConfig's measurement.
+func emitRateLimitDeny(tc *telemetry.Client, c echo.Context, start time.Time) {
+	if tc == nil {
+		return
+	}
+	latency := float64(time.Since(start)) / float64(time.Millisecond)
+	if latency < 0 {
+		latency = 0
+	}
+	tc.Send(telemetry.Event{
+		Ts:        time.Now().UTC().Format(time.RFC3339),
+		IP:        c.RealIP(),
+		Method:    c.Request().Method,
+		Path:      c.Request().URL.Path,
+		Decision:  telemetry.DecisionDeny,
+		Vector:    "rate-limit",
+		Rule:      "rate-limit/exceeded",
+		Severity:  telemetry.SeverityMedium,
+		Reason:    "Rate limit exceeded",
+		UserAgent: c.Request().Header.Get("User-Agent"),
+		Status:    http.StatusTooManyRequests,
+		LatencyMs: latency,
+	})
+}
+
 // Middleware returns an Echo middleware with default Arcis configuration.
 func Middleware() echo.MiddlewareFunc {
 	return MiddlewareWithConfig(DefaultConfig())
@@ -327,6 +382,46 @@ func MiddlewareWithConfig(config Config) echo.MiddlewareFunc {
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			start := time.Now()
+			// Per-request telemetry locals. Deny branches mutate these
+			// before returning; the deferred emit (registered only when
+			// Telemetry is configured) reads them on function exit.
+			var (
+				decision    = telemetry.DecisionAllow
+				evtVector   string
+				evtRule     string
+				evtMatched  string
+				evtReason   string
+				evtSeverity telemetry.Severity
+			)
+			if config.Telemetry != nil {
+				defer func() {
+					status := c.Response().Status
+					if status == 0 {
+						status = http.StatusOK
+					}
+					latency := float64(time.Since(start)) / float64(time.Millisecond)
+					if latency < 0 {
+						latency = 0
+					}
+					config.Telemetry.Send(telemetry.Event{
+						Ts:             time.Now().UTC().Format(time.RFC3339),
+						IP:             c.RealIP(),
+						Method:         c.Request().Method,
+						Path:           c.Request().URL.Path,
+						Decision:       decision,
+						Vector:         evtVector,
+						Rule:           evtRule,
+						MatchedPattern: evtMatched,
+						Reason:         evtReason,
+						Severity:       evtSeverity,
+						UserAgent:      c.Request().Header.Get("User-Agent"),
+						Status:         status,
+						LatencyMs:      latency,
+					})
+				}()
+			}
+
 			// Skip function check for rate limiting
 			skipRateLimit := config.RateLimitSkip != nil && config.RateLimitSkip(c)
 
@@ -338,6 +433,12 @@ func MiddlewareWithConfig(config Config) echo.MiddlewareFunc {
 				c.Response().Header().Set("X-RateLimit-Reset", strconv.Itoa(int(result.Reset.Seconds())))
 
 				if !result.Allowed {
+					decision = telemetry.DecisionDeny
+					evtVector = "rate-limit"
+					evtRule = "rate-limit/exceeded"
+					evtSeverity = telemetry.SeverityMedium
+					evtReason = "Rate limit exceeded"
+
 					c.Response().Header().Set("Retry-After", strconv.Itoa(int(result.Reset.Seconds())))
 					return c.JSON(http.StatusTooManyRequests, map[string]interface{}{
 						"error":      "Too many requests, please try again later.",
@@ -349,6 +450,13 @@ func MiddlewareWithConfig(config Config) echo.MiddlewareFunc {
 			// Block mode: scan body / query / path for attack patterns.
 			if config.Block {
 				if hit := scanRequestForThreats(c.Request()); hit != nil {
+					decision = telemetry.DecisionDeny
+					evtVector = hit.Vector
+					evtRule = hit.Rule
+					evtMatched = hit.MatchedPattern
+					evtSeverity = telemetry.SeverityHigh
+					evtReason = "Detected " + hit.Vector + " pattern"
+
 					return c.JSON(http.StatusForbidden, map[string]interface{}{
 						"error":  "Request blocked for security reasons",
 						"code":   "SECURITY_THREAT",
@@ -412,24 +520,41 @@ func HeadersWithConfig(config Config) echo.MiddlewareFunc {
 }
 
 // RateLimit returns a middleware for rate limiting with specified limits.
-func RateLimit(max int, window time.Duration) echo.MiddlewareFunc {
-	return RateLimitWithSkip(max, window, nil)
+// Pass arcisecho.WithTelemetry(tc) to emit a TelemetryEvent on 429.
+func RateLimit(max int, window time.Duration, opts ...RateLimitOption) echo.MiddlewareFunc {
+	return RateLimitWithSkip(max, window, nil, opts...)
 }
 
 // RateLimitWithStore returns a rate limiting middleware backed by a custom store.
-// Use this to plug in a distributed backend such as Redis.
+// Use this to plug in a distributed backend such as Redis. Pass
+// arcisecho.WithTelemetry(tc) to emit a TelemetryEvent on 429.
 //
 // Example:
 //
 //	store := myredis.NewStore(redisClient)
 //	e.Use(arcisecho.RateLimitWithStore(100, time.Minute, store))
-func RateLimitWithStore(max int, window time.Duration, store arcis.RateLimitStore) echo.MiddlewareFunc {
+func RateLimitWithStore(max int, window time.Duration, store arcis.RateLimitStore, opts ...RateLimitOption) echo.MiddlewareFunc {
+	var o rateLimitOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	limiter := arcis.NewRateLimiterWithStore(max, window, store)
 	instance := &arcisInstance{rateLimiter: limiter}
 	registerInstance(instance)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			start := time.Now()
+			var didDeny bool
+			if o.telemetry != nil {
+				defer func() {
+					if didDeny {
+						emitRateLimitDeny(o.telemetry, c, start)
+					}
+				}()
+			}
+
 			result := limiter.Check(c.Request())
 
 			c.Response().Header().Set("X-RateLimit-Limit", strconv.Itoa(result.Limit))
@@ -437,6 +562,7 @@ func RateLimitWithStore(max int, window time.Duration, store arcis.RateLimitStor
 			c.Response().Header().Set("X-RateLimit-Reset", strconv.Itoa(int(result.Reset.Seconds())))
 
 			if !result.Allowed {
+				didDeny = true
 				c.Response().Header().Set("Retry-After", strconv.Itoa(int(result.Reset.Seconds())))
 				return c.JSON(http.StatusTooManyRequests, map[string]interface{}{
 					"error":      "Too many requests, please try again later.",
@@ -450,13 +576,29 @@ func RateLimitWithStore(max int, window time.Duration, store arcis.RateLimitStor
 }
 
 // RateLimitWithSkip returns a rate limiting middleware with custom skip function.
-func RateLimitWithSkip(max int, window time.Duration, skip func(echo.Context) bool) echo.MiddlewareFunc {
+// Pass arcisecho.WithTelemetry(tc) to emit a TelemetryEvent on 429.
+func RateLimitWithSkip(max int, window time.Duration, skip func(echo.Context) bool, opts ...RateLimitOption) echo.MiddlewareFunc {
+	var o rateLimitOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	limiter := arcis.NewRateLimiter(max, window)
 	instance := &arcisInstance{rateLimiter: limiter}
 	registerInstance(instance)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			start := time.Now()
+			var didDeny bool
+			if o.telemetry != nil {
+				defer func() {
+					if didDeny {
+						emitRateLimitDeny(o.telemetry, c, start)
+					}
+				}()
+			}
+
 			if skip != nil && skip(c) {
 				return next(c)
 			}
@@ -468,6 +610,7 @@ func RateLimitWithSkip(max int, window time.Duration, skip func(echo.Context) bo
 			c.Response().Header().Set("X-RateLimit-Reset", strconv.Itoa(int(result.Reset.Seconds())))
 
 			if !result.Allowed {
+				didDeny = true
 				c.Response().Header().Set("Retry-After", strconv.Itoa(int(result.Reset.Seconds())))
 				return c.JSON(http.StatusTooManyRequests, map[string]interface{}{
 					"error":      "Too many requests, please try again later.",

@@ -3,7 +3,6 @@ Duration parsing and formatting tests.
 Tests for arcis/utils/duration.py
 """
 
-import math
 import pytest
 from arcis.utils.duration import parse_duration, format_duration, MAX_DURATION_MS
 

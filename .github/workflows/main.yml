@@ -1,0 +1,20 @@
+name: Main
+
+on:
+  push:
+    branches: ['feat/**', 'track/**']
+  pull_request:
+    branches: [nwl]
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  unit-test-node:
+    uses: ./.github/workflows/unit-test-node.yml
+
+  unit-test-python:
+    uses: ./.github/workflows/unit-test-python.yml
+
+  unit-test-go:
+    uses: ./.github/workflows/unit-test-go.yml

@@ -14,7 +14,7 @@ Examples:
 
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Set
+from typing import List, Optional, Set
 
 from ..utils.request import get_request_header
 

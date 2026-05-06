@@ -65,24 +65,24 @@ var cmdPatterns = []*regexp.Regexp{
 // Pre-compiled SSTI (Server-Side Template Injection) detection patterns.
 // Matches Node.js/Python SSTI implementation for cross-SDK parity.
 var sstiDetectPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\{\{.*?\}\}`),                                                     // Jinja2 / Twig / Nunjucks
-	regexp.MustCompile(`\$\{.*?\}`),                                                       // Freemarker / Spring EL
-	regexp.MustCompile(`<%[\s\S]*?%>`),                                                    // ERB / EJS
-	regexp.MustCompile(`#\{.*?\}`),                                                        // Pug / Jade
-	regexp.MustCompile(`(?i)__(?:class|mro|subclasses|globals|builtins|import)__`),         // Python dunder
-	regexp.MustCompile(`(?i)\{\{\s*config[.\[]`),                                          // Jinja2 config leak
+	regexp.MustCompile(`\{\{.*?\}\}`),                                                        // Jinja2 / Twig / Nunjucks
+	regexp.MustCompile(`\$\{.*?\}`),                                                          // Freemarker / Spring EL
+	regexp.MustCompile(`<%[\s\S]*?%>`),                                                       // ERB / EJS
+	regexp.MustCompile(`#\{.*?\}`),                                                           // Pug / Jade
+	regexp.MustCompile(`(?i)__(?:class|mro|subclasses|globals|builtins|import)__`),           // Python dunder
+	regexp.MustCompile(`(?i)\{\{\s*config[.\[]`),                                             // Jinja2 config leak
 	regexp.MustCompile(`(?i)\{\{\s*(?:self|request|lipsum|cycler|joiner|namespace|range)\b`), // Jinja2 objects
 }
 
 // SSTI removal patterns — narrowed to avoid false positives on legitimate ${name}.
 // Only strip ${...} and #{...} when operators are present inside the expression.
 var sstiRemovePatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\{\{.*?\}\}`),                           // Jinja2 / Twig
-	regexp.MustCompile(`\$\{[^}]*__\w+__[^}]*\}`),              // Freemarker with Python dunders
-	regexp.MustCompile(`\$\{[^}]*[?!()*+\-/][^}]*\}`),          // Freemarker with operators
-	regexp.MustCompile(`<%[\s\S]*?%>`),                          // ERB / EJS
-	regexp.MustCompile(`#\{[^}]*__\w+__[^}]*\}`),               // Pug with Python dunders
-	regexp.MustCompile(`#\{[^}]*[?!()*+\-/][^}]*\}`),           // Pug with operators
+	regexp.MustCompile(`\{\{.*?\}\}`),                 // Jinja2 / Twig
+	regexp.MustCompile(`\$\{[^}]*__\w+__[^}]*\}`),     // Freemarker with Python dunders
+	regexp.MustCompile(`\$\{[^}]*[?!()*+\-/][^}]*\}`), // Freemarker with operators
+	regexp.MustCompile(`<%[\s\S]*?%>`),                // ERB / EJS
+	regexp.MustCompile(`#\{[^}]*__\w+__[^}]*\}`),      // Pug with Python dunders
+	regexp.MustCompile(`#\{[^}]*[?!()*+\-/][^}]*\}`),  // Pug with operators
 	regexp.MustCompile(`(?i)__(?:class|mro|subclasses|globals|builtins|import)__`),
 }
 
@@ -92,7 +92,7 @@ var xxeDetectPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)<!ENTITY\b`),
 	regexp.MustCompile(`(?i)\bSYSTEM\s+["']`),
 	regexp.MustCompile(`(?i)\bPUBLIC\s+["']`),
-	regexp.MustCompile(`%\s*\w+\s*;`),        // Parameter entity
+	regexp.MustCompile(`%\s*\w+\s*;`), // Parameter entity
 	regexp.MustCompile(`(?i)<!\[CDATA\[`),
 }
 

@@ -21,8 +21,8 @@ Arcis is a cross-platform security library that provides drop-in protection agai
 ## Installation
 
 ```bash
-# Core library (no dependencies)
-pip install arcis
+# Core library + CLI (audit / scan / sca)
+pip install arcis python-dotenv
 
 # With framework integrations
 pip install arcis[flask]
@@ -33,6 +33,12 @@ pip install arcis[django]
 pip install arcis[dev]
 ```
 
+> **Install in your backend project, not the frontend.** Arcis is server-side middleware. Bundling it into a frontend build would leak the API key into client JS and the middleware never runs there.
+>
+> **`.env` lives next to your server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...` and call `load_dotenv()` at startup. Add `.env` to `.gitignore`.
+>
+> **CLI lives in this package.** `arcis audit`, `arcis scan`, and `arcis sca` are part of `pip install arcis`. The Node and Go SDKs do not ship a CLI — `pip install arcis` is the canonical install for the scanners regardless of which SDK your app uses.
+
 ## Quick Start
 
 ### Flask
@@ -40,9 +46,11 @@ pip install arcis[dev]
 ```python
 from flask import Flask
 from arcis import Arcis
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
-Arcis(app)  # That's it! Your app is now protected.
+Arcis(app, block=True)  # block=True returns 403 on detected attacks.
 
 @app.route('/')
 def hello():
@@ -54,9 +62,13 @@ def hello():
 ```python
 from fastapi import FastAPI
 from arcis.fastapi import ArcisMiddleware
+from dotenv import load_dotenv
 
+load_dotenv()
 app = FastAPI()
-app.add_middleware(ArcisMiddleware)
+# block=True returns 403 on detected attacks. Default is False
+# (sanitize + observe) so existing apps don't break on rollout.
+app.add_middleware(ArcisMiddleware, block=True)
 
 @app.get('/')
 async def hello():

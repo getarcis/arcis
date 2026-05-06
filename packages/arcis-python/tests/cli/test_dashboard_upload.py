@@ -9,10 +9,8 @@ Covers:
 - workspace + api-key headers are sent when env vars are set
 """
 
-import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from arcis.cli.dashboard import upload, _read_endpoint
 
