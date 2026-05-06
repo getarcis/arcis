@@ -788,6 +788,16 @@ def render_json(
     except Exception:
         _v = "unknown"
 
+    # Sort byLanguage alphabetically and bySeverity in [critical, high,
+    # medium, low] order so the JSON dict iteration is deterministic
+    # regardless of FS walk order. Required for byte-equal parity with
+    # the Rust implementation under tests/parity/.
+    sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    by_lang_sorted = dict(sorted(languages.items()))
+    by_sev_sorted = dict(
+        sorted(sev_counts.items(), key=lambda kv: sev_rank.get(kv[0], 9))
+    )
+
     doc = {
         "tool": "arcis-audit",
         "version": _v,
@@ -797,8 +807,8 @@ def render_json(
         "summary": {
             "filesScanned": files_scanned,
             "rulesApplied": rules_applied,
-            "byLanguage": languages,
-            "bySeverity": sev_counts,
+            "byLanguage": by_lang_sorted,
+            "bySeverity": by_sev_sorted,
             "totalFindings": len(findings),
         },
         "findings": [
