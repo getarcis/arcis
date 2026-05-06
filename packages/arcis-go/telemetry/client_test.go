@@ -165,8 +165,8 @@ func TestSend_TickerTrigger_FiresPOST(t *testing.T) {
 	srv, reqs := recordingServer(t, 200)
 	c, err := NewClient(Options{
 		Endpoint:      srv.URL,
-		BatchSize:     1000,                    // ticker is the only flush trigger
-		FlushInterval: MinFlushInterval,        // 500ms floor
+		BatchSize:     1000,             // ticker is the only flush trigger
+		FlushInterval: MinFlushInterval, // 500ms floor
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -296,8 +296,8 @@ func TestClose_DrainsPending(t *testing.T) {
 	srv, reqs := recordingServer(t, 200)
 	c, err := NewClient(Options{
 		Endpoint:      srv.URL,
-		BatchSize:     50,                  // batch trigger won't fire
-		FlushInterval: 10 * time.Second,    // ticker trigger won't fire
+		BatchSize:     50,               // batch trigger won't fire
+		FlushInterval: 10 * time.Second, // ticker trigger won't fire
 	})
 	if err != nil {
 		t.Fatal(err)
