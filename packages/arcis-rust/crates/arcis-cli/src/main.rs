@@ -13,6 +13,7 @@
 use std::io::Write;
 use std::process::ExitCode;
 
+mod audit;
 mod catalog;
 mod sca;
 mod stub;
@@ -62,10 +63,12 @@ fn main() -> ExitCode {
             ExitCode::from(0)
         }
 
-        // Phase B1: `arcis sca` is ported. The remaining stubs still point
-        // at the Python CLI and the migration plan.
+        // Phase B1 + B2: `arcis sca` and `arcis audit` are ported. The
+        // remaining stubs still point at the Python CLI and the
+        // migration plan.
         "sca" => sca::run(&argv[2..]),
-        "scan" | "audit" | "update" => stub::dispatch(&argv[1..]),
+        "audit" => audit::run(&argv[2..]),
+        "scan" | "update" => stub::dispatch(&argv[1..]),
 
         // Unknown command. Match Python's error style + exit 1. Python
         // uses `console.print` (stdout) for this message, so stay on
