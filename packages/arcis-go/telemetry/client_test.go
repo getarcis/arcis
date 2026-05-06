@@ -203,6 +203,13 @@ func TestSend_DropOldest_KeepsFreshest(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		// Same defensive non-blocking release as TestOverflow's cleanup —
+		// drains any wedged in-flight POST so c.Close doesn't wait on the
+		// 10s flushTimeout when teardown happens in the wrong order.
+		select {
+		case release <- struct{}{}:
+		default:
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
 		_ = c.Close(ctx)
@@ -466,6 +473,16 @@ func TestOverflow_CounterResetsAfterSuccessfulFlush(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		// Drain any in-flight POST that is still wedged on `<-release`
+		// before c.Close runs. Otherwise c.Close's worker keeps the HTTP
+		// request alive until the 10s flushTimeout fires — observable on
+		// Docker-on-Windows when local TCP teardown is slower than usual.
+		// Non-blocking send: if no handler is wedged the default branch
+		// fires and this is a no-op.
+		select {
+		case release <- struct{}{}:
+		default:
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
 		_ = c.Close(ctx)
