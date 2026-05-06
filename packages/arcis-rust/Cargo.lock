@@ -75,6 +75,8 @@ dependencies = [
  "arcis-data",
  "arcis-engine",
  "clap",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

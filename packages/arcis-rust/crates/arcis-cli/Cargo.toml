@@ -18,3 +18,7 @@ arcis-engine = { workspace = true }
 arcis-data = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
+serde_json = { workspace = true }
+# Async runtime for `arcis scan`. Runtime is constructed once in scan.rs
+# and dropped after the run; the rest of the CLI stays synchronous.
+tokio = { workspace = true }

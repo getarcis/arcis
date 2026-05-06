@@ -16,6 +16,7 @@ use std::process::ExitCode;
 mod audit;
 mod catalog;
 mod sca;
+mod scan;
 mod stub;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -63,12 +64,12 @@ fn main() -> ExitCode {
             ExitCode::from(0)
         }
 
-        // Phase B1 + B2: `arcis sca` and `arcis audit` are ported. The
-        // remaining stubs still point at the Python CLI and the
-        // migration plan.
+        // Phase B1 / B2 / B3: sca, audit, scan are ported. Only `update`
+        // still falls through to the Python CLI stub.
         "sca" => sca::run(&argv[2..]),
         "audit" => audit::run(&argv[2..]),
-        "scan" | "update" => stub::dispatch(&argv[1..]),
+        "scan" => scan::run(&argv[2..]),
+        "update" => stub::dispatch(&argv[1..]),
 
         // Unknown command. Match Python's error style + exit 1. Python
         // uses `console.print` (stdout) for this message, so stay on
