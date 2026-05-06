@@ -79,7 +79,7 @@ secrets.json
 *.claude
 
 # ─── Local / Personal ────────────────────────────────────────────────────────
-audit/
+/audit/
 docs/
 arcis.sln
 AUDIT_SYSTEM.md

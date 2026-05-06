@@ -27,16 +27,16 @@ npm install @arcis/node dotenv
 >
 > **`.env` lives next to your server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_` — those expose values to the browser. Add `.env` to `.gitignore`.
 
-### CLI (audit / scan / sca) is a separate Python install
+### CLI (audit / scan / sca) ships separately as a native binary
 
-The Arcis SDK ships in this Node package. The Arcis **CLI** scanners — `arcis audit`, `arcis scan`, `arcis sca` — ship in the [Python package](https://pypi.org/project/arcis/) because the threat database, audit rules, and attack payload catalog all live there. Install the Python package alongside this one to get the CLI on your shell PATH:
+The Arcis SDK ships in this Node package. The Arcis **CLI** scanners — `arcis audit`, `arcis scan`, `arcis sca` — ship as a single static binary distributed on npm:
 
 ```bash
-pip install arcis
+npm install -g @arcis/cli
 arcis --version
 ```
 
-Without `pip install arcis`, typing `arcis` in your shell will fail with "command not found" — the npm package does **not** put a CLI on your PATH. The same Python CLI works for projects using the Node SDK.
+The npm SDK package (`@arcis/node`) does not put a CLI on your PATH on its own. Install `@arcis/cli` (separate package) for the scanner. The CLI works regardless of whether your app is Node, Python, or Go.
 
 ## Quick Start
 

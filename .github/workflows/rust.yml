@@ -1,0 +1,77 @@
+name: Rust CLI
+
+# Builds the Rust CLI workspace across linux/macos/windows on every push
+# to a Rust-CLI branch and on PRs targeting the integration branches.
+# Each runner runs `cargo fmt --check`, `cargo clippy -D warnings`,
+# `cargo test --workspace --release`, and a release build, then uploads
+# the release binary as an artifact.
+
+on:
+  pull_request:
+    branches: [nwl, "feat/v1.5"]
+    paths:
+      - "packages/arcis-rust/**"
+      - ".github/workflows/rust.yml"
+  push:
+    branches:
+      - "feat/rust-cli"
+      - "feat/rust-cli/**"
+
+jobs:
+  # ─── Build matrix ────────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: arcis-linux-x86_64
+            binary: arcis
+          - os: macos-latest
+            artifact: arcis-macos-arm64
+            binary: arcis
+          - os: windows-latest
+            artifact: arcis-windows-x86_64
+            binary: arcis.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: packages/arcis-rust
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # dtolnay/rust-toolchain's @stable branch hardcodes the toolchain
+      # selection; SHA-pinning the action breaks that, so we use the @stable
+      # ref directly. The action itself is widely audited; this is the
+      # ecosystem-standard pattern. Components are passed explicitly so
+      # clippy and rustfmt are guaranteed available regardless of how
+      # GitHub's hosted-runner Rust install is configured.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/arcis-rust/target
+          key: cargo-${{ matrix.os }}-${{ hashFiles('packages/arcis-rust/**/Cargo.toml', 'packages/arcis-rust/**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.os }}-
+
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace --release
+      - run: cargo build --workspace --release
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@de65e23aa2b7e23d713bb51fbfcb6d502f8667d8 # v4.6.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: packages/arcis-rust/target/release/${{ matrix.binary }}
+          if-no-files-found: error
+          retention-days: 7

@@ -111,19 +111,18 @@ the same client doesn't multiply per-request events.
 
 ### No native SCA scanner
 
-The `arcis sca` supply-chain command is shipped only as a Python CLI:
+The `arcis sca` supply-chain command ships as a single static binary via npm:
 
 ```bash
-pip install arcis
+npm install -g @arcis/cli
 arcis sca .   # works on any project — Python, Node, Go — by reading lockfiles
 ```
 
 `arcis sca` is language-agnostic at the lockfile layer. It reads
-`go.sum`, `package-lock.json`, `requirements.txt`, etc. directly, so
-installing it via `pip` is the canonical install path regardless of
-which SDK you deploy. A native Go binary for `arcis sca` will land when
-a customer asks; until then, `pip install arcis` is the recommended
-companion install for Go shops.
+`go.sum`, `package-lock.json`, `requirements.txt`, etc. directly. The
+binary is the canonical install path regardless of which SDK you deploy
+in your app. (Before v2.0.0, the CLI shipped inside the Python SDK; that's
+no longer the case.)
 
 ## See also
 

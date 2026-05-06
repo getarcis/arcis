@@ -75,11 +75,11 @@
       <div class="docs-breadcrumb"><a href="./">Docs</a> / CLI Tools</div>
       <h1>CLI Tools</h1>
       <p class="lead">
-        Arcis ships with three command-line tools that scan your codebase and dependencies for security issues. All are offline, CI-friendly, and ship with the Python package.
+        Arcis ships with three command-line tools that scan your codebase and dependencies for security issues. All are offline, CI-friendly, and ship as a single static binary.
       </p>
 
       <div class="callout note">
-        <p><strong>The CLI is Python-only.</strong> Even if your app uses the Node SDK (<code>@arcis/node</code>) or the Go SDK, the <code>audit</code>, <code>scan</code>, and <code>sca</code> commands ship in the Python package because the threat database, audit rules, and attack payload catalog all live there. Run <code>pip install arcis</code> alongside your SDK to get the CLI on your shell PATH. The Node and Go packages do not put a CLI on your PATH.</p>
+        <p><strong>The CLI is its own package.</strong> Install via <code>npm install -g @arcis/cli</code>. The binary works regardless of whether your app is Node, Python, or Go &mdash; the threat database, audit rules, and attack payload catalog are all embedded. (Before v2.0.0 the CLI shipped inside the Python SDK; that's no longer the case. <code>pip install arcis</code> now ships the runtime middleware only.)</p>
       </div>
 
       <h2 id="discover">Discovery</h2>
@@ -100,18 +100,16 @@ arcis update --check   <span class="c"># CI mode: exit 1 if outdated</span></cod
 
       <p>Each command also streams live progress to stderr (per-route status for <code>scan</code>, a progress bar for <code>audit</code>, current manifest for <code>sca</code>) and ends with a per-severity summary block.</p>
 
-      <h3>Interactive mode (optional)</h3>
-      <p>Install with the <code>interactive</code> extra to get an arrow-key picker when running <code>arcis</code> with no args. Useful for demos and one-off use; the static catalog (zero-deps) is the default.</p>
-<pre><code>pip install <span class="s">"arcis[interactive]"</span>
-arcis    <span class="c"># pops up: scan / audit / sca picker, then prompts for path or URL</span></code></pre>
-      <p>Non-TTY runs (CI, piped input) skip the picker and fall back to the static catalog automatically — scripts never hang.</p>
+      <h3>Interactive mode</h3>
+      <p>Running <code>arcis</code> with no args opens an arrow-key picker for scan / audit / sca, then prompts for a path or URL. Non-TTY runs (CI, piped input) skip the picker and fall back to the static catalog automatically &mdash; scripts never hang.</p>
 
       <h2 id="install">Installation</h2>
-      <p>The CLI is included in the Python package:</p>
-<pre><code>pip install arcis
+      <p>The CLI ships as a single static binary distributed via npm:</p>
+<pre><code>npm install -g @arcis/cli
 
 <span class="c"># Verify</span>
 arcis --version</code></pre>
+      <p>No Python required. The binary works on Linux (x64 / arm64 musl), macOS (arm64), and Windows (x64).</p>
 
       <h2 id="sca">arcis sca — Supply Chain Attack Scanner</h2>
       <p>Detects compromised packages from known supply chain attacks. Scans your project's lockfiles, <code>node_modules</code>, and Python environments for malicious versions and backdoor artifacts.</p>

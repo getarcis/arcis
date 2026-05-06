@@ -1,0 +1,53 @@
+# Arcis Rust workspace.
+#
+# Three crates:
+#   * arcis-cli     — the `arcis` binary (clap dispatcher)
+#   * arcis-engine  — shared logic (sanitizers, rule matching, version parser).
+#   * arcis-data    — embedded JSON data (threat DB, audit rules, attack
+#                     vectors) loaded via include_bytes!().
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/arcis-cli",
+    "crates/arcis-engine",
+    "crates/arcis-data",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Gagan CM <cm.g@northeastern.edu>"]
+repository = "https://github.com/Gagancm/arcis"
+description = "Native Rust CLI for Arcis security middleware"
+rust-version = "1.75"
+
+[workspace.dependencies]
+arcis-engine = { path = "crates/arcis-engine", version = "0.1.0" }
+arcis-data = { path = "crates/arcis-data", version = "0.1.0" }
+
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+# `preserve_order` flips serde_json's internal Map from BTreeMap to
+# IndexMap so we can emit JSON with explicit field ordering. Required
+# for byte-equal parity with Python's json.dumps (which preserves dict
+# insertion order on 3.7+).
+serde_json = { version = "1.0", features = ["preserve_order"] }
+anyhow = "1.0"
+thiserror = "2.0"
+regex = "1.10"
+# Async stack for `arcis scan`. `rt-multi-thread` matches Python's
+# ThreadPoolExecutor model; `macros` gives us `tokio::test`.
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+# `rustls-tls` keeps us off system OpenSSL (no Windows ssl headers
+# needed). `json` enables ergonomic body construction but we mostly hand
+# over raw bytes for parity with http.client output.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+[profile.release]
+# Smaller, faster binary. The tradeoffs (longer compile, no incremental in
+# release) are fine for a tool we ship.
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
