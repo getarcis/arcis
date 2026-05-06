@@ -1,0 +1,6 @@
+{
+  "name": "--version prints a version string",
+  "args": ["--version"],
+  "exit_code": 0,
+  "stdout_pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\s*$"
+}

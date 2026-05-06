@@ -1,0 +1,6 @@
+{
+  "name": "--list shows the verbose catalog with example lines",
+  "args": ["--list"],
+  "exit_code": 0,
+  "stdout_pattern": "(?s)Commands.*scan.*arcis scan http.*audit.*arcis audit \\..*sca.*arcis sca \\."
+}

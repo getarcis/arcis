@@ -1,0 +1,6 @@
+{
+  "name": "--help has the 'Run arcis <command> --help' trailer",
+  "args": ["--help"],
+  "exit_code": 0,
+  "stdout_pattern": "Run 'arcis <command> --help' for full flags"
+}

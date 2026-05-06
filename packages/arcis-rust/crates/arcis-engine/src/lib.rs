@@ -1,0 +1,42 @@
+//! Shared engine logic for the Arcis CLI.
+//!
+//! Phase A is intentionally empty. As commands are ported in Phase B, the
+//! relevant pieces land here:
+//!
+//!   * `sca`    — version range matcher, manifest parsers, name normalization
+//!   * `audit`  — rule registry, regex engine, file walker
+//!   * `scan`   — HTTP client, payload dispatcher, classifier
+//!   * `discovery` — env file parser, port sniffer, source-aware route walk
+//!
+//! The split between this crate and `arcis-cli` keeps entry-point glue
+//! (clap parsing, exit codes, terminal formatting) separate from logic
+//! that's worth testing in isolation.
+
+#![forbid(unsafe_code)]
+
+/// Re-export the data crate so callers don't have to depend on it directly.
+pub use arcis_data;
+
+/// Verify all embedded data shapes that the engine knows how to load.
+/// Called once at CLI startup so any schema mismatch fails loud.
+pub fn check_embedded_schemas() -> Result<(), arcis_data::DataError> {
+    arcis_data::check_threat_db_schema()
+}
+
+/// Engine version string. Reported by `arcis --version`.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_is_non_empty() {
+        assert!(!VERSION.is_empty());
+    }
+
+    #[test]
+    fn embedded_schemas_load() {
+        check_embedded_schemas().expect("embedded data should match supported schema");
+    }
+}
