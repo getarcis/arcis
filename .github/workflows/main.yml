@@ -2,7 +2,7 @@ name: Main
 
 on:
   push:
-    branches: ['feat/**', 'track/**']
+    branches: [nwl, 'feat/**', 'track/**']
   pull_request:
     branches: [nwl]
 
