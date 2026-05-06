@@ -185,6 +185,96 @@ RULES: List[Rule] = [
         ),
         languages=("python",),
     ),
+
+    # ── Phase B rules (v1.5.0 — 2026-05-05) ──────────────────────────────────
+    # Rules added in cli-audit.md Phase B. Each pattern is tuned to be
+    # high-confidence on the lines it matches: positive examples come
+    # from real-world misuse, negative examples are listed in the
+    # tests/cli/test_audit.py classes for each rule.
+
+    Rule(
+        id="HARDCODED-SECRET",
+        severity="high",
+        message="Hardcoded credential pattern detected — move secrets to environment variables, never commit to source",
+        pattern=re.compile(
+            r"""(?:AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36,}|gho_[A-Za-z0-9]{36,}|ghu_[A-Za-z0-9]{36,}|ghs_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{82}|sk_live_[A-Za-z0-9]{24,}|rk_live_[A-Za-z0-9]{24,}|xox[bpoa]-[A-Za-z0-9\-]{10,}|-----BEGIN (?:RSA|EC|DSA|PGP|OPENSSH) PRIVATE KEY-----)"""
+        ),
+        languages=("python", "javascript", "typescript"),
+    ),
+    Rule(
+        id="WEAK-CRYPTO",
+        severity="high",
+        message="MD5 or SHA-1 used for hashing — vulnerable to collisions; use SHA-256+ for passwords / signatures / integrity",
+        pattern=re.compile(
+            r"""(?:hashlib\.(?:md5|sha1)\s*\(|createHash\s*\(\s*['"](?:md5|sha1)['"]\s*\)|crypto\.createCipher\s*\(\s*['"](?:des|des-ede|rc4)['"])"""
+        ),
+        languages=("python", "javascript", "typescript"),
+    ),
+    Rule(
+        id="WEAK-RANDOM-FOR-SECURITY",
+        severity="high",
+        message="Math.random() / random.random() assigned to a security-named variable — use crypto.randomBytes / secrets.token_hex for tokens, secrets, keys",
+        pattern=re.compile(
+            r"""\b\w*(?:csrf|token|secret|password|passwd|nonce|otp|salt|session|api_?key|access_?key|jwt)\w*\s*=\s*(?:Math\.random|random\.random|random\.randint|random\.choice|random\.sample|random\.uniform)\s*\(""",
+            re.IGNORECASE,
+        ),
+        languages=("python", "javascript", "typescript"),
+    ),
+    Rule(
+        id="INSECURE-REDIRECT",
+        severity="medium",
+        message="Redirect to user-controlled URL — validate against an allowed-host list (Arcis: validateUrl() / validate_redirect())",
+        pattern=re.compile(
+            r"""(?:\bres\.redirect\s*\(\s*(?:req\.|request\.|params\.|query\.|body\.|`\$\{|\$\{)|\bredirect\s*\(\s*(?:request\.(?:GET|POST|args|form|query)|req\.|params\.))"""
+        ),
+        languages=("python", "javascript", "typescript"),
+    ),
+    Rule(
+        id="XML-EXTERNAL-ENTITY",
+        severity="high",
+        message="XML parser without secure config — disable external entities (lxml: resolve_entities=False, no_network=True; xml2js: secure mode)",
+        pattern=re.compile(
+            r"""(?:lxml\.etree\.parse\s*\(|xml\.dom\.minidom\.parse\s*\(|xml\.etree\.ElementTree\.parse\s*\(|new\s+(?:xml2js\.Parser|XMLParser|DOMParser)\s*\()"""
+        ),
+        languages=("python", "javascript", "typescript"),
+    ),
+    Rule(
+        id="SECRET-IN-LOG",
+        severity="high",
+        message="Logging output references a credential-named variable — credentials in logs leak via aggregators / stdout / disk",
+        pattern=re.compile(
+            r"""(?:console\.(?:log|info|debug|warn|error)|logger?\.(?:log|info|debug|warn|error)|\bprint)\s*\([^)]*\b(?:password|passwd|secret|token|api_?key|access_?key|private_?key|auth_?token|client_?secret|bearer)\b""",
+            re.IGNORECASE,
+        ),
+        languages=("python", "javascript", "typescript"),
+    ),
+    Rule(
+        id="JWT-WEAK-SECRET",
+        severity="high",
+        message="jwt.sign() with a hardcoded or fallback string secret — load JWT secrets from a managed secret store; never bake them into source",
+        pattern=re.compile(
+            r"""\bjwt\.sign\s*\([^,)]+,\s*(?:["'][^"']*["']|[^,)]*\|\|\s*["'][^"']+["'])"""
+        ),
+        languages=("javascript", "typescript"),
+    ),
+    Rule(
+        id="MASS-ASSIGNMENT",
+        severity="medium",
+        message="Bulk-assigning request body / params to a model — attacker can set fields like is_admin / role; whitelist allowed fields explicitly",
+        pattern=re.compile(
+            r"""(?:Object\.assign\s*\([^,)]+,\s*(?:req\.|request\.|params\.|query\.|body\.)|setattr\s*\([^,)]+,\s*\*\*\s*(?:request\.|req\.))"""
+        ),
+        languages=("javascript", "typescript", "python"),
+    ),
+    Rule(
+        id="PATH-CONFUSION",
+        severity="high",
+        message="path.join() with user-controlled segment — attacker can break out with ../; use path.resolve() and assert the result is under the allowed base",
+        pattern=re.compile(
+            r"""(?:\bpath\.join\s*\([^,)]+,\s*(?:req\.|request\.|params\.|query\.|body\.)|\bos\.path\.join\s*\([^,)]+,\s*(?:request\.(?:GET|POST|args|form|query)|req\.|params\.))"""
+        ),
+        languages=("python", "javascript", "typescript"),
+    ),
 ]
 
 

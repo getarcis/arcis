@@ -538,7 +538,8 @@ class TestRuleCount:
     """Verify expected number of rules is present."""
 
     def test_total_rules_count(self):
-        assert len(RULES) == 14
+        # 14 Phase A rules + 9 Phase B rules (cli-audit.md) = 23.
+        assert len(RULES) == 23
 
 
 # ── Finding dataclass ────────────────────────────────────────────────────────
