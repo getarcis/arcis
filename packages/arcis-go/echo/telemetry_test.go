@@ -181,3 +181,69 @@ func TestEchoTelemetry_BlockDenyPath(t *testing.T) {
 		t.Errorf("Path = %q, want /api", evt.Path)
 	}
 }
+
+// TestEchoTelemetry_StandaloneRateLimitDeny exercises the standalone
+// RateLimit helper with WithTelemetry. Asserts the 429 emits a deny
+// event AND the preceding allow does NOT emit (Phase 2b semantic:
+// standalone helpers emit on deny only, to avoid duplicates when
+// composed with other middleware).
+func TestEchoTelemetry_StandaloneRateLimitDeny(t *testing.T) {
+	url, reqs := recordingServer(t)
+	tc, err := telemetry.NewClient(telemetry.Options{
+		Endpoint:      url,
+		BatchSize:     1,
+		FlushInterval: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := echo.New()
+	e.Use(RateLimit(1, time.Minute, WithTelemetry(tc)))
+	e.GET("/ping", func(c echo.Context) error { return c.String(http.StatusOK, "pong") })
+
+	hit := func() int {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+		req.RemoteAddr = "10.0.0.1:5555"
+		req.Header.Set("User-Agent", "test-ua-rl")
+		e.ServeHTTP(w, req)
+		return w.Code
+	}
+	if got := hit(); got != http.StatusOK {
+		t.Fatalf("first request status = %d, want 200", got)
+	}
+	if got := hit(); got != http.StatusTooManyRequests {
+		t.Fatalf("second request status = %d, want 429", got)
+	}
+
+	if err := tc.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	evt := decodeFirstEvent(t, mustReceiveBody(t, reqs, time.Second))
+	select {
+	case extra := <-reqs:
+		t.Fatalf("unexpected second telemetry POST (allow should not emit): body=%q", extra)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	if evt.Decision != telemetry.DecisionDeny {
+		t.Errorf("Decision = %q, want deny", evt.Decision)
+	}
+	if evt.Vector != "rate-limit" {
+		t.Errorf("Vector = %q, want rate-limit", evt.Vector)
+	}
+	if evt.Rule != "rate-limit/exceeded" {
+		t.Errorf("Rule = %q, want rate-limit/exceeded", evt.Rule)
+	}
+	if evt.Severity != telemetry.SeverityMedium {
+		t.Errorf("Severity = %q, want medium", evt.Severity)
+	}
+	if evt.Status != http.StatusTooManyRequests {
+		t.Errorf("Status = %d, want 429", evt.Status)
+	}
+	if evt.Reason != "Rate limit exceeded" {
+		t.Errorf("Reason = %q, want Rate limit exceeded", evt.Reason)
+	}
+}

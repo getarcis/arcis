@@ -284,6 +284,55 @@ func registerInstance(instance *arcisInstance) {
 	activeInstances = append(activeInstances, instance)
 }
 
+// RateLimitOption configures a standalone rate-limit middleware
+// (RateLimit, RateLimitWithStore, RateLimitWithSkip). Use WithTelemetry
+// to attach a telemetry client.
+type RateLimitOption func(*rateLimitOpts)
+
+type rateLimitOpts struct {
+	telemetry *telemetry.Client
+}
+
+// WithTelemetry returns a RateLimitOption that attaches a telemetry
+// client to a standalone rate-limit middleware. On 429, one
+// TelemetryEvent is emitted with vector="rate-limit",
+// rule="rate-limit/exceeded", severity="medium" — matching the
+// MiddlewareWithConfig wire format.
+//
+// Standalone helpers emit only on deny. Allow events come from
+// MiddlewareWithConfig; emitting them here would duplicate when
+// composing RateLimit + Sanitizer + Validate with telemetry on each.
+func WithTelemetry(tc *telemetry.Client) RateLimitOption {
+	return func(o *rateLimitOpts) { o.telemetry = tc }
+}
+
+// emitRateLimitDeny ships one TelemetryEvent for a 429 from a standalone
+// rate-limit helper. Callers register a deferred call so the latency
+// includes the JSON write, matching MiddlewareWithConfig's measurement.
+func emitRateLimitDeny(tc *telemetry.Client, c *gin.Context, start time.Time) {
+	if tc == nil {
+		return
+	}
+	latency := float64(time.Since(start)) / float64(time.Millisecond)
+	if latency < 0 {
+		latency = 0
+	}
+	tc.Send(telemetry.Event{
+		Ts:        time.Now().UTC().Format(time.RFC3339),
+		IP:        c.ClientIP(),
+		Method:    c.Request.Method,
+		Path:      c.Request.URL.Path,
+		Decision:  telemetry.DecisionDeny,
+		Vector:    "rate-limit",
+		Rule:      "rate-limit/exceeded",
+		Severity:  telemetry.SeverityMedium,
+		Reason:    "Rate limit exceeded",
+		UserAgent: c.GetHeader("User-Agent"),
+		Status:    http.StatusTooManyRequests,
+		LatencyMs: latency,
+	})
+}
+
 // Middleware returns a Gin middleware with default Arcis configuration.
 func Middleware() gin.HandlerFunc {
 	return MiddlewareWithConfig(DefaultConfig())
@@ -470,23 +519,40 @@ func HeadersWithConfig(config Config) gin.HandlerFunc {
 }
 
 // RateLimit returns a middleware for rate limiting with specified limits.
-func RateLimit(max int, window time.Duration) gin.HandlerFunc {
-	return RateLimitWithSkip(max, window, nil)
+// Pass arcisgin.WithTelemetry(tc) to emit a TelemetryEvent on 429.
+func RateLimit(max int, window time.Duration, opts ...RateLimitOption) gin.HandlerFunc {
+	return RateLimitWithSkip(max, window, nil, opts...)
 }
 
 // RateLimitWithStore returns a rate limiting middleware backed by a custom store.
-// Use this to plug in a distributed backend such as Redis.
+// Use this to plug in a distributed backend such as Redis. Pass
+// arcisgin.WithTelemetry(tc) to emit a TelemetryEvent on 429.
 //
 // Example:
 //
 //	store := myredis.NewStore(redisClient)
 //	r.Use(arcisgin.RateLimitWithStore(100, time.Minute, store))
-func RateLimitWithStore(max int, window time.Duration, store arcis.RateLimitStore) gin.HandlerFunc {
+func RateLimitWithStore(max int, window time.Duration, store arcis.RateLimitStore, opts ...RateLimitOption) gin.HandlerFunc {
+	var o rateLimitOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	limiter := arcis.NewRateLimiterWithStore(max, window, store)
 	instance := &arcisInstance{rateLimiter: limiter}
 	registerInstance(instance)
 
 	return func(c *gin.Context) {
+		start := time.Now()
+		var didDeny bool
+		if o.telemetry != nil {
+			defer func() {
+				if didDeny {
+					emitRateLimitDeny(o.telemetry, c, start)
+				}
+			}()
+		}
+
 		result := limiter.Check(c.Request)
 
 		c.Header("X-RateLimit-Limit", strconv.Itoa(result.Limit))
@@ -494,6 +560,7 @@ func RateLimitWithStore(max int, window time.Duration, store arcis.RateLimitStor
 		c.Header("X-RateLimit-Reset", strconv.Itoa(int(result.Reset.Seconds())))
 
 		if !result.Allowed {
+			didDeny = true
 			c.Header("Retry-After", strconv.Itoa(int(result.Reset.Seconds())))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":      "Too many requests, please try again later.",
@@ -507,12 +574,28 @@ func RateLimitWithStore(max int, window time.Duration, store arcis.RateLimitStor
 }
 
 // RateLimitWithSkip returns a rate limiting middleware with custom skip function.
-func RateLimitWithSkip(max int, window time.Duration, skip func(*gin.Context) bool) gin.HandlerFunc {
+// Pass arcisgin.WithTelemetry(tc) to emit a TelemetryEvent on 429.
+func RateLimitWithSkip(max int, window time.Duration, skip func(*gin.Context) bool, opts ...RateLimitOption) gin.HandlerFunc {
+	var o rateLimitOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	limiter := arcis.NewRateLimiter(max, window)
 	instance := &arcisInstance{rateLimiter: limiter}
 	registerInstance(instance)
 
 	return func(c *gin.Context) {
+		start := time.Now()
+		var didDeny bool
+		if o.telemetry != nil {
+			defer func() {
+				if didDeny {
+					emitRateLimitDeny(o.telemetry, c, start)
+				}
+			}()
+		}
+
 		if skip != nil && skip(c) {
 			c.Next()
 			return
@@ -525,6 +608,7 @@ func RateLimitWithSkip(max int, window time.Duration, skip func(*gin.Context) bo
 		c.Header("X-RateLimit-Reset", strconv.Itoa(int(result.Reset.Seconds())))
 
 		if !result.Allowed {
+			didDeny = true
 			c.Header("Retry-After", strconv.Itoa(int(result.Reset.Seconds())))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":      "Too many requests, please try again later.",

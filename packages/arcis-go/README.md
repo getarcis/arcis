@@ -98,6 +98,17 @@ r.Use(arcisgin.MiddlewareWithConfig(cfg))
 request emits one `TelemetryEvent` matching `spec/API_SPEC.md` §9 — same
 wire shape Node and Python ship, batched and POSTed in the background.
 
+For granular composition, the standalone `RateLimit` /
+`RateLimitWithStore` / `RateLimitWithSkip` helpers accept a
+`WithTelemetry(tc)` option and emit on 429:
+
+```go
+r.Use(arcisgin.RateLimit(100, time.Minute, arcisgin.WithTelemetry(tc)))
+```
+
+Standalone helpers emit on deny only — composing several of them with
+the same client doesn't multiply per-request events.
+
 ### No native SCA scanner
 
 The `arcis sca` supply-chain command is shipped only as a Python CLI:
