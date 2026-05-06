@@ -1,0 +1,47 @@
+name: Unit tests — Node.js
+
+on:
+  workflow_call:
+
+jobs:
+  node:
+    name: Node.js (${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 20, 22, 24]
+    # Redis is exposed at localhost:6379 so store-backed rate-limit /
+    # session tests can run for real instead of mocks. Tests that read
+    # REDIS_URL pick it up automatically; everything else continues to
+    # use the in-memory store and is unchanged.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379
+    defaults:
+      run:
+        working-directory: packages/arcis-node
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: packages/arcis-node/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - name: Run tests with retry on flake
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 15
+          command: cd packages/arcis-node && npm test -- --run

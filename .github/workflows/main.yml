@@ -9,3 +9,6 @@ on:
 jobs:
   lint:
     uses: ./.github/workflows/lint.yml
+
+  unit-test-node:
+    uses: ./.github/workflows/unit-test-node.yml
