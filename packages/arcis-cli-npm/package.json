@@ -1,0 +1,51 @@
+{
+  "name": "@arcis/cli",
+  "version": "0.1.0",
+  "description": "Arcis security CLI — scan running apps, audit source, and check dependencies. Native Rust binary distributed via npm.",
+  "keywords": [
+    "security",
+    "cli",
+    "scanner",
+    "audit",
+    "sca",
+    "supply-chain",
+    "vulnerability"
+  ],
+  "homepage": "https://github.com/Gagancm/arcis",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gagancm/arcis.git",
+    "directory": "packages/arcis-cli-npm"
+  },
+  "license": "MIT",
+  "author": "Gagan CM <cm.g@northeastern.edu>",
+  "bin": {
+    "arcis": "bin/arcis"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "install.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node install.js",
+    "test": "node --test test/targets.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
