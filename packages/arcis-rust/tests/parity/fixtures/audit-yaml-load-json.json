@@ -1,0 +1,6 @@
+{
+  "name": "audit: yaml.load finding, --json (exit 1)",
+  "args": ["audit", "tests/parity/projects/audit-yaml-load", "--json"],
+  "exit_code": 1,
+  "byte_equal_audit_json": true
+}

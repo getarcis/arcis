@@ -1,0 +1,6 @@
+{
+  "name": "audit: clean Python project, --json (exit 0)",
+  "args": ["audit", "tests/parity/projects/audit-clean-py", "--json"],
+  "exit_code": 0,
+  "byte_equal_audit_json": true
+}

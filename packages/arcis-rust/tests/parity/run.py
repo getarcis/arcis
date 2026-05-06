@@ -74,6 +74,17 @@ def check_fixture(
     # comparing. Use this for SCA fixtures whose only non-deterministic
     # output is the elapsed-time line.
     byte_equal_strip_time = fixture.get("byte_equal_strip_time", False)
+    # Audit-specific structural byte-equal: parse both stdouts as JSON,
+    # neutralize fields that legitimately diverge between Python and
+    # Rust (`version` strings; `durationMs`), and compare the resulting
+    # structures. The Python and Rust render_json implementations both
+    # produce sorted byLanguage / bySeverity (Python via dict(sorted(..)),
+    # Rust via BTreeMap), so structural equality after stripping the
+    # two volatile fields is the strongest byte-equal contract we can
+    # honestly claim until Python becomes SDK-only and the version
+    # strings converge.
+    byte_equal_audit_json = fixture.get("byte_equal_audit_json", False)
+    byte_equal_audit_sarif = fixture.get("byte_equal_audit_sarif", False)
 
     py_full = py_cmd + args
     rust_full = rust_cmd + args
@@ -106,6 +117,39 @@ def check_fixture(
             f"  python (first 200): {py_out[:200]!r}\n"
             f"  rust   (first 200): {rust_out[:200]!r}"
         )
+
+    if byte_equal_audit_json:
+        try:
+            py_doc = json.loads(py_out)
+            rust_doc = json.loads(rust_out)
+        except json.JSONDecodeError as exc:
+            errors.append(f"audit_json: stdout did not parse as JSON: {exc}")
+        else:
+            for d in (py_doc, rust_doc):
+                d["version"] = "<stripped>"
+                d["durationMs"] = 0
+            if py_doc != rust_doc:
+                errors.append(
+                    "audit_json structural divergence (after stripping version + durationMs):\n"
+                    f"  python: {json.dumps(py_doc)[:400]}\n"
+                    f"  rust:   {json.dumps(rust_doc)[:400]}"
+                )
+
+    if byte_equal_audit_sarif:
+        try:
+            py_doc = json.loads(py_out)
+            rust_doc = json.loads(rust_out)
+        except json.JSONDecodeError as exc:
+            errors.append(f"audit_sarif: stdout did not parse as JSON: {exc}")
+        else:
+            for d in (py_doc, rust_doc):
+                d["runs"][0]["tool"]["driver"]["version"] = "<stripped>"
+            if py_doc != rust_doc:
+                errors.append(
+                    "audit_sarif structural divergence (after stripping driver.version):\n"
+                    f"  python: {json.dumps(py_doc)[:400]}\n"
+                    f"  rust:   {json.dumps(rust_doc)[:400]}"
+                )
 
     if byte_equal_strip_time:
         time_re = re.compile(r"^\s+Time\s+\S+\s*$\n?", re.MULTILINE)
