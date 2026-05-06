@@ -12,6 +12,7 @@ updates:
     directory: "/packages/arcis-node"
     schedule:
       interval: "monthly"
+    target-branch: "nwl"
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(node)"
@@ -24,6 +25,7 @@ updates:
     directory: "/packages/arcis-cli-npm"
     schedule:
       interval: "monthly"
+    target-branch: "nwl"
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(cli-npm)"
@@ -37,6 +39,7 @@ updates:
     directory: "/packages/arcis-python"
     schedule:
       interval: "monthly"
+    target-branch: "nwl"
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(python)"
@@ -49,6 +52,7 @@ updates:
     directory: "/packages/arcis-go"
     schedule:
       interval: "monthly"
+    target-branch: "nwl"
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(go)"
@@ -61,6 +65,7 @@ updates:
     directory: "/packages/arcis-rust"
     schedule:
       interval: "monthly"
+    target-branch: "nwl"
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(rust)"
@@ -73,6 +78,7 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    target-branch: "nwl"
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(actions)"
