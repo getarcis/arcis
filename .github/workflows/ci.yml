@@ -74,6 +74,22 @@ jobs:
       fail-fast: false
       matrix:
         node-version: [18, 20, 22, 24]
+    # Redis is exposed at localhost:6379 so store-backed rate-limit /
+    # session tests can run for real instead of mocks. Tests that read
+    # REDIS_URL pick it up automatically; everything else continues to
+    # use the in-memory store and is unchanged.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379
     defaults:
       run:
         working-directory: packages/arcis-node
@@ -100,6 +116,18 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379
     defaults:
       run:
         working-directory: packages/arcis-python
@@ -108,7 +136,7 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,redis]"
       - name: Run tests with retry on flake
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
         with:
