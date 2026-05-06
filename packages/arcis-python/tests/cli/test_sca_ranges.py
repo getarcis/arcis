@@ -47,6 +47,28 @@ def test_version_key_pre_release_below_release() -> None:
     assert _version_key("4.22.4-beta") < _version_key("4.22.4")
 
 
+def test_version_key_pre_release_segments_compare_numerically() -> None:
+    # rc1 < rc2 < rc10 — was lexical (rc10 < rc2) before the fix.
+    assert _version_key("1.0.0-rc1") < _version_key("1.0.0-rc2")
+    assert _version_key("1.0.0-rc2") < _version_key("1.0.0-rc10")
+    assert _version_key("1.0.0-rc10") < _version_key("1.0.0-rc11")
+
+
+def test_version_key_pre_release_alpha_beta_rc_order() -> None:
+    assert _version_key("1.0.0-alpha") < _version_key("1.0.0-beta")
+    assert _version_key("1.0.0-beta") < _version_key("1.0.0-rc")
+    assert _version_key("1.0.0-rc") < _version_key("1.0.0")
+
+
+def test_version_key_dotted_pre_release_segments() -> None:
+    # More dotted segments = higher precedence inside the same family.
+    assert _version_key("1.0.0-alpha") < _version_key("1.0.0-alpha.1")
+    assert _version_key("1.0.0-alpha.1") < _version_key("1.0.0-alpha.2")
+    assert _version_key("1.0.0-alpha.2") < _version_key("1.0.0-alpha.10")
+    # Pure-numeric suffix sorts below alphanumeric (per semver 2.0).
+    assert _version_key("1.0.0-1") < _version_key("1.0.0-rc1")
+
+
 def test_version_key_handles_v_prefix() -> None:
     assert _version_key("v1.2.3") == _version_key("1.2.3")
 

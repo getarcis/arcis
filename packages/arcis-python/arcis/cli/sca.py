@@ -138,15 +138,44 @@ def _normalize_name(name: str, ecosystem: str) -> str:
     return n
 
 
+_SUFFIX_SEG_RE = re.compile(r"^([A-Za-z\-]*)(\d+)?$")
+
+
+def _suffix_segments(suffix: str) -> Tuple[Tuple[str, int], ...]:
+    """Split a pre-release suffix into (letters, number) segments so that
+    'rc1' < 'rc2' < 'rc10' compare numerically instead of lexically.
+
+        'rc1'      -> (('rc', 1),)
+        'rc10'     -> (('rc', 10),)
+        'beta.2'   -> (('beta', 0), ('', 2))
+        'alpha'    -> (('alpha', 0),)
+        '1'        -> (('', 1),)             # pure-numeric segment
+    """
+    out: List[Tuple[str, int]] = []
+    for seg in suffix.split("."):
+        m = _SUFFIX_SEG_RE.match(seg)
+        if m:
+            letters = (m.group(1) or "").lower()
+            number = int(m.group(2)) if m.group(2) else 0
+            out.append((letters, number))
+        else:
+            out.append((seg.lower(), 0))
+    return tuple(out)
+
+
 def _version_key(v: str) -> tuple:
-    """Comparable tuple for a version string. Numeric parts win against
-    non-numeric in the same slot; pre-release suffixes sort lower than the
-    same base with no suffix."""
+    """Comparable tuple for a version string.
+
+    Numeric base parts beat non-numeric in the same slot. Pre-release
+    suffixes sort lower than the same base with no suffix. Inside a
+    suffix, segments are split into (letters, number) so 'rc1' < 'rc10'
+    instead of the broken lexical 'rc10' < 'rc2'.
+    """
     if not v:
         return ((0, ""), (0, ""))
     v = _VERSION_LEAD_RE.sub(r"\1", v.strip()).split("+", 1)[0]
     base, _, suffix = v.partition("-")
-    parts = []
+    parts: List[tuple] = []
     for p in base.split("."):
         if p.isdigit():
             parts.append((1, int(p)))
@@ -160,10 +189,11 @@ def _version_key(v: str) -> tuple:
             else:
                 parts.append((0, p))
     if suffix:
-        # pre-release suffix: tag with 0 so it sorts below the release marker
-        parts.append((0, suffix))
+        # Pre-release tag is sorted below the release marker (0 < 2).
+        # Segments inside the suffix are decomposed so rc10 > rc2.
+        parts.append((0, _suffix_segments(suffix)))
     else:
-        parts.append((2, ""))
+        parts.append((2, ()))
     return tuple(parts)
 
 

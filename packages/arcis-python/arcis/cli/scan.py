@@ -230,6 +230,15 @@ def _resolve_target(
     user picks one. CI auto-takes the first.
     """
     if args.url:
+        if not args.url.startswith(("http://", "https://")):
+            err_console.print(
+                f"  [yellow]Invalid URL scheme:[/] {args.url}"
+            )
+            err_console.print(
+                "  Only [bold]http://[/] and [bold]https://[/] are supported. "
+                "Pass a full base URL like http://localhost:5000."
+            )
+            sys.exit(2)
         return args.url, "argv", None
 
     candidates = detect_target(

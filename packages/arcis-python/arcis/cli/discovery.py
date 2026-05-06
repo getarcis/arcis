@@ -249,7 +249,12 @@ def _iter_files(
 ) -> Iterator[Path]:
     """DFS over root, yielding files with the given extensions. Skips
     vendor / build / cache directories. Bounded by max_files so a giant
-    repo doesn't hang the CLI."""
+    repo doesn't hang the CLI.
+
+    Symlinks are skipped (both file and directory) so a repo with a
+    symlink farm or a circular link can't slow the walk or escape the
+    project root.
+    """
     count = 0
     stack: List[Path] = [root]
     while stack:
@@ -260,6 +265,8 @@ def _iter_files(
             continue
         for entry in entries:
             try:
+                if entry.is_symlink():
+                    continue
                 is_dir = entry.is_dir()
             except OSError:
                 continue

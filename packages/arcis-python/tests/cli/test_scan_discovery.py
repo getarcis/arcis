@@ -279,6 +279,23 @@ def test_discover_routes_respects_max_files(tmp_path: Path) -> None:
     assert len(routes) <= 5
 
 
+def test_discover_routes_skips_symlinks(tmp_path: Path) -> None:
+    """Symlinks must be skipped so a circular link can't loop the walk
+    and a symlink farm can't slow it. Test skips on hosts where symlink
+    creation isn't permitted (Windows non-admin)."""
+    real = tmp_path / "real.js"
+    real.write_text("app.get('/real', h);\n", encoding="utf-8")
+    link = tmp_path / "link.js"
+    try:
+        link.symlink_to(real)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this runner")
+    routes = discover_routes(tmp_path)
+    sources = {r.source for r in routes}
+    assert "real.js" in sources
+    assert "link.js" not in sources
+
+
 # ── detect_target ordering ─────────────────────────────────────────────────
 
 def test_detect_target_orders_env_then_control_plane_then_ports(
@@ -332,6 +349,23 @@ def test_scan_main_surrenders_when_discovery_empty(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(sys, "argv", ["arcis scan"])
     monkeypatch.setattr(scan_module, "detect_target", lambda *a, **kw: [])
+
+    with pytest.raises(SystemExit) as exc:
+        scan_module.main()
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("bad_url", [
+    "ftp://localhost:5000",
+    "file:///etc/passwd",
+    "localhost:5000",
+    "//localhost:5000",
+])
+def test_scan_main_rejects_non_http_scheme(monkeypatch: pytest.MonkeyPatch, bad_url: str) -> None:
+    """Non-http(s) URL passed on the CLI exits 2 before any probe is made."""
+    from arcis.cli import scan as scan_module
+
+    monkeypatch.setattr(sys, "argv", ["arcis scan", bad_url, "--yes", "--no-color"])
 
     with pytest.raises(SystemExit) as exc:
         scan_module.main()
