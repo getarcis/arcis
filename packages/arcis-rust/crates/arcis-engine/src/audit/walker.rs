@@ -39,7 +39,7 @@ pub const SKIP_DIRS: &[&str] = &[
 ];
 
 fn is_skipped_dir_name(name: &str) -> bool {
-    SKIP_DIRS.iter().any(|s| *s == name)
+    SKIP_DIRS.contains(&name)
 }
 
 /// Detect the language of a single file path. Wraps

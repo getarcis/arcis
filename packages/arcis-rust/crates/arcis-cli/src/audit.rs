@@ -297,7 +297,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                     findings: &[],
                 })
             };
-            let _ = writeln!(stdout_lock, "{}", out);
+            let _ = writeln!(stdout_lock, "{out}");
             return ExitCode::from(2);
         }
 
@@ -383,7 +383,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                 findings: &findings,
             })
         };
-        let _ = writeln!(stdout_lock, "{}", out);
+        let _ = writeln!(stdout_lock, "{out}");
         return if findings.is_empty() {
             ExitCode::from(0)
         } else {
@@ -440,7 +440,7 @@ fn print_human_report<W: Write>(
     )?;
     let breakdown = by_language
         .iter()
-        .map(|(k, v)| format!("{} {}", v, k))
+        .map(|(k, v)| format!("{v} {k}"))
         .collect::<Vec<_>>()
         .join(", ");
     writeln!(out, "  Files:    {} scanned ({})", files.len(), breakdown)?;
@@ -495,7 +495,7 @@ fn print_human_report<W: Write>(
     )?;
     writeln!(out, "  Summary")?;
     writeln!(out, "    Files scanned   {}  [{}]", files.len(), breakdown)?;
-    writeln!(out, "    Rules applied   {}", rules_applied)?;
+    writeln!(out, "    Rules applied   {rules_applied}")?;
     let total: usize = by_severity.values().sum();
     if total == 0 {
         writeln!(out, "    Findings        0  clean")?;
@@ -516,7 +516,7 @@ fn print_human_report<W: Write>(
         .collect();
         writeln!(out, "    Findings        {} ({})", total, parts.join(", "))?;
     }
-    writeln!(out, "    Time            {}ms", duration_ms)?;
+    writeln!(out, "    Time            {duration_ms}ms")?;
     Ok(())
 }
 
@@ -533,7 +533,7 @@ mod tests {
                 assert!(!a.sarif_output);
                 assert!(!a.list);
             }
-            other => panic!("unexpected {:?}", other),
+            other => panic!("unexpected {other:?}"),
         }
     }
 
@@ -543,7 +543,7 @@ mod tests {
             ParseOutcome::Args(a) => {
                 assert_eq!(a.path.unwrap(), PathBuf::from("src/"));
             }
-            other => panic!("unexpected {:?}", other),
+            other => panic!("unexpected {other:?}"),
         }
     }
 
@@ -569,7 +569,7 @@ mod tests {
             ParseOutcome::Args(a) => {
                 assert_eq!(a.language, Some(Language::Python));
             }
-            other => panic!("unexpected {:?}", other),
+            other => panic!("unexpected {other:?}"),
         }
     }
 
@@ -583,7 +583,7 @@ mod tests {
             ParseOutcome::Args(a) => {
                 assert_eq!(a.severity, Some(Severity::High));
             }
-            other => panic!("unexpected {:?}", other),
+            other => panic!("unexpected {other:?}"),
         }
     }
 
@@ -622,7 +622,7 @@ mod tests {
                 assert!(a.json_output);
                 assert!(a.sarif_output);
             }
-            other => panic!("unexpected {:?}", other),
+            other => panic!("unexpected {other:?}"),
         }
     }
 

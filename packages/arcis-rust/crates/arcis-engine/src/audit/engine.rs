@@ -200,7 +200,7 @@ mod tests {
         // makes a 202-char line.
         let mut line = "x ".repeat(95);
         line.push_str("yaml.load(f)");
-        let f = write(&td, "main.py", &format!("{}\n", line));
+        let f = write(&td, "main.py", &format!("{line}\n"));
         let findings = scan_file(&f);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].snippet.chars().count(), 120);
@@ -211,7 +211,7 @@ mod tests {
         let td = TempDir::new().unwrap();
         // EVAL-EXEC + HARDCODED-SECRET (AKIA + 16 alnum) on one line.
         let aws = format!("{}{}", "AKIA", "ABCDEFGHIJKLMNOP");
-        let line = format!("key = {}; eval(x)\n", aws);
+        let line = format!("key = {aws}; eval(x)\n");
         let f = write(&td, "main.py", &line);
         let findings = scan_file(&f);
         let ids: Vec<&str> = findings.iter().map(|f| f.rule_id).collect();

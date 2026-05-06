@@ -429,7 +429,7 @@ mod tests {
             ("", None),
         ];
         for (ext, expected) in cases {
-            assert_eq!(Language::from_extension(ext), expected, "ext={}", ext);
+            assert_eq!(Language::from_extension(ext), expected, "ext={ext}");
         }
     }
 

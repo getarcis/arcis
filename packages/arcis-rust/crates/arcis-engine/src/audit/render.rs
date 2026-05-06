@@ -249,7 +249,7 @@ pub fn render_sarif(report: &SarifReport<'_>) -> String {
     let target_uri = {
         let normalized = report.target_abspath.replace('\\', "/");
         let trimmed = normalized.trim_end_matches('/');
-        format!("{}/", trimmed)
+        format!("{trimmed}/")
     };
     let mut target_obj = Map::new();
     target_obj.insert("uri".into(), Value::from(target_uri));
@@ -298,12 +298,12 @@ fn escape_non_ascii(s: &str) -> String {
         if cp < 0x80 {
             out.push(c);
         } else if cp < 0x10000 {
-            out.push_str(&format!("\\u{:04x}", cp));
+            out.push_str(&format!("\\u{cp:04x}"));
         } else {
             let v = cp - 0x10000;
             let hi = 0xd800 + (v >> 10);
             let lo = 0xdc00 + (v & 0x3ff);
-            out.push_str(&format!("\\u{:04x}\\u{:04x}", hi, lo));
+            out.push_str(&format!("\\u{hi:04x}\\u{lo:04x}"));
         }
     }
     out
@@ -455,13 +455,10 @@ mod tests {
             "\"findings\"",
         ]
         .into_iter()
-        .map(|key| {
-            out.find(key)
-                .unwrap_or_else(|| panic!("missing key {}", key))
-        })
+        .map(|key| out.find(key).unwrap_or_else(|| panic!("missing key {key}")))
         .collect();
         for w in positions.windows(2) {
-            assert!(w[0] < w[1], "field order broken: {:?}", positions);
+            assert!(w[0] < w[1], "field order broken: {positions:?}");
         }
     }
 
