@@ -10,6 +10,7 @@ Usage:
     arcis scan --yes                           # skip the confirm prompt (CI)
     arcis scan --no-discovery http://localhost:5000  # opt out of source-aware routes
     arcis scan http://localhost:5000 --no-color
+    arcis scan http://localhost:5000 --json    # machine-readable JSON to stdout
 """
 
 from __future__ import annotations
@@ -447,8 +448,21 @@ examples:
         action="store_true",
         help="Skip the local control-plane probe during target discovery.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Print machine-readable JSON summary on stdout (implies --quiet --no-color --yes; skips dashboard upload).",
+    )
 
     args = parser.parse_args()
+
+    if args.json_output:
+        # Machine mode: stdout must be JSON only. Force the side-effect-suppressing
+        # flags so progress output, prompts, and the dashboard upload don't fire.
+        args.quiet = True
+        args.no_color = True
+        args.yes = True
 
     if args.list:
         _print_payload_catalog(no_color=args.no_color)
@@ -483,7 +497,7 @@ examples:
     fields = args.fields or DEFAULT_FIELDS
     categories = args.categories  # None = all
 
-    if not _confirm_plan(
+    if not args.json_output and not _confirm_plan(
         args=args,
         target_url=target_url,
         target_source=target_source,
@@ -496,7 +510,7 @@ examples:
         err_console.print("  [dim]Cancelled.[/]")
         sys.exit(0)
 
-    if not routes_user_supplied and not discovered_routes and not args.no_discovery:
+    if not routes_user_supplied and not discovered_routes and not args.no_discovery and not args.json_output:
         # Fallback ran. Make the user aware before the tip prints later.
         _print_no_routes_warning(target_url)
 
@@ -535,14 +549,17 @@ examples:
             route_results.append(rr)
 
     duration = time.time() - start
-    print_report(target_url, route_results, duration, no_color=args.no_color)
+    if args.json_output:
+        _render_json_report(target_url, route_results, duration)
+    else:
+        print_report(target_url, route_results, duration, no_color=args.no_color)
 
     # Empty-run tip: when neither user nor discovery contributed routes
     # and the POST / fallback came back unreachable. Tells the user
     # exactly which flag they need.
     no_routes_reachable = all(not rr.reachable for rr in route_results)
     fell_back_to_root = not routes_user_supplied and not discovered_routes
-    if no_routes_reachable and fell_back_to_root:
+    if no_routes_reachable and fell_back_to_root and not args.json_output:
         bold = "" if args.no_color else "\033[1m"
         yellow = "" if args.no_color else "\033[33m"
         dim = "" if args.no_color else "\033[2m"
@@ -558,6 +575,10 @@ examples:
     # Upload to dashboard if ARCIS_ENDPOINT is set. Send full per-route
     # vector results (capped to 500 entries) so the dashboard drill-down
     # can show which payload reached each route.
+    # Skipped in --json mode: machine-output runs must be side-effect-free
+    # to match the Rust scan contract.
+    if args.json_output:
+        sys.exit(1 if any(not v.blocked for rr in route_results for v in rr.vectors) else 0)
     try:
         from .dashboard import upload as dashboard_upload
         dashboard_routes = []
@@ -616,6 +637,58 @@ examples:
         for v in rr.vectors
     )
     sys.exit(1 if any_vulnerable else 0)
+
+
+def _render_json_report(
+    target_url: str,
+    route_results: List[RouteResult],
+    duration: float,
+) -> None:
+    """Print machine-readable JSON. Shape + key order matches the Rust
+    `arcis scan --json` output in `crates/arcis-cli/src/scan.rs::print_json_report`
+    so the parity harness can compare both implementations byte-for-byte
+    once `durationMs` is neutralized."""
+    routes_data = []
+    for rr in route_results:
+        vectors_data = [
+            {
+                "category": v.category,
+                "label": v.label,
+                "payload": v.payload,
+                "status": v.status,
+                "blocked": v.blocked,
+                "note": v.note,
+            }
+            for v in rr.vectors
+        ]
+        routes_data.append({
+            "method": rr.method,
+            "path": rr.path,
+            "reachable": rr.reachable,
+            "error": rr.error if rr.error else None,
+            "vectors": vectors_data,
+        })
+
+    routes_total = len(route_results)
+    routes_reachable = sum(1 for rr in route_results if rr.reachable)
+    total_vectors = sum(len(rr.vectors) for rr in route_results)
+    total_blocked = sum(1 for rr in route_results for v in rr.vectors if v.blocked)
+    total_vulnerable = sum(1 for rr in route_results for v in rr.vectors if not v.blocked)
+
+    doc = {
+        "tool": "arcis-scan",
+        "target": target_url.rstrip("/"),
+        "durationMs": round(duration * 1000),
+        "summary": {
+            "routesTotal": routes_total,
+            "routesReachable": routes_reachable,
+            "totalVectors": total_vectors,
+            "totalBlocked": total_blocked,
+            "totalVulnerable": total_vulnerable,
+        },
+        "routes": routes_data,
+    }
+    print(json.dumps(doc, indent=2, ensure_ascii=False))
 
 
 def _print_payload_catalog(no_color: bool = False) -> None:
