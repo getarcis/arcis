@@ -17,13 +17,11 @@ use thiserror::Error;
 //
 // The `..` count goes: src/ -> arcis-data/ -> crates/ -> arcis-rust/ -> packages/
 // One more `..` lands inside packages/arcis-python/.
-pub const THREAT_DB_JSON: &[u8] = include_bytes!(
-    "../../../../arcis-python/arcis/data/threat-db.json"
-);
+pub const THREAT_DB_JSON: &[u8] =
+    include_bytes!("../../../../arcis-python/arcis/data/threat-db.json");
 
-pub const PATTERNS_JSON: &[u8] = include_bytes!(
-    "../../../../arcis-python/arcis/data/patterns.json"
-);
+pub const PATTERNS_JSON: &[u8] =
+    include_bytes!("../../../../arcis-python/arcis/data/patterns.json");
 
 /// Schema versions the Rust engine knows how to load. Bumped in lockstep
 /// with the Python side. If you bump the schema in Python, also bump it

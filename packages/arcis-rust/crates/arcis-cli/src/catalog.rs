@@ -88,10 +88,7 @@ pub fn print<W: Write>(w: &mut W, version: &str, verbose: bool) -> io::Result<()
         w,
         "    arcis sca .  &&  arcis audit .  &&  arcis scan http://localhost:8000 \\"
     )?;
-    writeln!(
-        w,
-        "        --route POST:/echo --field q --categories xss"
-    )?;
+    writeln!(w, "        --route POST:/echo --field q --categories xss")?;
     Ok(())
 }
 
