@@ -67,10 +67,13 @@ fn main() -> ExitCode {
         // so CI scripts notice and a user sees the redirect.
         "scan" | "audit" | "sca" | "update" => stub::dispatch(&argv[1..]),
 
-        // Unknown command. Match Python's error style + exit 1.
+        // Unknown command. Match Python's error style + exit 1. Python
+        // uses `console.print` (stdout) for this message, so stay on
+        // stdout for parity. Both implementations should arguably move to
+        // stderr later — when that happens, flip both at once.
         unknown => {
-            eprintln!("arcis: unknown command '{unknown}'");
-            eprintln!("Run 'arcis --list' for available commands.");
+            let _ = writeln!(out, "arcis: unknown command '{unknown}'");
+            let _ = writeln!(out, "Run 'arcis --list' for available commands.");
             ExitCode::from(1)
         }
     }
