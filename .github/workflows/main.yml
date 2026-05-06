@@ -1,0 +1,9 @@
+name: Main
+
+on:
+  pull_request:
+    branches: [nwl]
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
