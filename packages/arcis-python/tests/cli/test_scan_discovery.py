@@ -10,20 +10,17 @@ not that http.client actually opens a socket.
 
 from __future__ import annotations
 
-import io
 import json
 import socket
 import sys
 from pathlib import Path
 from typing import List
-from unittest.mock import patch
 
 import pytest
 
 from arcis.cli import discovery as disc
 from arcis.cli.discovery import (
     DiscoveredRoute,
-    TargetCandidate,
     detect_project_kind,
     discover_routes,
     env_target,

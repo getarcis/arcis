@@ -5,7 +5,7 @@ Terminal output formatting for arcis scan.
 from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 # Use unicode box chars when the terminal supports it, ASCII otherwise
 _SUPPORTS_UNICODE = bool(sys.stdout.encoding and sys.stdout.encoding.lower().startswith("utf"))
@@ -132,7 +132,7 @@ def print_report(
     elif total_vulnerable == 0:
         protected_str = c(f"{total_blocked}  {TICK}  All vectors protected", GREEN, BOLD)
         print(f"  Protected         {protected_str}")
-        print(f"  Vulnerable        0")
+        print("  Vulnerable        0")
     else:
         print(f"  Protected         {total_blocked}")
         vuln_str = c(f"{total_vulnerable}  {CROSS}  needs middleware", RED, BOLD)

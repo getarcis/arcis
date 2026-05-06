@@ -2,7 +2,6 @@
 ErrorHandler tests — covers production safety, sensitive info scrubbing, and framework handlers.
 """
 
-import pytest
 from arcis.middleware.error_handler import ErrorHandler, create_error_handler, contains_sensitive_info
 
 

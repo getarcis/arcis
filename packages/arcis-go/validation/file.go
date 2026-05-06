@@ -12,22 +12,22 @@ const DefaultMaxFileSize = 5 * 1024 * 1024
 
 // ValidateFileOptions configures file upload validation.
 type ValidateFileOptions struct {
-	MaxSize              int      // Maximum file size in bytes (default: 5MB)
-	AllowedTypes         []string // Allowed MIME types (e.g., ["image/jpeg", "image/png"])
-	AllowedExtensions    []string // Allowed file extensions with dot (e.g., [".jpg", ".png"])
-	BlockExecutables     bool     // Block dangerous/executable extensions (default: true)
-	ValidateMagicBytes   bool     // Validate magic bytes match MIME type (default: true)
-	BlockNoExtension     bool     // Block files with no extension (default: true)
-	BlockDoubleExtensions bool    // Block double extensions like file.php.jpg (default: true)
+	MaxSize               int      // Maximum file size in bytes (default: 5MB)
+	AllowedTypes          []string // Allowed MIME types (e.g., ["image/jpeg", "image/png"])
+	AllowedExtensions     []string // Allowed file extensions with dot (e.g., [".jpg", ".png"])
+	BlockExecutables      bool     // Block dangerous/executable extensions (default: true)
+	ValidateMagicBytes    bool     // Validate magic bytes match MIME type (default: true)
+	BlockNoExtension      bool     // Block files with no extension (default: true)
+	BlockDoubleExtensions bool     // Block double extensions like file.php.jpg (default: true)
 }
 
 // DefaultValidateFileOptions returns options with all protections enabled.
 func DefaultValidateFileOptions() ValidateFileOptions {
 	return ValidateFileOptions{
-		MaxSize:              DefaultMaxFileSize,
-		BlockExecutables:     true,
-		ValidateMagicBytes:   true,
-		BlockNoExtension:     true,
+		MaxSize:               DefaultMaxFileSize,
+		BlockExecutables:      true,
+		ValidateMagicBytes:    true,
+		BlockNoExtension:      true,
 		BlockDoubleExtensions: true,
 	}
 }
@@ -87,15 +87,15 @@ var dangerousExtensions = map[string]bool{
 }
 
 var (
-	rePathComponents  = regexp.MustCompile(`^.*[/\\]`)
-	reControlChars    = regexp.MustCompile(`[\x00-\x1f\x7f]`)
-	reUnsafeChars     = regexp.MustCompile(`[<>:"/\\|?*]`)
-	reSpacesParens    = regexp.MustCompile(`[\s()]+`)
-	reLeadingDots     = regexp.MustCompile(`^\.+`)
+	rePathComponents   = regexp.MustCompile(`^.*[/\\]`)
+	reControlChars     = regexp.MustCompile(`[\x00-\x1f\x7f]`)
+	reUnsafeChars      = regexp.MustCompile(`[<>:"/\\|?*]`)
+	reSpacesParens     = regexp.MustCompile(`[\s()]+`)
+	reLeadingDots      = regexp.MustCompile(`^\.+`)
 	reMultiUnderscores = regexp.MustCompile(`_{2,}`)
-	reMultiDots       = regexp.MustCompile(`\.{2,}`)
-	reUnderscoreDot   = regexp.MustCompile(`_+\.`)
-	reEdgeUnderscores = regexp.MustCompile(`^_+|_+$`)
+	reMultiDots        = regexp.MustCompile(`\.{2,}`)
+	reUnderscoreDot    = regexp.MustCompile(`_+\.`)
+	reEdgeUnderscores  = regexp.MustCompile(`^_+|_+$`)
 )
 
 // SanitizeFilename sanitizes a filename for safe storage.

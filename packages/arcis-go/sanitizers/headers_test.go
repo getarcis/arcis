@@ -31,7 +31,7 @@ func TestSanitizeHeaders(t *testing.T) {
 	t.Run("sanitizes keys and values", func(t *testing.T) {
 		headers := map[string]string{
 			"X-Custom":     "safe",
-			"X-Bad\r\n":   "value\r\ninjected",
+			"X-Bad\r\n":    "value\r\ninjected",
 			"Content-Type": "text/html",
 		}
 		result := SanitizeHeaders(headers)

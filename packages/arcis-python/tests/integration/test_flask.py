@@ -7,8 +7,6 @@ Run with: pytest tests/test_flask.py -v
 """
 
 import pytest
-import json
-import time
 
 # Skip these tests if Flask is not installed
 pytest.importorskip("flask")
@@ -17,14 +15,7 @@ from flask import Flask, jsonify, request, g
 
 from arcis.core import (
     Arcis,
-    Sanitizer,
-    RateLimiter,
-    RateLimitExceeded,
-    SecurityHeaders,
-    InMemoryStore,
     SchemaValidator,
-    ErrorHandler,
-    create_error_handler,
 )
 
 

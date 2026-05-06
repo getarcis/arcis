@@ -43,8 +43,8 @@ func TestScanPii_Phone(t *testing.T) {
 func TestScanPii_CreditCard(t *testing.T) {
 	// Valid Luhn numbers
 	tests := []string{
-		"Card: 4111111111111111",     // Visa test
-		"Payment: 5500000000000004",  // Mastercard test
+		"Card: 4111111111111111",    // Visa test
+		"Payment: 5500000000000004", // Mastercard test
 	}
 	for _, text := range tests {
 		matches := ScanPii(text, nil)

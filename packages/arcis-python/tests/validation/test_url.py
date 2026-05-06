@@ -3,7 +3,6 @@ SSRF Prevention — URL Validation Tests
 Tests for arcis/validation/url.py
 """
 
-import pytest
 from arcis.validation.url import (
     validate_url_ssrf,
     is_url_safe,

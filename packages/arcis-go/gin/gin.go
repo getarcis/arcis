@@ -621,9 +621,9 @@ type ginResponseCapture struct {
 	status int
 }
 
-func (g *ginResponseCapture) Header() http.Header          { return g.header }
-func (g *ginResponseCapture) Write(b []byte) (int, error)  { return len(b), nil }
-func (g *ginResponseCapture) WriteHeader(statusCode int)   { g.status = statusCode }
+func (g *ginResponseCapture) Header() http.Header         { return g.header }
+func (g *ginResponseCapture) Write(b []byte) (int, error) { return len(b), nil }
+func (g *ginResponseCapture) WriteHeader(statusCode int)  { g.status = statusCode }
 
 // SecureCookies returns a Gin middleware that enforces secure cookie defaults.
 func SecureCookies(opts arcis.SecureCookieOptions) gin.HandlerFunc {

@@ -1,5 +1,4 @@
 """Tests for LDAP injection prevention."""
-import pytest
 from arcis.sanitizers.ldap import sanitize_ldap_filter, sanitize_ldap_dn, detect_ldap_injection
 
 

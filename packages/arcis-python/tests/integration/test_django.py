@@ -8,7 +8,6 @@ Run with: pytest tests/test_django.py -v
 
 import pytest
 import json
-from unittest.mock import MagicMock, patch
 
 # Skip these tests if Django is not installed
 pytest.importorskip("django")
@@ -173,7 +172,7 @@ class TestArcisMiddlewareRateLimiting:
         middleware.get_response = simple_view
 
         # Configure with low limit
-        from arcis.core import Sanitizer, RateLimiter, SecurityHeaders, InMemoryStore
+        from arcis.core import Sanitizer, RateLimiter, SecurityHeaders
         middleware.sanitizer = Sanitizer()
         middleware.rate_limiter = RateLimiter(max_requests=2, window_ms=60000)
         middleware.security_headers = SecurityHeaders()

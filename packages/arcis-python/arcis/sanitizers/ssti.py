@@ -7,7 +7,6 @@ and Python sandbox-escape dunder chains.
 """
 
 import re
-from typing import List, Optional
 
 # Detection patterns — used by detect_ssti()
 _SSTI_DETECT_PATTERNS = [

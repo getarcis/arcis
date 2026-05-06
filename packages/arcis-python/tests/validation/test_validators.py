@@ -2,7 +2,6 @@
 Validator tests — extracted from tests/test_core.py.
 """
 
-import pytest
 from arcis.core import Validator
 
 

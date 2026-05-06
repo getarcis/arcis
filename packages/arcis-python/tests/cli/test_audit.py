@@ -6,7 +6,6 @@ Tests for arcis/cli/audit.py
 import os
 import tempfile
 
-import pytest
 from arcis.cli.audit import scan_file, scan_directory, Finding, RULES
 
 

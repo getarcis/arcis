@@ -5,7 +5,7 @@ SchemaValidator and create_validator factory function.
 """
 
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from ..sanitizers.sanitize import Sanitizer
 from .validators import Validator

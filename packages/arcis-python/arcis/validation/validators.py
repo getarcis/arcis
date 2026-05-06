@@ -8,7 +8,8 @@ import re
 from typing import Optional
 
 # ValidationError is in core.errors but re-exported from here for convenience
-from ..core.errors import ValidationError
+from ..core.errors import ValidationError  # noqa: F401
+
 
 class Validator:
     """

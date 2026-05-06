@@ -3,7 +3,6 @@ Sliding window rate limiter tests.
 Tests for arcis/middleware/rate_limit_sliding.py
 """
 
-import time
 import threading
 import pytest
 from arcis.middleware.rate_limit_sliding import SlidingWindowLimiter

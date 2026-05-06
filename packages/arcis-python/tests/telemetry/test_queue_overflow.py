@@ -11,7 +11,6 @@ import asyncio
 import time
 from unittest.mock import MagicMock
 
-import pytest
 
 from arcis.telemetry.client import TelemetryClient, AsyncTelemetryClient
 from arcis.telemetry.types import TelemetryEvent, TelemetryOptions

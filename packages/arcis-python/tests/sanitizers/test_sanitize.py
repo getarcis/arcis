@@ -2,8 +2,7 @@
 Sanitizer class tests — extracted from tests/test_core.py.
 """
 
-import pytest
-from arcis.core import Sanitizer, sanitize_string, sanitize_dict
+from arcis.core import Sanitizer, sanitize_string
 
 
 class TestSanitizeStringXSS:

@@ -7,11 +7,9 @@ import tempfile
 import pytest
 
 from arcis.cli.sca import (
-    Finding,
     THREAT_DB,
     scan_project,
     _scan_package_lock,
-    _scan_yarn_lock,
     _scan_node_modules,
     _scan_requirements,
 )

@@ -37,7 +37,7 @@ Requires:
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from ..core.types import RateLimitEntry
 

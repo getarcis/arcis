@@ -2,7 +2,6 @@
 File upload validation tests.
 """
 
-import pytest
 from arcis.validation.file import (
     sanitize_filename,
     validate_file,

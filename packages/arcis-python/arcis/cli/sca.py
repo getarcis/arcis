@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from arcis.cli._console import console, err_console, live_status
+from arcis.cli._console import live_status
 
 # ── Terminal formatting ──────────────────────────────────────────────────────
 
@@ -762,7 +762,7 @@ def print_sca_report(
     if manifest_summary:
         print(c(f"  Manifests: {manifest_summary}", DIM))
     print(c(f"  Threat DB: {len(THREAT_DB)} known compromised package{'s' if len(THREAT_DB) != 1 else ''}", DIM))
-    print(c(f"  Mode:      Offline - no network calls, no telemetry", DIM))
+    print(c("  Mode:      Offline - no network calls, no telemetry", DIM))
     print(c(line, DIM))
 
     if not findings:

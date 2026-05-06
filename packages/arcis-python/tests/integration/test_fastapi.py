@@ -9,7 +9,7 @@ Run with: pytest tests/test_fastapi.py -v
 import pytest
 import time
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 # Skip these tests if FastAPI is not installed
 pytest.importorskip("fastapi")
@@ -17,9 +17,8 @@ pytest.importorskip("httpx")
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
 
-from arcis.fastapi import ArcisMiddleware, get_sanitized_body
+from arcis.fastapi import ArcisMiddleware
 
 
 # ============================================================================

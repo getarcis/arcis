@@ -19,7 +19,7 @@ Design rules (enforced):
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator, Optional
+from typing import Iterator
 
 from rich.console import Console
 from rich.live import Live
@@ -80,7 +80,7 @@ def severity_label(severity: str, *, glyph: bool = True) -> Text:
 
 # ── Live status context manager ────────────────────────────────────────────
 @contextmanager
-def live_status(initial: str = "Working...") -> Iterator["LiveStatus"]:
+def live_status(initial: str = "Working...") -> "Iterator[_NullStatus | _LiveStatusAdapter]":
     """Context manager that pins a single dim status line to the terminal
     while a scan loop is running. Status updates in place; findings printed
     above it via `console.print()` stay in scrollback.

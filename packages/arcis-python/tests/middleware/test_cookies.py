@@ -2,7 +2,6 @@
 Secure cookie defaults tests.
 """
 
-import pytest
 from arcis.middleware.cookies import enforce_secure_cookie, SecureCookieDefaults, create_secure_cookies
 
 
