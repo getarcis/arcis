@@ -16,6 +16,7 @@
 
 pub mod audit;
 pub mod sca;
+pub mod scan;
 pub mod threat_db;
 pub mod version;
 
