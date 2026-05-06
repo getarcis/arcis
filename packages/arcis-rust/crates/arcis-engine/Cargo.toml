@@ -13,6 +13,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
+# walkdir, not the `ignore` crate, on purpose. Python `os.walk` does not
+# honor `.gitignore`; using `ignore` would diverge from the parity
+# contract whenever a target tree has gitignored source files. Gitignore
+# support belongs behind a flag (post-parity).
+walkdir = "2.5"
 
 [dev-dependencies]
 tempfile = "3.10"

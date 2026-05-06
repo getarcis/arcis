@@ -16,5 +16,7 @@
 //! next to the clap glue.
 
 pub mod rules;
+pub mod walker;
 
 pub use rules::{rules, Language, Rule, Severity};
+pub use walker::{collect_files, detect_language, SKIP_DIRS};
