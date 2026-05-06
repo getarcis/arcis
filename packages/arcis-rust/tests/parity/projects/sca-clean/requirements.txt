@@ -1,0 +1,1 @@
+# Empty manifest. The scanner should report a Clean header + 0 findings.

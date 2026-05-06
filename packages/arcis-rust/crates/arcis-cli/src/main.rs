@@ -14,6 +14,7 @@ use std::io::Write;
 use std::process::ExitCode;
 
 mod catalog;
+mod sca;
 mod stub;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -61,11 +62,10 @@ fn main() -> ExitCode {
             ExitCode::from(0)
         }
 
-        // Subcommand stubs. Each prints a one-line "Phase B" message
-        // pointing at the migration plan, then exits 2 (the same
-        // exit code Python uses for "nothing scannable / not implemented")
-        // so CI scripts notice and a user sees the redirect.
-        "scan" | "audit" | "sca" | "update" => stub::dispatch(&argv[1..]),
+        // Phase B1: `arcis sca` is ported. The remaining stubs still point
+        // at the Python CLI and the migration plan.
+        "sca" => sca::run(&argv[2..]),
+        "scan" | "audit" | "update" => stub::dispatch(&argv[1..]),
 
         // Unknown command. Match Python's error style + exit 1. Python
         // uses `console.print` (stdout) for this message, so stay on

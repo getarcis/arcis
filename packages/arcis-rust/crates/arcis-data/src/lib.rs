@@ -84,7 +84,13 @@ mod tests {
     fn threat_db_payload_is_present() {
         // include_bytes!() either succeeds at compile time or breaks the
         // build, so the byte slice is guaranteed non-empty if we got here.
-        assert!(!THREAT_DB_JSON.is_empty(), "threat-db.json should embed");
+        // Allow `const_is_empty` because the contract being expressed is
+        // "the data file is reachable at the path we hard-coded" — the
+        // const-evaluation that makes this tautological is exactly what
+        // we want to verify hasn't been replaced with a runtime loader.
+        #[allow(clippy::const_is_empty)]
+        let ok = !THREAT_DB_JSON.is_empty();
+        assert!(ok, "threat-db.json should embed");
     }
 
     #[test]
@@ -101,7 +107,9 @@ mod tests {
 
     #[test]
     fn patterns_payload_is_present() {
-        assert!(!PATTERNS_JSON.is_empty(), "patterns.json should embed");
+        #[allow(clippy::const_is_empty)]
+        let ok = !PATTERNS_JSON.is_empty();
+        assert!(ok, "patterns.json should embed");
     }
 
     #[test]

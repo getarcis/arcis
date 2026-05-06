@@ -70,6 +70,10 @@ def check_fixture(
     stdout_pat = fixture.get("stdout_pattern")
     stderr_pat = fixture.get("stderr_pattern")
     byte_equal = fixture.get("byte_equal", False)
+    # Same as byte_equal but strips the volatile `Time` summary row before
+    # comparing. Use this for SCA fixtures whose only non-deterministic
+    # output is the elapsed-time line.
+    byte_equal_strip_time = fixture.get("byte_equal_strip_time", False)
 
     py_full = py_cmd + args
     rust_full = rust_cmd + args
@@ -102,6 +106,27 @@ def check_fixture(
             f"  python (first 200): {py_out[:200]!r}\n"
             f"  rust   (first 200): {rust_out[:200]!r}"
         )
+
+    if byte_equal_strip_time:
+        time_re = re.compile(r"^\s+Time\s+\S+\s*$\n?", re.MULTILINE)
+        py_norm = time_re.sub("", py_out)
+        rust_norm = time_re.sub("", rust_out)
+        if py_norm != rust_norm:
+            # Find the first diverging char so the message points at the
+            # exact column where things drifted.
+            common = 0
+            for a, b in zip(py_norm, rust_norm):
+                if a != b:
+                    break
+                common += 1
+            window = 80
+            lo = max(0, common - 20)
+            errors.append(
+                "byte-equal-strip-time stdout failed:\n"
+                f"  first diff at column {common}\n"
+                f"  python near diff: {py_norm[lo:lo+window]!r}\n"
+                f"  rust   near diff: {rust_norm[lo:lo+window]!r}"
+            )
 
     if stdout_pat:
         if not re.search(stdout_pat, py_out, re.MULTILINE):

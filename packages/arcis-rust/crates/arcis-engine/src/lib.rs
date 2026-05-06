@@ -14,6 +14,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod sca;
+pub mod threat_db;
+pub mod version;
+
 /// Re-export the data crate so callers don't have to depend on it directly.
 pub use arcis_data;
 
@@ -32,7 +36,13 @@ mod tests {
 
     #[test]
     fn version_is_non_empty() {
-        assert!(!VERSION.is_empty());
+        // Tautological under const eval (`CARGO_PKG_VERSION` is a `&'static
+        // str` literal injected by cargo) but kept as a contract check —
+        // anyone replacing the env! macro with a runtime loader would
+        // notice this break.
+        #[allow(clippy::const_is_empty)]
+        let ok = !VERSION.is_empty();
+        assert!(ok);
     }
 
     #[test]
