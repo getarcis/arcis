@@ -1,21 +1,17 @@
-name: CI
+name: Unit tests — Go
 
 on:
-  push:
-    branches: ['feat/**', 'track/**']
-  pull_request:
-    branches: [nwl]
+  workflow_call:
 
 jobs:
-  # Lint jobs moved to lint.yml (called by main.yml). Test jobs follow
-  # in subsequent commits.
-
   go:
     name: Go (${{ matrix.go-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        # Single-version matrix because go.mod declares `go 1.25.0`.
+        # Widening requires lowering the directive first.
         go-version: ["1.25"]
     defaults:
       run:
