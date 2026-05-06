@@ -42,6 +42,13 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 anyhow = "1.0"
 thiserror = "2.0"
 regex = "1.10"
+# Async stack for `arcis scan`. `rt-multi-thread` matches Python's
+# ThreadPoolExecutor model; `macros` gives us `tokio::test`.
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+# `rustls-tls` keeps us off system OpenSSL (no Windows ssl headers
+# needed). `json` enables ergonomic body construction but we mostly hand
+# over raw bytes for parity with http.client output.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 [profile.release]
 # Smaller, faster binary. The tradeoffs (longer compile, no incremental in

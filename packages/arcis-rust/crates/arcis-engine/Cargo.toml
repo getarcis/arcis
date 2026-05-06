@@ -18,6 +18,13 @@ regex = { workspace = true }
 # contract whenever a target tree has gitignored source files. Gitignore
 # support belongs behind a flag (post-parity).
 walkdir = "2.5"
+# Async runtime + HTTP client for `arcis scan` (Phase B3). rustls-tls so
+# we don't need a system OpenSSL on Windows. Mirrors Python's
+# concurrent.futures.ThreadPoolExecutor(max_workers=10) via a tokio
+# Semaphore around reqwest fan-out.
+tokio = { workspace = true }
+reqwest = { workspace = true }
+urlencoding = "2.1"
 
 [dev-dependencies]
 tempfile = "3.10"

@@ -4,14 +4,14 @@
 //! `payloads.py` + `discovery.py`). Surface mirrors the engine / cli split
 //! used elsewhere in the workspace:
 //!
-//!   * `payloads`   — attack-vector corpus (categories, default fields,
-//!                    blocked-status set). Static data, no I/O.
-//!   * `classifier` — `_classify(status, body, payload)` from `scan.py`:
-//!                    response shape -> hit / miss / connection-error.
-//!   * `discover`   — env-file parser, port + control-plane probes,
-//!                    source-aware route walk for JS/TS/Python/Go.
-//!   * `probe`      — async HTTP client (tokio + reqwest) with concurrency
-//!                    cap, ordered result collection. (Phase B3 step 4.)
+//! * `payloads` - attack-vector corpus (categories, default fields,
+//!   blocked-status set). Static data, no I/O.
+//! * `classifier` - `_classify(status, body, payload)` from `scan.py`:
+//!   response shape -> hit / miss / connection-error.
+//! * `discover` - env-file parser, port + control-plane probes,
+//!   source-aware route walk for JS/TS/Python/Go.
+//! * `probe` - async HTTP client (tokio + reqwest) with concurrency
+//!   cap, ordered result collection.
 //!
 //! Output formatting (human / `--json`) lives in `arcis-cli` next to the
 //! clap glue.
@@ -19,6 +19,7 @@
 pub mod classifier;
 pub mod discover;
 pub mod payloads;
+pub mod probe;
 
 pub use classifier::{classify, Classification};
 pub use discover::{
@@ -29,3 +30,4 @@ pub use discover::{
 pub use payloads::{
     attack_categories, AttackCategory, AttackVector, BLOCKED_STATUS_CODES, DEFAULT_FIELDS,
 };
+pub use probe::{scan_route, send_one, RouteResult, ScanOptions, VectorResult};

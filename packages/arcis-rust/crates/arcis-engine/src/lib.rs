@@ -3,10 +3,10 @@
 //! Phase A is intentionally empty. As commands are ported in Phase B, the
 //! relevant pieces land here:
 //!
-//!   * `sca`    — version range matcher, manifest parsers, name normalization
-//!   * `audit`  — rule registry, regex engine, file walker
-//!   * `scan`   — HTTP client, payload dispatcher, classifier
-//!   * `discovery` — env file parser, port sniffer, source-aware route walk
+//! * `sca` - version range matcher, manifest parsers, name normalization
+//! * `audit` - rule registry, regex engine, file walker
+//! * `scan` - HTTP client, payload dispatcher, classifier
+//! * `discovery` - env file parser, port sniffer, source-aware route walk
 //!
 //! The split between this crate and `arcis-cli` keeps entry-point glue
 //! (clap parsing, exit codes, terminal formatting) separate from logic
