@@ -106,14 +106,14 @@
 <pre><code>npm install @arcis/node dotenv</code></pre>
           <p>Or with yarn:</p>
 <pre><code>yarn add @arcis/node dotenv</code></pre>
-          <p><code>dotenv</code> loads <code>.env</code> at startup &mdash; vanilla Express does not pick it up automatically.</p>
+          <p><code>dotenv</code> loads <code>.env</code> at startup. Vanilla Express does not pick it up automatically.</p>
         </div>
 
         <div class="tab-panel" data-panel="python">
 <pre><code>pip install arcis python-dotenv</code></pre>
           <p>For Redis store support:</p>
 <pre><code>pip install "arcis[redis]"</code></pre>
-          <p><code>python-dotenv</code> loads <code>.env</code> at startup &mdash; vanilla FastAPI / Flask do not pick it up automatically.</p>
+          <p><code>python-dotenv</code> loads <code>.env</code> at startup. Vanilla FastAPI / Flask do not pick it up automatically.</p>
         </div>
 
         <div class="tab-panel" data-panel="go">
@@ -124,7 +124,7 @@
       <h3 id="cli-tools">CLI tools (audit / scan / sca)</h3>
       <p>The Arcis CLI scanners ship as a <strong>single static binary</strong> distributed via npm. The binary works regardless of whether your app is Node, Python, or Go:</p>
 <pre><code>npm install -g @arcis/cli</code></pre>
-      <p>The threat database, audit rules, and attack payload catalog are all embedded in the binary &mdash; no Python or other runtime required. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case.)</p>
+      <p>The threat database, audit rules, and attack payload catalog are all embedded in the binary. no Python or other runtime required. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case.)</p>
 
       <h3 id="env-setup">Environment variables (.env)</h3>
       <p>The dashboard expects three values in your backend <code>.env</code>:</p>
@@ -244,9 +244,9 @@ app.<span class="f">use</span><span class="p">(</span><span class="f">cookieSecu
 <pre><code><span class="c"># Try an XSS attack</span>
 curl <span class="s">'http://localhost:3000/?q=&lt;script&gt;alert(1)&lt;/script&gt;'</span>
 
-<span class="c"># Your handler receives req.query.q === ''  (empty — script was stripped)</span></code></pre>
+<span class="c"># Your handler receives req.query.q === ''  (empty. script was stripped)</span></code></pre>
 
-      <p>To see what Arcis blocks, log <code>req.query</code> inside your route — the attack payload will be gone.</p>
+      <p>To see what Arcis blocks, log <code>req.query</code> inside your route. the attack payload will be gone.</p>
 
       <h2 id="next-steps">Next steps</h2>
       <div class="doc-cards">
@@ -305,8 +305,8 @@ curl <span class="s">'http://localhost:3000/?q=&lt;script&gt;alert(1)&lt;/script
           <div class="footer-col">
             <h4>SDKs</h4>
             <ul>
-              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm &mdash; @arcis/node</a></li>
-              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI &mdash; arcis</a></li>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li>
               <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
             </ul>
           </div>

@@ -103,7 +103,7 @@
 
       <h2 id="ssrf">SSRF (Server-Side Request Forgery)</h2>
       <p>Attackers trick the server into making requests to internal services or cloud metadata endpoints.</p>
-      <p><strong>How Arcis stops it:</strong> <code>validateUrl()</code> blocks private IPs (10.x, 172.16-31.x, 192.168.x), loopback (127.x, ::1), link-local (169.254.0.0/16 — includes AWS/GCP/Azure metadata), cloud metadata hostnames, and IP-encoding bypasses: decimal (<code>2130706433</code>), octal (<code>0177.0.0.1</code>), hex (<code>0x7f000001</code>), IPv6-mapped (<code>::ffff:127.0.0.1</code>).</p>
+      <p><strong>How Arcis stops it:</strong> <code>validateUrl()</code> blocks private IPs (10.x, 172.16-31.x, 192.168.x), loopback (127.x, ::1), link-local (169.254.0.0/16, which includes AWS/GCP/Azure metadata), cloud metadata hostnames, and IP-encoding bypasses: decimal (<code>2130706433</code>), octal (<code>0177.0.0.1</code>), hex (<code>0x7f000001</code>), IPv6-mapped (<code>::ffff:127.0.0.1</code>).</p>
 
       <h2 id="csrf">CSRF (Cross-Site Request Forgery)</h2>
       <p>Attackers trick logged-in users into submitting forms to your site from a malicious page.</p>
@@ -198,8 +198,8 @@
           <div class="footer-col">
             <h4>SDKs</h4>
             <ul>
-              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm &mdash; @arcis/node</a></li>
-              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI &mdash; arcis</a></li>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li>
               <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
             </ul>
           </div>

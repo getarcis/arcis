@@ -79,7 +79,7 @@
       </p>
 
       <div class="callout note">
-        <p><strong>The CLI is its own package.</strong> Install via <code>npm install -g @arcis/cli</code>. The binary works regardless of whether your app is Node, Python, or Go &mdash; the threat database, audit rules, and attack payload catalog are all embedded. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case. <code>pip install arcis</code> now ships the runtime middleware only.)</p>
+        <p><strong>The CLI is its own package.</strong> Install via <code>npm install -g @arcis/cli</code>. The binary works regardless of whether your app is Node, Python, or Go. The threat database, audit rules, and attack payload catalog are all embedded. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case. <code>pip install arcis</code> now ships the runtime middleware only.)</p>
       </div>
 
       <h2 id="discover">Discovery</h2>
@@ -101,7 +101,7 @@ arcis update --check   <span class="c"># CI mode: exit 1 if outdated</span></cod
       <p>Each command also streams live progress to stderr (per-route status for <code>scan</code>, a progress bar for <code>audit</code>, current manifest for <code>sca</code>) and ends with a per-severity summary block.</p>
 
       <h3>Interactive mode</h3>
-      <p>Running <code>arcis</code> with no args opens an arrow-key picker for scan / audit / sca, then prompts for a path or URL. Non-TTY runs (CI, piped input) skip the picker and fall back to the static catalog automatically &mdash; scripts never hang.</p>
+      <p>Running <code>arcis</code> with no args opens an arrow-key picker for scan / audit / sca, then prompts for a path or URL. Non-TTY runs (CI, piped input) skip the picker and fall back to the static catalog automatically. scripts never hang.</p>
 
       <h2 id="install">Installation</h2>
       <p>The CLI ships as a single static binary distributed via npm:</p>
@@ -111,7 +111,7 @@ arcis update --check   <span class="c"># CI mode: exit 1 if outdated</span></cod
 arcis --version</code></pre>
       <p>No Python required. The binary works on Linux (x64 / arm64 musl), macOS (arm64), and Windows (x64).</p>
 
-      <h2 id="sca">arcis sca — Supply Chain Attack Scanner</h2>
+      <h2 id="sca">arcis sca: Supply Chain Attack Scanner</h2>
       <p>Detects compromised packages from known supply chain attacks. Scans your project's lockfiles, <code>node_modules</code>, and Python environments for malicious versions and backdoor artifacts.</p>
 
       <h3>Usage</h3>
@@ -141,12 +141,12 @@ arcis sca --list-threats</code></pre>
         <thead><tr><th>Attack</th><th>Versions</th><th>Vector</th></tr></thead>
         <tbody>
           <tr>
-            <td><strong>axios (npm)</strong> — March 2026</td>
+            <td><strong>axios (npm)</strong>. March 2026</td>
             <td>1.14.1, 0.30.4</td>
             <td>Trojanized dependency deploys a RAT via postinstall</td>
           </tr>
           <tr>
-            <td><strong>litellm (PyPI)</strong> — March 2026</td>
+            <td><strong>litellm (PyPI)</strong>. March 2026</td>
             <td>1.82.7, 1.82.8</td>
             <td>Credential harvester with persistent <code>.pth</code> backdoor</td>
           </tr>
@@ -155,8 +155,8 @@ arcis sca --list-threats</code></pre>
 
       <h3>Exit codes</h3>
       <ul>
-        <li><strong>0</strong> — no compromised packages found</li>
-        <li><strong>1</strong> — compromised package detected</li>
+        <li><strong>0</strong>. no compromised packages found</li>
+        <li><strong>1</strong>. compromised package detected</li>
       </ul>
 
       <div class="callout note">
@@ -167,7 +167,7 @@ arcis sca --list-threats</code></pre>
         <p><strong>Did it actually scan?</strong> Green output starts with <code>Scanned N manifest(s): ...</code>. If you see <code>no supported manifests found</code> instead, run from your project root (the directory containing <code>package-lock.json</code>, <code>yarn.lock</code>, <code>requirements.txt</code>, etc.) or pass <code>--system</code> to scan installed packages.</p>
       </div>
 
-      <h2 id="audit">arcis audit — Static Analysis</h2>
+      <h2 id="audit">arcis audit: Static Analysis</h2>
       <p>Scans your source code for dangerous patterns: unsafe functions, weak crypto, user-controlled paths, unsafe deserializers.</p>
 
       <h3>Usage</h3>
@@ -211,12 +211,12 @@ arcis audit /path/to/project --format json</code></pre>
         <p><strong>Did it actually scan?</strong> Green output starts with <code>Scanned N file(s) [N python, N typescript] against 14 rule(s).</code> If you see <code>no scannable files found</code> instead, point at a directory containing <code>.py</code>/<code>.js</code>/<code>.ts</code> files. Use <code>--language python</code> to narrow scope when a project mixes languages.</p>
       </div>
 
-      <h2 id="scan">arcis scan — Vulnerability Scanner</h2>
+      <h2 id="scan">arcis scan: Vulnerability Scanner</h2>
       <p>Sends live attack payloads to your running application and reports which ones get through.</p>
 
       <h3>Usage</h3>
 <pre><code><span class="c"># Scan a specific endpoint (the bare URL form scans POST / and</span>
-<span class="c"># will 404 on most apps — pass --route for real endpoints)</span>
+<span class="c"># will 404 on most apps. pass --route for real endpoints)</span>
 arcis scan http://localhost:8000 --route POST:/api/login --field username --field password
 
 <span class="c"># Scan multiple endpoints at once</span>
@@ -240,7 +240,7 @@ arcis scan http://localhost:8000 --route POST:/echo --field q --thorough</code><
       </div>
 
       <h3>How to read the output</h3>
-      <p>With Arcis middleware running with <code>block: true</code>, every payload should come back as <code>403</code> — that's the success signal. Each row in the report shows the category, payload, status, and whether Arcis blocked or sanitized it.</p>
+      <p>With Arcis middleware running with <code>block: true</code>, every payload should come back as <code>403</code>. that's the success signal. Each row in the report shows the category, payload, status, and whether Arcis blocked or sanitized it.</p>
 
       <h2 id="ci">Using in CI/CD</h2>
       <p>Arcis CLI tools return exit code 1 on findings, making them easy to add to CI pipelines.</p>
@@ -292,8 +292,8 @@ arcis scan http://localhost:8000 --route POST:/echo --field q --thorough</code><
           <div class="footer-col">
             <h4>SDKs</h4>
             <ul>
-              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm &mdash; @arcis/node</a></li>
-              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI &mdash; arcis</a></li>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li>
               <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
             </ul>
           </div>
