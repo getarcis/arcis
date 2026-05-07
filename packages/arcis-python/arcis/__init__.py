@@ -134,6 +134,10 @@ from .sanitizers import (
     encode_for_js,
     encode_for_url,
     encode_for_css,
+    detect_prompt_injection,
+    sanitize_prompt_injection,
+    PromptInjectionMatch,
+    DetectPromptInjectionResult,
 )
 
 from .validation.email import (

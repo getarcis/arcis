@@ -67,6 +67,15 @@ export { sanitizeCommand, detectCommandInjection } from './sanitizers/command';
 export { sanitizeSsti, detectSsti } from './sanitizers/ssti';
 export { sanitizeXxe, detectXxe } from './sanitizers/xxe';
 export { sanitizeJsonpCallback, detectJsonpInjection } from './sanitizers/jsonp';
+export {
+  detectPromptInjection,
+  sanitizePromptInjection,
+} from './sanitizers/prompt-injection';
+export type {
+  DetectPromptInjectionResult,
+  PromptInjectionMatch,
+  PromptInjectionSeverity,
+} from './sanitizers/prompt-injection';
 export { isDangerousNoSqlKey, detectNoSqlInjection } from './sanitizers/nosql';
 export { isDangerousProtoKey, detectPrototypePollution } from './sanitizers/prototype';
 export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './sanitizers/headers';

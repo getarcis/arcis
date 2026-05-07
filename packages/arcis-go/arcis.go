@@ -112,6 +112,16 @@ type PiiMatch = sanitizers.PiiMatch
 type PiiScanOptions = sanitizers.PiiScanOptions
 type PiiRedactOptions = sanitizers.PiiRedactOptions
 
+// Prompt-injection types
+type PromptInjectionMatch = sanitizers.PromptInjectionMatch
+type PromptInjectionResult = sanitizers.PromptInjectionResult
+type PromptInjectionSeverity = sanitizers.PromptInjectionSeverity
+
+var (
+	DetectPromptInjection   = sanitizers.DetectPromptInjection
+	SanitizePromptInjection = sanitizers.SanitizePromptInjection
+)
+
 // Email validation types
 type EmailValidationResult = validation.EmailValidationResult
 type EmailValidationOptions = validation.EmailValidationOptions
