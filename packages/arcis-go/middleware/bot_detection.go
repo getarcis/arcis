@@ -1,8 +1,11 @@
 package middleware
 
 import (
+	_ "embed"
+	"encoding/json"
 	"math"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -40,106 +43,74 @@ type BotProtectionOptions struct {
 
 const maxUALength = 2048
 
+// botPatternsJSON is the slim runtime corpus, embedded at build time from
+// arcis/packages/arcis-go/data/bot_patterns.json. Regenerate that file via
+// `python packages/core/generate-bot-patterns.py` after upgrading the source
+// arcjet/well-known-bots checkout.
+//
+//go:embed data/bot_patterns.json
+var botPatternsJSON []byte
+
 type botPattern struct {
-	pattern  string
-	name     string
-	category BotCategory
+	id        string
+	name      string
+	category  BotCategory
+	accepted  []*regexp.Regexp
+	forbidden []*regexp.Regexp
 }
 
-var botPatterns = []botPattern{
-	// Search engines (specific variants first)
-	{"googlebot-image", "Googlebot-Image", BotCategorySearchEngine},
-	{"googlebot-video", "Googlebot-Video", BotCategorySearchEngine},
-	{"googlebot-news", "Googlebot-News", BotCategorySearchEngine},
-	{"googlebot", "Googlebot", BotCategorySearchEngine},
-	{"adsbot-google", "AdsBot-Google", BotCategorySearchEngine},
-	{"mediapartners-google", "Mediapartners-Google", BotCategorySearchEngine},
-	{"bingbot", "Bingbot", BotCategorySearchEngine},
-	{"msnbot", "msnbot", BotCategorySearchEngine},
-	{"slurp", "Yahoo Slurp", BotCategorySearchEngine},
-	{"duckduckbot", "DuckDuckBot", BotCategorySearchEngine},
-	{"baiduspider", "Baiduspider", BotCategorySearchEngine},
-	{"yandexbot", "YandexBot", BotCategorySearchEngine},
-	{"yandeximages", "YandexImages", BotCategorySearchEngine},
-	{"sogou", "Sogou", BotCategorySearchEngine},
-	{"exabot", "Exabot", BotCategorySearchEngine},
-	{"ia_archiver", "Alexa", BotCategorySearchEngine},
-	{"applebot", "Applebot", BotCategorySearchEngine},
-	{"qwantify", "Qwantify", BotCategorySearchEngine},
-	{"petalbot", "PetalBot", BotCategorySearchEngine},
-	{"seznambot", "SeznamBot", BotCategorySearchEngine},
+type botPatternRaw struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Category  string   `json:"category"`
+	Patterns  []string `json:"patterns"`
+	Forbidden []string `json:"forbidden"`
+}
 
-	// Social
-	{"twitterbot", "Twitterbot", BotCategorySocial},
-	{"facebookexternalhit", "Facebook", BotCategorySocial},
-	{"facebot", "Facebot", BotCategorySocial},
-	{"linkedinbot", "LinkedInBot", BotCategorySocial},
-	{"pinterest", "Pinterest", BotCategorySocial},
-	{"slackbot", "Slackbot", BotCategorySocial},
-	{"telegrambot", "TelegramBot", BotCategorySocial},
-	{"whatsapp", "WhatsApp", BotCategorySocial},
-	{"discordbot", "Discordbot", BotCategorySocial},
-	{"redditbot", "Redditbot", BotCategorySocial},
-	{"embedly", "Embedly", BotCategorySocial},
-	{"quora", "Quora", BotCategorySocial},
-	{"mastodon", "Mastodon", BotCategorySocial},
+// botPatterns is populated once at package init from the embedded JSON.
+// ALL accepted patterns must match (multi-pattern entries like iMessage
+// Preview only fire when every token is in the UA) and any forbidden
+// pattern matching disqualifies the entry. `(?i)` prefix makes each regex
+// case-insensitive — matches the Node + Python SDKs' contract.
+var botPatterns []botPattern
 
-	// Monitoring
-	{"uptimerobot", "UptimeRobot", BotCategoryMonitoring},
-	{"pingdom", "Pingdom", BotCategoryMonitoring},
-	{"site24x7", "Site24x7", BotCategoryMonitoring},
-	{"statuscake", "StatusCake", BotCategoryMonitoring},
-	{"datadog", "Datadog", BotCategoryMonitoring},
-	{"newrelicpinger", "New Relic", BotCategoryMonitoring},
-	{"better uptime", "Better Uptime", BotCategoryMonitoring},
-	{"gtmetrix", "GTmetrix", BotCategoryMonitoring},
-	{"pagespeed", "PageSpeed Insights", BotCategoryMonitoring},
-
-	// AI crawlers
-	{"gptbot", "GPTBot", BotCategoryAICrawler},
-	{"chatgpt-user", "ChatGPT-User", BotCategoryAICrawler},
-	{"claude-web", "Claude-Web", BotCategoryAICrawler},
-	{"claudebot", "ClaudeBot", BotCategoryAICrawler},
-	{"anthropic-ai", "Anthropic", BotCategoryAICrawler},
-	{"bytespider", "Bytespider", BotCategoryAICrawler},
-	{"ccbot", "CCBot", BotCategoryAICrawler},
-	{"cohere-ai", "Cohere", BotCategoryAICrawler},
-	{"perplexitybot", "PerplexityBot", BotCategoryAICrawler},
-	{"youbot", "YouBot", BotCategoryAICrawler},
-	{"google-extended", "Google-Extended", BotCategoryAICrawler},
-	{"diffbot", "Diffbot", BotCategoryAICrawler},
-	{"amazonbot", "Amazonbot", BotCategoryAICrawler},
-	{"meta-externalagent", "Meta AI", BotCategoryAICrawler},
-
-	// Automated (headless browsers / testing)
-	{"headlesschrome", "HeadlessChrome", BotCategoryAutomated},
-	{"phantomjs", "PhantomJS", BotCategoryAutomated},
-	{"selenium", "Selenium", BotCategoryAutomated},
-	{"puppeteer", "Puppeteer", BotCategoryAutomated},
-	{"playwright", "Playwright", BotCategoryAutomated},
-	{"cypress", "Cypress", BotCategoryAutomated},
-	{"webdriver", "WebDriver", BotCategoryAutomated},
-	{"msie 6.0", "Fake IE6", BotCategoryAutomated},
-
-	// Scrapers / HTTP clients
-	{"curl", "curl", BotCategoryScraper},
-	{"wget", "wget", BotCategoryScraper},
-	{"python-requests", "python-requests", BotCategoryScraper},
-	{"python-httpx", "python-httpx", BotCategoryScraper},
-	{"python-urllib", "Python-urllib", BotCategoryScraper},
-	{"aiohttp", "aiohttp", BotCategoryScraper},
-	{"go-http-client", "Go-http-client", BotCategoryScraper},
-	{"java httpclient", "Java HttpClient", BotCategoryScraper},
-	{"apache-httpclient", "Apache-HttpClient", BotCategoryScraper},
-	{"okhttp", "OkHttp", BotCategoryScraper},
-	{"node-fetch", "node-fetch", BotCategoryScraper},
-	{"axios", "axios", BotCategoryScraper},
-	{"got", "got", BotCategoryScraper},
-	{"libwww-perl", "libwww-perl", BotCategoryScraper},
-	{"scrapy", "Scrapy", BotCategoryScraper},
-	{"postman", "Postman", BotCategoryScraper},
-	{"insomnia", "Insomnia", BotCategoryScraper},
-	{"httpie", "HTTPie", BotCategoryScraper},
+func init() {
+	var raw []botPatternRaw
+	if err := json.Unmarshal(botPatternsJSON, &raw); err != nil {
+		// The data file ships with the package and is generated by our own
+		// tooling. A parse failure here is a build-time bug, not a runtime
+		// concern — leave botPatterns empty so DetectBot still functions.
+		return
+	}
+	out := make([]botPattern, 0, len(raw))
+	for _, e := range raw {
+		entry := botPattern{
+			id:       e.ID,
+			name:     e.Name,
+			category: BotCategory(e.Category),
+		}
+		ok := true
+		for _, src := range e.Patterns {
+			re, err := regexp.Compile("(?i)" + src)
+			if err != nil {
+				ok = false
+				break
+			}
+			entry.accepted = append(entry.accepted, re)
+		}
+		if !ok {
+			continue
+		}
+		for _, src := range e.Forbidden {
+			re, err := regexp.Compile("(?i)" + src)
+			if err != nil {
+				continue
+			}
+			entry.forbidden = append(entry.forbidden, re)
+		}
+		out = append(out, entry)
+	}
+	botPatterns = out
 }
 
 // DetectBot analyzes a request to determine if it's from a bot.
@@ -151,18 +122,37 @@ func DetectBot(r *http.Request) BotDetectionResult {
 		ua = ua[:maxUALength]
 	}
 
-	uaLower := strings.ToLower(ua)
-
-	// 1. Pattern matching
+	// 1. Pattern matching: ALL accepted regexes must match, none forbidden.
 	for _, p := range botPatterns {
-		if strings.Contains(uaLower, p.pattern) {
-			return BotDetectionResult{
-				IsBot:      true,
-				Category:   p.category,
-				Name:       p.name,
-				Confidence: 0.95,
-				Signals:    []string{"user_agent_match"},
+		if len(p.accepted) == 0 {
+			continue
+		}
+		allMatched := true
+		for _, re := range p.accepted {
+			if !re.MatchString(ua) {
+				allMatched = false
+				break
 			}
+		}
+		if !allMatched {
+			continue
+		}
+		forbidden := false
+		for _, re := range p.forbidden {
+			if re.MatchString(ua) {
+				forbidden = true
+				break
+			}
+		}
+		if forbidden {
+			continue
+		}
+		return BotDetectionResult{
+			IsBot:      true,
+			Category:   p.category,
+			Name:       p.name,
+			Confidence: 0.95,
+			Signals:    []string{"user_agent_match"},
 		}
 	}
 

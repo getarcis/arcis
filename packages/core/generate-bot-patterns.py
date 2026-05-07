@@ -26,7 +26,7 @@ DEST = ROOT / "bot-patterns.json"
 SDK_DESTS = [
     REPO / "packages" / "arcis-node" / "src" / "data" / "bot-patterns.json",
     REPO / "packages" / "arcis-python" / "arcis" / "data" / "bot_patterns.json",
-    REPO / "packages" / "arcis-go" / "data" / "bot_patterns.json",
+    REPO / "packages" / "arcis-go" / "middleware" / "data" / "bot_patterns.json",
 ]
 
 # Supplementary patterns not in arcjet/well-known-bots (browser automation
@@ -51,6 +51,10 @@ SUPPLEMENTARY = [
     # AI crawler UAs Arcjet's `anthropic-crawler` (which matches Claude*) does
     # not catch — these match the literal token strings used by Anthropic and
     # Meta's external scrapers in the wild.
+    # Loose YandexBot fallback. Arcjet's official `yandex\\.com\\/bots` only
+    # matches when the UA includes the URL — minimal test UAs and some legit
+    # variants (e.g. `YandexBot/3.0` without the URL) wouldn't match otherwise.
+    {"id": "yandex-loose",        "category": "SEARCH_ENGINE", "name": "YandexBot",  "patterns": ["YandexBot"],         "forbidden": []},
     {"id": "anthropic-ai-token",  "category": "AI_CRAWLER", "name": "Anthropic",       "patterns": ["anthropic-ai"],          "forbidden": []},
     {"id": "meta-externalagent",  "category": "AI_CRAWLER", "name": "Meta AI",         "patterns": ["meta-externalagent"],    "forbidden": []},
     # Loose Postman fallback — Arcjet's `PostmanRuntime\\/` is correct for the
@@ -116,6 +120,9 @@ ID_CATEGORY_OVERRIDES = {
 # `wget`, and `axios` keep their canonical lowercase form.
 NAME_OVERRIDES = {
     "google-crawler": "Googlebot",
+    "google-crawler-image": "Googlebot-Image",
+    "google-crawler-video": "Googlebot-Video",
+    "google-crawler-news": "Googlebot-News",
     "bing-crawler": "Bingbot",
     "baidu-crawler": "Baiduspider",
     "twitter-crawler": "Twitterbot",

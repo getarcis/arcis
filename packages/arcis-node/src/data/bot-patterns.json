@@ -1919,7 +1919,7 @@
   {
     "id": "google-crawler-image",
     "category": "SEARCH_ENGINE",
-    "name": "GoogleBotImage",
+    "name": "Googlebot-Image",
     "patterns": [
       "Googlebot-Image"
     ],
@@ -1937,7 +1937,7 @@
   {
     "id": "google-crawler-news",
     "category": "SEARCH_ENGINE",
-    "name": "google-crawler-news",
+    "name": "Googlebot-News",
     "patterns": [
       "Googlebot-News"
     ],
@@ -1973,7 +1973,7 @@
   {
     "id": "google-crawler-video",
     "category": "SEARCH_ENGINE",
-    "name": "google-crawler-video",
+    "name": "Googlebot-Video",
     "patterns": [
       "Googlebot-Video"
     ],
@@ -2408,6 +2408,15 @@
     "name": "yandex-crawler-javascript",
     "patterns": [
       "YandexRenderResourcesBot\\/"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "yandex-loose",
+    "category": "SEARCH_ENGINE",
+    "name": "YandexBot",
+    "patterns": [
+      "YandexBot"
     ],
     "forbidden": []
   },
