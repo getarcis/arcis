@@ -106,11 +106,19 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                 args.timeout = n;
             }
             "--categories" | "-c" => {
-                // nargs+: consume args until the next flag.
+                // Accept either nargs+ (space-separated, `--categories xss
+                // sql path`) or comma-separated (`--categories xss,sql,path`)
+                // or a mix of both. Each consumed token is split on `,`,
+                // trimmed, and empty pieces (from a stray comma) are dropped.
                 let mut cats: Vec<String> = Vec::new();
                 while i + 1 < argv.len() && !argv[i + 1].starts_with('-') {
                     i += 1;
-                    cats.push(argv[i].clone());
+                    for piece in argv[i].split(',') {
+                        let p = piece.trim();
+                        if !p.is_empty() {
+                            cats.push(p.to_string());
+                        }
+                    }
                 }
                 if cats.is_empty() {
                     return ParseOutcome::Err(
@@ -224,11 +232,11 @@ fn print_help(out: &mut dyn Write) -> io::Result<()> {
     )?;
     writeln!(
         out,
-        "  -c, --categories CAT [CAT..] Attack categories (default: all)."
+        "  -c, --categories CAT[,CAT..] Attack categories. Comma- or space-separated."
     )?;
     writeln!(
         out,
-        "                               Choices: {}",
+        "                               (default: all). Choices: {}",
         names.join(", ")
     )?;
     writeln!(
@@ -629,6 +637,27 @@ mod tests {
         let a = args(&["-c", "xss", "sql", "--yes"]);
         assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql"]);
         assert!(a.yes);
+    }
+
+    #[test]
+    fn parses_categories_comma_separated() {
+        let a = args(&["-c", "xss,sql,path"]);
+        assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql", "path"]);
+    }
+
+    #[test]
+    fn parses_categories_mixed_comma_and_space() {
+        let a = args(&["--categories", "xss,sql", "path", "nosql, cmd"]);
+        assert_eq!(
+            a.categories.as_deref().unwrap(),
+            &["xss", "sql", "path", "nosql", "cmd"]
+        );
+    }
+
+    #[test]
+    fn categories_drops_empty_comma_pieces() {
+        let a = args(&["-c", "xss,,sql,"]);
+        assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql"]);
     }
 
     #[test]
