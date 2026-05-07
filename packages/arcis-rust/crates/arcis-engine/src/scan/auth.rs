@@ -23,12 +23,16 @@
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, COOKIE};
 use serde_json::{Map, Value};
 
+use super::login::LoginConfig;
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum AuthError {
     #[error("--bearer cannot be empty or whitespace-only")]
     EmptyBearer,
     #[error("--cookie cannot be empty or whitespace-only")]
     EmptyCookie,
+    #[error("--login cannot be empty or whitespace-only")]
+    EmptyLogin,
 }
 
 /// Auth state attached to a scan run. Carried through
@@ -39,11 +43,18 @@ pub enum AuthError {
 /// dev tools, joins multi-cookie with `; ` themselves. We do not parse
 /// `name=value` pairs, dedupe, or validate beyond non-empty — keeps
 /// the surface tiny and lets the user control formatting end-to-end.
+///
+/// `login` is populated when the run was authed via `--login`. After
+/// [`super::login::execute_login`] runs, the captured artifact lands in
+/// `bearer` OR `cookie`, AND `login` stays populated as a "this run
+/// authed via login" marker — so [`AuthConfig::redact_for_json`] can
+/// report `methods=["login"]` instead of leaking which artifact type
+/// was captured.
 #[derive(Debug, Clone, Default)]
 pub struct AuthConfig {
     pub bearer: Option<String>,
     pub cookie: Option<String>,
-    // commit #4 will add: pub login: Option<LoginArtifact>
+    pub login: Option<LoginConfig>,
 }
 
 impl AuthConfig {
@@ -100,30 +111,41 @@ impl AuthConfig {
 
     /// Render auth metadata for `--json` run headers.
     ///
-    /// **Schema:** `{"methods": [<name>, ...]}` where each entry is one
-    /// of `"bearer"`, `"cookie"`, `"login"`. Always an array (even for
-    /// a single method) so downstream parsers don't switch on type.
-    /// Order is stable and alphabetical (`bearer` < `cookie` < `login`).
+    /// **Locked schema.** This method produces exactly ONE of:
     ///
-    /// **Redaction contract:** NEVER emits the token value, cookie
-    /// value, or login password — only method names. Future flags MUST
-    /// extend this method rather than bypass it. The redaction is
-    /// enforced by tests that fail if a unique sentinel token / cookie
-    /// literal appears in the serialized output.
+    /// - `{"methods": ["login"]}`               — when login is set
+    /// - `{"methods": ["bearer"]}`              — bearer only
+    /// - `{"methods": ["cookie"]}`              — cookie only
+    /// - `{"methods": ["bearer", "cookie"]}`    — both manual flags
+    /// - `None`                                 — no auth configured
     ///
-    /// Returns `None` when no auth is configured so the renderer can
-    /// omit the key entirely (preserves byte-parity with prior
-    /// unauthenticated JSON).
+    /// No additional keys. No `loginUrl`, no `origin`, no provenance
+    /// fields. When `login` is set, `methods` reports `["login"]` and
+    /// the captured-artifact channel (bearer or cookie) is NOT
+    /// reflected in the output — login overrides for reporting purposes.
+    ///
+    /// Future auth flags MUST extend the `methods` array AND add a
+    /// bullet to the enumeration above — never add sibling keys.
+    /// Adding a key requires a deliberate schema bump.
+    ///
+    /// **Redaction contract:** NEVER emits token values, cookie values,
+    /// or login form values. Tests assert that unique sentinel literals
+    /// for each kind do not appear in the serialized output.
     pub fn redact_for_json(&self) -> Option<Value> {
-        // Insert in alphabetical order — keeps the output deterministic
-        // without an explicit sort. When `login` lands in commit #4,
-        // append after `cookie` to maintain ordering.
         let mut methods: Vec<Value> = Vec::new();
-        if self.bearer.is_some() {
-            methods.push(Value::String("bearer".into()));
-        }
-        if self.cookie.is_some() {
-            methods.push(Value::String("cookie".into()));
+        if self.login.is_some() {
+            // Login overrides — defensive even if bearer/cookie are
+            // also populated by execute_login's captured artifact, the
+            // user-visible method is "login". Don't leak provenance.
+            methods.push(Value::String("login".into()));
+        } else {
+            // Manual flags: alphabetical order, deterministic.
+            if self.bearer.is_some() {
+                methods.push(Value::String("bearer".into()));
+            }
+            if self.cookie.is_some() {
+                methods.push(Value::String("cookie".into()));
+            }
         }
         if methods.is_empty() {
             return None;
@@ -231,6 +253,7 @@ mod tests {
         let cfg = AuthConfig {
             bearer: Some("token-foo".into()),
             cookie: Some("session=abc".into()),
+            ..Default::default()
         };
         let headers = cfg.to_header_map();
         assert_eq!(
@@ -286,6 +309,7 @@ mod tests {
         let cfg = AuthConfig {
             bearer: Some(TEST_BEARER_TOKEN.into()),
             cookie: Some(TEST_COOKIE_VALUE.into()),
+            ..Default::default()
         };
         let v = cfg.redact_for_json().unwrap();
         let s = serde_json::to_string(&v).unwrap();
@@ -311,22 +335,105 @@ mod tests {
 
     #[test]
     fn auth_error_messages_share_a_consistent_template() {
-        // Pin the error-message contract: every variant should be
-        // "<flag> cannot be empty or whitespace-only". When `--login`
-        // lands in commit #4, its `EmptyLogin` (or similar) variant
+        // Pin the error-message contract: every variant must be
+        // "<flag> cannot be empty or whitespace-only". Future flags
         // must satisfy the same template — keeps user-facing error
         // strings predictable across the auth surface.
         let bearer_msg = AuthError::EmptyBearer.to_string();
         let cookie_msg = AuthError::EmptyCookie.to_string();
+        let login_msg = AuthError::EmptyLogin.to_string();
         let suffix = " cannot be empty or whitespace-only";
-        assert!(bearer_msg.ends_with(suffix), "bearer message: {bearer_msg}");
-        assert!(cookie_msg.ends_with(suffix), "cookie message: {cookie_msg}");
-        assert!(bearer_msg.starts_with("--bearer"), "got: {bearer_msg}");
-        assert!(cookie_msg.starts_with("--cookie"), "got: {cookie_msg}");
-        // Same suffix length: messages differ ONLY in the flag name.
-        let bearer_prefix = bearer_msg.strip_suffix(suffix).unwrap();
-        let cookie_prefix = cookie_msg.strip_suffix(suffix).unwrap();
-        assert_eq!(bearer_prefix, "--bearer");
-        assert_eq!(cookie_prefix, "--cookie");
+        for (label, msg) in [
+            ("bearer", &bearer_msg),
+            ("cookie", &cookie_msg),
+            ("login", &login_msg),
+        ] {
+            assert!(msg.ends_with(suffix), "{label} message: {msg}");
+        }
+        assert_eq!(bearer_msg.strip_suffix(suffix).unwrap(), "--bearer");
+        assert_eq!(cookie_msg.strip_suffix(suffix).unwrap(), "--cookie");
+        assert_eq!(login_msg.strip_suffix(suffix).unwrap(), "--login");
+    }
+
+    /// Sentinel for form-value redaction. Used by the login-redaction
+    /// tests below to prove form values (and keys, by side-effect of
+    /// the no-emit policy) never reach `redact_for_json`'s output.
+    const TEST_LOGIN_PASSWORD: &str = "arcis-test-pass-FACEFEED-3b8d2e";
+
+    fn login_with_sentinel_password() -> LoginConfig {
+        LoginConfig {
+            url: "http://localhost:5000/auth/login".into(),
+            form: vec![
+                ("user".into(), "admin".into()),
+                ("password".into(), TEST_LOGIN_PASSWORD.into()),
+            ],
+            json: false,
+        }
+    }
+
+    #[test]
+    fn redact_for_json_login_only_emits_methods_array_with_login() {
+        let cfg = AuthConfig {
+            login: Some(login_with_sentinel_password()),
+            ..Default::default()
+        };
+        let v = cfg.redact_for_json().unwrap();
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"methods":["login"]}"#);
+    }
+
+    #[test]
+    fn redact_for_json_login_overrides_bearer_and_cookie() {
+        // Defensive: even if execute_login populated bearer or cookie
+        // with the captured artifact, the user-visible auth method is
+        // still "login". The captured-artifact provenance does not
+        // surface in JSON output.
+        let cfg = AuthConfig {
+            bearer: Some(TEST_BEARER_TOKEN.into()),
+            cookie: Some(TEST_COOKIE_VALUE.into()),
+            login: Some(login_with_sentinel_password()),
+        };
+        let v = cfg.redact_for_json().unwrap();
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"methods":["login"]}"#);
+        assert!(
+            !s.contains(TEST_BEARER_TOKEN),
+            "bearer leaked under login override: {s}"
+        );
+        assert!(
+            !s.contains(TEST_COOKIE_VALUE),
+            "cookie leaked under login override: {s}"
+        );
+        assert!(
+            !s.contains(TEST_LOGIN_PASSWORD),
+            "form password leaked: {s}"
+        );
+    }
+
+    #[test]
+    fn redact_for_json_login_does_not_leak_form_values_or_keys_or_url() {
+        // Per locked schema, redact_for_json never serializes the
+        // login form OR the URL. Pin all three: form values must not
+        // appear (redaction), form keys must not appear (no-leak —
+        // "password" as a field name reveals the auth shape), and the
+        // URL must not appear (locked-schema guarantee). If a future
+        // schema bump adds the URL, update this assertion AND the
+        // redact_for_json doc-comment in lockstep.
+        let cfg = AuthConfig {
+            login: Some(login_with_sentinel_password()),
+            ..Default::default()
+        };
+        let v = cfg.redact_for_json().unwrap();
+        let s = serde_json::to_string(&v).unwrap();
+        assert!(
+            !s.contains(TEST_LOGIN_PASSWORD),
+            "form password value leaked: {s}"
+        );
+        assert!(!s.contains("password"), "form key 'password' leaked: {s}");
+        assert!(!s.contains("admin"), "form value 'admin' leaked: {s}");
+        assert!(
+            !s.contains("localhost:5000"),
+            "login URL leaked under locked schema: {s}"
+        );
     }
 }

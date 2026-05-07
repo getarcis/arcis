@@ -19,6 +19,7 @@
 pub mod auth;
 pub mod classifier;
 pub mod discover;
+pub mod login;
 pub mod payloads;
 pub mod probe;
 pub mod repro;
@@ -35,6 +36,7 @@ pub use discover::{
     probe_dev_ports, read_env_files, sniff_framework, DiscoveredRoute, TargetCandidate,
     CONTROL_PLANE_URL, DEV_PORTS, ENV_TARGET_KEYS,
 };
+pub use login::{execute_login, LoginConfig, LoginError};
 pub use payloads::{
     attack_categories, AttackCategory, AttackVector, BLOCKED_STATUS_CODES, DEFAULT_FIELDS,
 };

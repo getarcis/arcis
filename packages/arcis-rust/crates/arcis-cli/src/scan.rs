@@ -993,6 +993,7 @@ mod tests {
         let auth = AuthConfig {
             bearer: Some(TEST_BEARER_TOKEN.into()),
             cookie: Some(TEST_COOKIE_VALUE.into()),
+            ..Default::default()
         };
         let summary = ScanSummary::default();
         let mut buf: Vec<u8> = Vec::new();

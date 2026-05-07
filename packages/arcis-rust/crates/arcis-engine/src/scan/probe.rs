@@ -676,6 +676,7 @@ mod tests {
         let auth = AuthConfig {
             bearer: Some("test-bearer-token-xyz".into()),
             cookie: Some("session=abc; csrf=xyz".into()),
+            ..Default::default()
         };
         let cats = vec!["xss".to_string()];
         let opts = ScanOptions {
