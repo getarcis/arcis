@@ -60,6 +60,11 @@
       "types": "./dist/sveltekit/index.d.ts",
       "import": "./dist/sveltekit/index.mjs",
       "require": "./dist/sveltekit/index.js"
+    },
+    "./astro": {
+      "types": "./dist/astro/index.d.ts",
+      "import": "./dist/astro/index.mjs",
+      "require": "./dist/astro/index.js"
     }
   },
   "files": [

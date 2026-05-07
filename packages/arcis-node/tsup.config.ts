@@ -8,6 +8,7 @@ export default defineConfig({
     'middleware/index': 'src/middleware/index.ts',
     'nestjs/index': 'src/middleware/nestjs.ts',
     'sveltekit/index': 'src/middleware/sveltekit.ts',
+    'astro/index': 'src/middleware/astro.ts',
     'validation/index': 'src/validation/index.ts',
     'logging/index': 'src/logging/index.ts',
     'stores/index': 'src/stores/index.ts',
