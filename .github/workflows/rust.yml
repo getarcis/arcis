@@ -1,24 +1,24 @@
 name: Rust CLI
 
-# Builds the Rust CLI workspace across linux/macos/windows on every push
-# to a Rust-CLI branch and on PRs targeting the integration branches.
-# Each runner runs `cargo fmt --check`, `cargo clippy -D warnings`,
-# `cargo test --workspace --release`, and a release build, then uploads
-# the release binary as an artifact.
+# Cost-tier validation: PR-only, Linux-only.
+# Catches ~95% of compile-time and test issues at minimal runner cost.
+# Cross-platform (linux/macos/windows + arm64) release validation runs
+# in `rust-release.yml` on `cli-v*` tag pushes — that's where binary
+# correctness across OSes truly matters. macOS minutes cost 10x Linux
+# and Windows 2x; running them on every PR is overkill for dev validation.
 
 on:
   pull_request:
-    branches: [nwl, "feat/v1.5"]
+    branches: [nwl]
     paths:
       - "packages/arcis-rust/**"
       - ".github/workflows/rust.yml"
-  push:
-    branches:
-      - "feat/rust-cli"
-      - "feat/rust-cli/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # ─── Build matrix ────────────────────────────────────────────────────
   build:
     name: Build (${{ matrix.os }})
     strategy:
@@ -28,12 +28,6 @@ jobs:
           - os: ubuntu-latest
             artifact: arcis-linux-x86_64
             binary: arcis
-          - os: macos-latest
-            artifact: arcis-macos-arm64
-            binary: arcis
-          - os: windows-latest
-            artifact: arcis-windows-x86_64
-            binary: arcis.exe
     runs-on: ${{ matrix.os }}
     defaults:
       run:
