@@ -55,6 +55,11 @@
       "types": "./dist/nestjs/index.d.ts",
       "import": "./dist/nestjs/index.mjs",
       "require": "./dist/nestjs/index.js"
+    },
+    "./sveltekit": {
+      "types": "./dist/sveltekit/index.d.ts",
+      "import": "./dist/sveltekit/index.mjs",
+      "require": "./dist/sveltekit/index.js"
     }
   },
   "files": [
