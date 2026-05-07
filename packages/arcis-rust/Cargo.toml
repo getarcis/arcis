@@ -44,6 +44,9 @@ tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-
 # needed). `json` enables ergonomic body construction but we mostly hand
 # over raw bytes for parity with http.client output.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Cross-platform home-dir resolution for the OSV cache file at
+# `~/.arcis/osv-cache.json`. cli-sca.md Phase B (designed 2026-05-07).
+dirs = "5.0"
 
 [profile.release]
 # Smaller, faster binary. The tradeoffs (longer compile, no incremental in

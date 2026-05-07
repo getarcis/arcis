@@ -15,6 +15,8 @@
 #![forbid(unsafe_code)]
 
 pub mod audit;
+pub mod osv;
+pub mod osv_cache;
 pub mod sca;
 pub mod scan;
 pub mod threat_db;

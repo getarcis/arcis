@@ -17,9 +17,12 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use regex::Regex;
 
+use crate::osv::{self, OsvVuln};
+use crate::osv_cache::{cache_key, OsvCache, DEFAULT_TTL_SECS};
 use crate::threat_db::{is_compromised, normalize_name, Threat};
 
 /// One finding row. Field-for-field with the Python `Finding` dataclass.
@@ -649,6 +652,392 @@ pub fn scan_project(path: &Path, check_system: bool, threats: &[Threat]) -> Vec<
     unique
 }
 
+// ── OSV augmentation layer ────────────────────────────────────────────────
+//
+// Designed in `documents/plans/cli-sca.md` Phase B (2026-05-07): the
+// embedded threat-db.json stays curated; this layer queries OSV.dev for
+// every package the project pulls in, with a per-user 24h cache at
+// `~/.arcis/osv-cache.json`. Findings from both layers merge in
+// `scan_project_with_osv`, deduplicated by `(package, version, location)`
+// so the embedded entry wins when both layers report the same hit.
+
+/// Flat description of one installed package, used as input to the OSV
+/// query layer. Carries the same `(ecosystem, name, version, location)`
+/// tuple OSV needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageRef {
+    pub ecosystem: String,
+    pub name: String,
+    pub version: String,
+    pub location: String,
+}
+
+/// Walk every supported lockfile under `path` and emit one `PackageRef`
+/// per installed package. The embedded scan iterates threats × packages,
+/// so it doesn't need this list — the OSV layer does, since it queries
+/// each package independently.
+pub fn enumerate_packages(path: &Path) -> Vec<PackageRef> {
+    let mut out = Vec::new();
+    enumerate_package_lock(path, &mut out);
+    enumerate_yarn_lock(path, &mut out);
+    enumerate_requirements(path, &mut out);
+    enumerate_poetry_lock(path, &mut out);
+    enumerate_pipfile_lock(path, &mut out);
+
+    let mut seen: HashSet<(String, String, String)> = HashSet::new();
+    out.retain(|p| {
+        seen.insert((p.ecosystem.clone(), p.name.clone(), p.version.clone()))
+    });
+    out
+}
+
+fn enumerate_package_lock(path: &Path, out: &mut Vec<PackageRef>) {
+    let lockfile = path.join("package-lock.json");
+    if !lockfile.is_file() {
+        return;
+    }
+    let bytes = match fs::read(&lockfile) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let data: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let location = lockfile.display().to_string();
+
+    if let Some(packages) = data.get("packages").and_then(|v| v.as_object()) {
+        for (pkg_path, pkg_info) in packages {
+            let name = match pkg_path.rsplit_once("node_modules/") {
+                Some((_, n)) => n,
+                None => continue,
+            };
+            if name.is_empty() {
+                continue;
+            }
+            let version = pkg_info
+                .get("version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if version.is_empty() {
+                continue;
+            }
+            out.push(PackageRef {
+                ecosystem: "npm".into(),
+                name: name.into(),
+                version: version.into(),
+                location: location.clone(),
+            });
+        }
+    }
+    if let Some(deps) = data.get("dependencies").and_then(|v| v.as_object()) {
+        for (name, info) in deps {
+            let version = info.get("version").and_then(|v| v.as_str()).unwrap_or("");
+            if version.is_empty() {
+                continue;
+            }
+            out.push(PackageRef {
+                ecosystem: "npm".into(),
+                name: name.clone(),
+                version: version.into(),
+                location: location.clone(),
+            });
+        }
+    }
+}
+
+fn enumerate_yarn_lock(path: &Path, out: &mut Vec<PackageRef>) {
+    let lockfile = path.join("yarn.lock");
+    if !lockfile.is_file() {
+        return;
+    }
+    let content = match fs::read_to_string(&lockfile) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let location = lockfile.display().to_string();
+    let block_re = Regex::new(r#""((?:@[^/]+/)?[^"@]+)@[^"]*"\s*[\s\S]*?version\s+"([^"]+)""#)
+        .expect("yarn block regex must compile");
+    for caps in block_re.captures_iter(&content) {
+        out.push(PackageRef {
+            ecosystem: "npm".into(),
+            name: caps[1].to_string(),
+            version: caps[2].to_string(),
+            location: location.clone(),
+        });
+    }
+}
+
+fn enumerate_requirements(path: &Path, out: &mut Vec<PackageRef>) {
+    let req_re = Regex::new(r"^\s*([A-Za-z0-9_.\-]+)\s*(?:\[[^\]]*\])?\s*==\s*([^\s;#]+)")
+        .expect("requirements regex must compile");
+    for fname in REQ_FILES {
+        let req_file = path.join(fname);
+        if !req_file.is_file() {
+            continue;
+        }
+        let content = match fs::read_to_string(&req_file) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let location = req_file.display().to_string();
+        for line in content.lines() {
+            if let Some(caps) = req_re.captures(line) {
+                out.push(PackageRef {
+                    ecosystem: "pypi".into(),
+                    name: caps[1].to_string(),
+                    version: caps[2].trim().to_string(),
+                    location: location.clone(),
+                });
+            }
+        }
+    }
+}
+
+fn enumerate_poetry_lock(path: &Path, out: &mut Vec<PackageRef>) {
+    let lockfile = path.join("poetry.lock");
+    if !lockfile.is_file() {
+        return;
+    }
+    let content = match fs::read_to_string(&lockfile) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let location = lockfile.display().to_string();
+    let block_re = Regex::new(
+        r#"\[\[package\]\][\s\S]*?name\s*=\s*"([^"]+)"[\s\S]*?version\s*=\s*"([^"]+)""#,
+    )
+    .expect("poetry block regex must compile");
+    for caps in block_re.captures_iter(&content) {
+        out.push(PackageRef {
+            ecosystem: "pypi".into(),
+            name: caps[1].to_string(),
+            version: caps[2].to_string(),
+            location: location.clone(),
+        });
+    }
+}
+
+fn enumerate_pipfile_lock(path: &Path, out: &mut Vec<PackageRef>) {
+    let lockfile = path.join("Pipfile.lock");
+    if !lockfile.is_file() {
+        return;
+    }
+    let bytes = match fs::read(&lockfile) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let data: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let location = lockfile.display().to_string();
+    for section in ["default", "develop"] {
+        let pkgs = match data.get(section).and_then(|v| v.as_object()) {
+            Some(o) => o,
+            None => continue,
+        };
+        for (raw_name, info) in pkgs {
+            let raw_ver = info.get("version").and_then(|v| v.as_str()).unwrap_or("");
+            let version = raw_ver.trim_start_matches('=').to_string();
+            if version.is_empty() {
+                continue;
+            }
+            out.push(PackageRef {
+                ecosystem: "pypi".into(),
+                name: raw_name.clone(),
+                version,
+                location: location.clone(),
+            });
+        }
+    }
+}
+
+/// Adapter: turn one OSV vuln + the package it was queried for into a
+/// `Finding` row that renders identically to embedded-DB findings. The
+/// `source` field carries `osv:<id>` so the renderer can attribute the
+/// row to OSV; `attack_vector` reuses the OSV `summary` so the user
+/// gets a one-line reason without paging out to the URL.
+pub fn osv_to_finding(pkg: &PackageRef, vuln: &OsvVuln) -> Finding {
+    let severity = osv::rank_severity(&vuln.severity);
+    let attack_vector = if vuln.summary.is_empty() {
+        format!("OSV advisory {} (no summary).", vuln.id)
+    } else {
+        vuln.summary.clone()
+    };
+    let references: Vec<String> = vuln
+        .references
+        .iter()
+        .map(|r| r.url.clone())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    Finding {
+        package: pkg.name.clone(),
+        ecosystem: pkg.ecosystem.clone(),
+        version: pkg.version.clone(),
+        severity: severity.to_string(),
+        location: pkg.location.clone(),
+        attack_vector,
+        remediation: format!(
+            "Review advisory {} and upgrade to a non-affected version.",
+            vuln.id
+        ),
+        source: format!("osv:{}", vuln.id),
+        references,
+        finding_type: FindingType::CompromisedVersion,
+    }
+}
+
+/// Caller-supplied options for the OSV augmentation layer.
+#[derive(Debug, Clone)]
+pub struct OsvOptions {
+    /// Where to read/write the cache. None disables persistence — the
+    /// run still queries OSV but nothing is stored across invocations.
+    pub cache_path: Option<PathBuf>,
+    /// When false, ignore any cached answers and refetch (`--no-cache`).
+    pub use_cache: bool,
+    /// When true, ONLY consult the cache — never hit the network. Used
+    /// by tests and by ergonomics paths where the user wants no network
+    /// I/O at all but still wants OSV-curated entries from a previous
+    /// fresh run.
+    pub offline: bool,
+    /// Per-request HTTP timeout. The CLI defaults to 5s.
+    pub timeout: Duration,
+}
+
+impl Default for OsvOptions {
+    fn default() -> Self {
+        Self {
+            cache_path: OsvCache::default_path(),
+            use_cache: true,
+            offline: false,
+            timeout: Duration::from_secs(5),
+        }
+    }
+}
+
+/// Run the embedded scanner first, then augment with OSV findings if the
+/// caller requests it. Returns the merged + deduplicated finding list.
+///
+/// Deduplication key is `(package, version, location)` — same as the
+/// embedded scanner — so when both layers find the same hit the embedded
+/// entry wins (it has the better-curated `attack_vector` + `remediation`
+/// strings). Pure OSV-only hits flow through unchanged.
+pub fn scan_project_with_osv(
+    path: &Path,
+    check_system: bool,
+    threats: &[Threat],
+    osv_opts: &OsvOptions,
+) -> Vec<Finding> {
+    let mut findings = scan_project(path, check_system, threats);
+
+    let packages = enumerate_packages(path);
+    let osv_findings = augment_with_osv(&packages, osv_opts);
+    findings.extend(osv_findings);
+
+    let mut seen: HashSet<(String, String, String)> = HashSet::new();
+    let mut unique = Vec::with_capacity(findings.len());
+    for f in findings {
+        let key = (f.package.clone(), f.version.clone(), f.location.clone());
+        if seen.insert(key) {
+            unique.push(f);
+        }
+    }
+    unique
+}
+
+/// Resolve OSV vulns for every `PackageRef` and convert the responses
+/// into `Finding`s. Public so tests + alternate front-ends (e.g. the
+/// future SARIF emitter) can reuse the same plumbing without touching
+/// `scan_project_with_osv`.
+pub fn augment_with_osv(packages: &[PackageRef], opts: &OsvOptions) -> Vec<Finding> {
+    if packages.is_empty() {
+        return Vec::new();
+    }
+
+    let mut cache = match (&opts.cache_path, opts.use_cache) {
+        (Some(p), true) => OsvCache::load(p),
+        _ => OsvCache::empty(),
+    };
+
+    // Offline mode: cache-only, no network, no runtime.
+    if opts.offline {
+        return packages
+            .iter()
+            .filter_map(|pkg| {
+                let key = cache_key(&pkg.ecosystem, &pkg.name, &pkg.version);
+                let vulns = cache.get(&key, DEFAULT_TTL_SECS)?.to_vec();
+                Some(
+                    vulns
+                        .iter()
+                        .map(|v| osv_to_finding(pkg, v))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten()
+            .collect();
+    }
+
+    // Online mode: build a single-thread tokio runtime + reqwest client
+    // for the duration of the augmentation pass. We don't need the
+    // multi-thread runtime that `arcis scan` uses — OSV serializes
+    // surprisingly well, and most users have <50 packages to query.
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(_) => return Vec::new(),
+    };
+
+    let timeout = opts.timeout;
+    let use_cache = opts.use_cache;
+    let mut findings: Vec<Finding> = Vec::new();
+
+    runtime.block_on(async {
+        let client = match reqwest::Client::builder().build() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        for pkg in packages {
+            let key = cache_key(&pkg.ecosystem, &pkg.name, &pkg.version);
+
+            // Cache hit short-circuits the network call entirely.
+            if use_cache {
+                if let Some(cached) = cache.get(&key, DEFAULT_TTL_SECS) {
+                    for v in cached {
+                        findings.push(osv_to_finding(pkg, v));
+                    }
+                    continue;
+                }
+            }
+
+            let vulns: Vec<OsvVuln> =
+                match osv::query(&client, &pkg.ecosystem, &pkg.name, &pkg.version, timeout).await
+                {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+
+            for v in &vulns {
+                findings.push(osv_to_finding(pkg, v));
+            }
+            if use_cache {
+                cache.put(key, vulns);
+            }
+        }
+    });
+
+    if let (Some(p), true) = (&opts.cache_path, opts.use_cache) {
+        cache.prune_stale(DEFAULT_TTL_SECS);
+        let _ = cache.save(p);
+    }
+
+    findings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -800,5 +1189,291 @@ mod tests {
             1,
             "duplicate (pkg, ver, loc) should be deduped"
         );
+    }
+
+    // ── OSV layer tests ───────────────────────────────────────────────────
+
+    use crate::osv::{OsvReference, OsvSeverity, OsvVuln};
+    use crate::osv_cache::{cache_key, CacheEntry, OsvCache, DEFAULT_TTL_SECS};
+
+    fn osv_vuln(id: &str, summary: &str, score: Option<&str>) -> OsvVuln {
+        OsvVuln {
+            id: id.into(),
+            summary: summary.into(),
+            severity: score
+                .map(|s| OsvSeverity {
+                    kind: "CVSS_V3".into(),
+                    score: s.into(),
+                })
+                .into_iter()
+                .collect(),
+            references: vec![OsvReference {
+                kind: "WEB".into(),
+                url: format!("https://github.com/advisories/{id}"),
+            }],
+        }
+    }
+
+    #[test]
+    fn enumerate_packages_walks_lockfile_v3() {
+        let dir = tempdir();
+        let body = r#"{
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name":"root"},
+                "node_modules/axios": {"version": "1.14.1"},
+                "node_modules/lodash": {"version": "4.17.21"}
+            }
+        }"#;
+        fs::write(dir.path().join("package-lock.json"), body).unwrap();
+        let pkgs = enumerate_packages(dir.path());
+        let names: HashSet<String> = pkgs.iter().map(|p| p.name.clone()).collect();
+        assert!(names.contains("axios"));
+        assert!(names.contains("lodash"));
+        // Empty `""` key should not produce a row.
+        assert!(!names.contains(""));
+        // Every row must have ecosystem npm + non-empty version.
+        for p in &pkgs {
+            assert_eq!(p.ecosystem, "npm");
+            assert!(!p.version.is_empty());
+        }
+    }
+
+    #[test]
+    fn enumerate_packages_walks_requirements_txt() {
+        let dir = tempdir();
+        fs::write(
+            dir.path().join("requirements.txt"),
+            "axios==1.0.0\nurllib3==1.26.18\n# comment\nrequests >= 2.0\n",
+        )
+        .unwrap();
+        let pkgs = enumerate_packages(dir.path());
+        let names: HashSet<String> = pkgs.iter().map(|p| p.name.clone()).collect();
+        assert!(names.contains("urllib3"));
+        // `requests >= 2.0` doesn't have a `==` pin, so it's not enumerated.
+        assert!(!names.contains("requests"));
+    }
+
+    #[test]
+    fn enumerate_packages_dedupes_by_eco_name_version() {
+        let dir = tempdir();
+        // Same package in v2/v3 packages map AND v1 dependencies map.
+        let body = r#"{
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/axios": {"version": "1.14.1"}
+            },
+            "dependencies": {
+                "axios": {"version": "1.14.1"}
+            }
+        }"#;
+        fs::write(dir.path().join("package-lock.json"), body).unwrap();
+        let pkgs = enumerate_packages(dir.path());
+        let axios: Vec<_> = pkgs.iter().filter(|p| p.name == "axios").collect();
+        assert_eq!(axios.len(), 1, "duplicate (eco,name,ver) should dedupe");
+    }
+
+    #[test]
+    fn osv_to_finding_maps_fields() {
+        let pkg = PackageRef {
+            ecosystem: "npm".into(),
+            name: "axios".into(),
+            version: "1.14.1".into(),
+            location: "/tmp/demo/package-lock.json".into(),
+        };
+        let vuln = osv_vuln("GHSA-test-9999", "metadata exfil bug", Some("9.5"));
+        let finding = osv_to_finding(&pkg, &vuln);
+        assert_eq!(finding.package, "axios");
+        assert_eq!(finding.version, "1.14.1");
+        assert_eq!(finding.severity, "critical");
+        assert_eq!(finding.attack_vector, "metadata exfil bug");
+        assert!(finding.source.starts_with("osv:"));
+        assert!(finding.source.contains("GHSA-test-9999"));
+        assert_eq!(finding.references.len(), 1);
+        assert!(finding.remediation.contains("GHSA-test-9999"));
+    }
+
+    #[test]
+    fn osv_to_finding_handles_missing_summary() {
+        let pkg = PackageRef {
+            ecosystem: "pypi".into(),
+            name: "p".into(),
+            version: "0.1".into(),
+            location: "loc".into(),
+        };
+        let vuln = osv_vuln("GHSA-x", "", None);
+        let finding = osv_to_finding(&pkg, &vuln);
+        assert!(finding.attack_vector.contains("GHSA-x"));
+        assert_eq!(finding.severity, "unknown");
+    }
+
+    #[test]
+    fn augment_with_osv_offline_returns_cached_findings() {
+        let dir = tempdir();
+        let cache_path = dir.path().join("osv-cache.json");
+        let mut cache = OsvCache::empty();
+        cache.entries.insert(
+            cache_key("npm", "axios", "1.14.1"),
+            CacheEntry {
+                fetched_at: crate::osv_cache::unix_now(),
+                vulns: vec![osv_vuln("GHSA-osv-1", "axios metadata exfil", Some("9.1"))],
+            },
+        );
+        cache.save(&cache_path).unwrap();
+
+        let pkgs = vec![PackageRef {
+            ecosystem: "npm".into(),
+            name: "axios".into(),
+            version: "1.14.1".into(),
+            location: "/tmp/demo/package-lock.json".into(),
+        }];
+        let opts = OsvOptions {
+            cache_path: Some(cache_path),
+            use_cache: true,
+            offline: true,
+            timeout: Duration::from_secs(5),
+        };
+        let findings = augment_with_osv(&pkgs, &opts);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].source, "osv:GHSA-osv-1");
+        assert_eq!(findings[0].severity, "critical");
+    }
+
+    #[test]
+    fn augment_with_osv_offline_skips_uncached_packages() {
+        let dir = tempdir();
+        let cache_path = dir.path().join("osv-cache.json");
+        // Empty cache file.
+        OsvCache::empty().save(&cache_path).unwrap();
+        let pkgs = vec![PackageRef {
+            ecosystem: "npm".into(),
+            name: "uncached-pkg".into(),
+            version: "1.0.0".into(),
+            location: "loc".into(),
+        }];
+        let opts = OsvOptions {
+            cache_path: Some(cache_path),
+            use_cache: true,
+            offline: true,
+            timeout: Duration::from_secs(5),
+        };
+        let findings = augment_with_osv(&pkgs, &opts);
+        assert!(
+            findings.is_empty(),
+            "offline mode must not invent findings for uncached packages"
+        );
+    }
+
+    #[test]
+    fn augment_with_osv_skips_stale_cache_entry_when_offline() {
+        let dir = tempdir();
+        let cache_path = dir.path().join("osv-cache.json");
+        let mut cache = OsvCache::empty();
+        cache.entries.insert(
+            cache_key("npm", "axios", "1.14.1"),
+            CacheEntry {
+                // Stale: fetched_at == 0 is well past the 24h TTL.
+                fetched_at: 0,
+                vulns: vec![osv_vuln("GHSA-stale", "stale", Some("9.0"))],
+            },
+        );
+        cache.save(&cache_path).unwrap();
+
+        let pkgs = vec![PackageRef {
+            ecosystem: "npm".into(),
+            name: "axios".into(),
+            version: "1.14.1".into(),
+            location: "loc".into(),
+        }];
+        let opts = OsvOptions {
+            cache_path: Some(cache_path),
+            use_cache: true,
+            offline: true,
+            timeout: Duration::from_secs(5),
+        };
+        let findings = augment_with_osv(&pkgs, &opts);
+        assert!(findings.is_empty(), "stale entries must not be served");
+    }
+
+    #[test]
+    fn scan_project_with_osv_dedupes_against_embedded() {
+        let dir = tempdir();
+        // axios@1.14.1 — embedded DB hits this as critical.
+        let body = r#"{
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/axios": {"version": "1.14.1"}
+            }
+        }"#;
+        fs::write(dir.path().join("package-lock.json"), body).unwrap();
+
+        // Pre-populate the cache so OSV would also report axios.
+        let cache_path = dir.path().join("osv-cache.json");
+        let mut cache = OsvCache::empty();
+        cache.entries.insert(
+            cache_key("npm", "axios", "1.14.1"),
+            CacheEntry {
+                fetched_at: crate::osv_cache::unix_now(),
+                vulns: vec![osv_vuln("GHSA-osv-dup", "axios via OSV", Some("9.0"))],
+            },
+        );
+        cache.save(&cache_path).unwrap();
+
+        let opts = OsvOptions {
+            cache_path: Some(cache_path),
+            use_cache: true,
+            offline: true,
+            timeout: Duration::from_secs(5),
+        };
+        let threats = Threat::load_all();
+        let findings = scan_project_with_osv(dir.path(), false, &threats, &opts);
+        let axios: Vec<_> = findings.iter().filter(|f| f.package == "axios").collect();
+        assert_eq!(
+            axios.len(),
+            1,
+            "embedded + OSV agreement on axios@1.14.1 should dedupe to one row"
+        );
+        // Embedded entry should win — its source is not `osv:*`.
+        assert!(!axios[0].source.starts_with("osv:"));
+    }
+
+    #[test]
+    fn scan_project_with_osv_emits_osv_only_findings() {
+        let dir = tempdir();
+        // safe-pkg has no embedded DB entry; OSV cache says it's vulnerable.
+        let body = r#"{
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/safe-pkg": {"version": "1.0.0"}
+            }
+        }"#;
+        fs::write(dir.path().join("package-lock.json"), body).unwrap();
+
+        let cache_path = dir.path().join("osv-cache.json");
+        let mut cache = OsvCache::empty();
+        cache.entries.insert(
+            cache_key("npm", "safe-pkg", "1.0.0"),
+            CacheEntry {
+                fetched_at: crate::osv_cache::unix_now(),
+                vulns: vec![osv_vuln("GHSA-only-osv", "advisory only on osv", Some("7.5"))],
+            },
+        );
+        cache.save(&cache_path).unwrap();
+
+        let opts = OsvOptions {
+            cache_path: Some(cache_path),
+            use_cache: true,
+            offline: true,
+            timeout: Duration::from_secs(5),
+        };
+        let threats = Threat::load_all();
+        let findings = scan_project_with_osv(dir.path(), false, &threats, &opts);
+        let osv_only: Vec<_> = findings
+            .iter()
+            .filter(|f| f.package == "safe-pkg")
+            .collect();
+        assert_eq!(osv_only.len(), 1);
+        assert!(osv_only[0].source.starts_with("osv:"));
+        assert_eq!(osv_only[0].severity, "high");
     }
 }

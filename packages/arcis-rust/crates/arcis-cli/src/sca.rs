@@ -9,9 +9,11 @@ use std::env;
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use arcis_engine::sca::{discover_manifests, scan_project, Finding, FindingType};
+use arcis_engine::sca::{
+    discover_manifests, scan_project, scan_project_with_osv, Finding, FindingType, OsvOptions,
+};
 use arcis_engine::threat_db::Threat;
 
 const WIDTH: usize = 64;
@@ -34,6 +36,11 @@ struct Args {
     system: bool,
     list_threats: bool,
     no_color: bool,
+    /// Augment embedded DB with live OSV.dev lookups.
+    osv: bool,
+    /// Skip the on-disk cache for OSV results (refetch every package).
+    /// No-op without `--osv`.
+    no_cache: bool,
     /// Reserved: matches the Python flag but only suppresses the live
     /// progress, which the Rust port doesn't render yet. Kept so users
     /// can pass `-q` without a parse error.
@@ -54,6 +61,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut system = false;
     let mut list_threats = false;
     let mut no_color = false;
+    let mut osv = false;
+    let mut no_cache = false;
     let mut quiet = false;
 
     for arg in argv {
@@ -61,6 +70,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--system" => system = true,
             "--list-threats" | "--list" | "-l" => list_threats = true,
             "--no-color" => no_color = true,
+            "--osv" => osv = true,
+            "--no-cache" => no_cache = true,
             "--quiet" | "-q" => quiet = true,
             "-h" | "--help" => return ParseOutcome::Help,
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
@@ -82,6 +93,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         system,
         list_threats,
         no_color,
+        osv,
+        no_cache,
         _quiet: quiet,
     })
 }
@@ -181,6 +194,7 @@ fn print_sca_report<W: Write>(
     no_color: bool,
     manifests: &[PathBuf],
     threat_count: usize,
+    osv_enabled: bool,
 ) -> io::Result<()> {
     let line: String = LINE_CHAR.repeat(WIDTH);
     let manifest_summary = if manifests.is_empty() {
@@ -233,15 +247,12 @@ fn print_sca_report<W: Write>(
             no_color
         )
     )?;
-    writeln!(
-        w,
-        "{}",
-        c(
-            "  Mode:      Offline - no network calls, no telemetry",
-            &[DIM],
-            no_color
-        )
-    )?;
+    let mode_line = if osv_enabled {
+        "  Mode:      OSV-augmented - embedded DB plus live api.osv.dev"
+    } else {
+        "  Mode:      Offline - no network calls, no telemetry"
+    };
+    writeln!(w, "{}", c(mode_line, &[DIM], no_color))?;
     writeln!(w, "{}", c(&line, &[DIM], no_color))?;
 
     if findings.is_empty() {
@@ -481,14 +492,15 @@ fn print_threat_list<W: Write>(w: &mut W, threats: &[Threat], no_color: bool) ->
 fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
-        "usage: arcis sca [path] [--system] [--list] [--no-color] [-q]"
+        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--no-color] [-q]"
     )?;
     writeln!(w)?;
     writeln!(
         w,
         "Supply Chain Attack Scanner \u{2014} detect compromised packages from"
     )?;
-    writeln!(w, "known supply chain attacks. Runs entirely offline.")?;
+    writeln!(w, "known supply chain attacks. Runs offline by default; pass")?;
+    writeln!(w, "--osv to augment with live data from api.osv.dev.")?;
     writeln!(w)?;
     writeln!(w, "positional arguments:")?;
     writeln!(
@@ -504,6 +516,14 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
         "  --list, -l          List all threats in the bundled database and exit"
+    )?;
+    writeln!(
+        w,
+        "  --osv               Augment embedded DB with live api.osv.dev lookups"
+    )?;
+    writeln!(
+        w,
+        "  --no-cache          Skip the on-disk OSV cache (~/.arcis/osv-cache.json)"
     )?;
     writeln!(w, "  --no-color          Disable colored output")?;
     writeln!(w, "  --quiet, -q         Suppress progress output")?;
@@ -558,7 +578,17 @@ pub fn run(argv: &[String]) -> ExitCode {
     }
 
     let start = Instant::now();
-    let findings = scan_project(&abs, args.system, &threats);
+    let findings = if args.osv {
+        let opts = OsvOptions {
+            cache_path: arcis_engine::osv_cache::OsvCache::default_path(),
+            use_cache: !args.no_cache,
+            offline: false,
+            timeout: Duration::from_secs(5),
+        };
+        scan_project_with_osv(&abs, args.system, &threats, &opts)
+    } else {
+        scan_project(&abs, args.system, &threats)
+    };
     let duration = start.elapsed().as_secs_f64();
 
     let _ = print_sca_report(
@@ -569,6 +599,7 @@ pub fn run(argv: &[String]) -> ExitCode {
         args.no_color,
         &manifests,
         threats.len(),
+        args.osv,
     );
 
     if findings.is_empty() {
@@ -625,6 +656,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_args_osv_and_no_cache() {
+        let argv: Vec<String> = ["--osv", "--no-cache", "/tmp/proj"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => {
+                assert!(a.osv, "--osv must enable OSV");
+                assert!(a.no_cache, "--no-cache must disable cache");
+                assert_eq!(a.path, PathBuf::from("/tmp/proj"));
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_default_osv_off() {
+        match parse_args(&[]) {
+            ParseOutcome::Args(a) => {
+                assert!(!a.osv);
+                assert!(!a.no_cache);
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn format_duration_subsecond() {
         assert_eq!(format_duration(0.012), "12ms");
         assert_eq!(format_duration(0.0), "0ms");
@@ -672,7 +730,7 @@ mod tests {
         let mut buf: Vec<u8> = Vec::new();
         let path = PathBuf::from("/tmp/demo");
         let manifests = vec![path.join("requirements.txt")];
-        print_sca_report(&mut buf, &path, &[], 0.012, true, &manifests, 47).unwrap();
+        print_sca_report(&mut buf, &path, &[], 0.012, true, &manifests, 47, false).unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(out.contains("Arcis Supply Chain Scanner"));
         assert!(out.contains("Manifests: requirements.txt"));
@@ -699,7 +757,7 @@ mod tests {
             references: vec!["https://example.com/a".into()],
             finding_type: FindingType::CompromisedVersion,
         }];
-        print_sca_report(&mut buf, &path, &findings, 0.020, true, &manifests, 47).unwrap();
+        print_sca_report(&mut buf, &path, &findings, 0.020, true, &manifests, 47, false).unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(out.contains("npm\n"));
         assert!(out.contains("[CRITICAL] COMPROMISED VERSION"));
