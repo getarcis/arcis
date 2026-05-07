@@ -1716,19 +1716,28 @@
     {
       "ecosystem": "pypi",
       "name": "pytorch-lightning",
-      "malicious_versions": [],
+      "malicious_versions": ["2.6.2", "2.6.3"],
       "vulnerable_ranges": [],
-      "attack_vector": "Maintainer PyPI account compromised in early 2026; attacker-controlled releases were published under the legitimate package name. Exact malicious-version list remediated by Lightning AI's security advisory; users who installed pytorch-lightning during the disclosure window should treat the host as compromised.",
+      "attack_vector": "PyPI maintainer-token compromise on 2026-04-30. Attacker pushed tampered builds 2.6.2 and 2.6.3 directly to PyPI (GitHub source repo was not touched); both versions live for ~42 minutes before quarantine. Payload: hidden _runtime/ directory containing a Bun-based JavaScript credential stealer that runs automatically on `import lightning` or `import pytorch_lightning`, exfiltrating environment variables, .env files, GitHub tokens, AWS/Azure/GCP credentials, browser-stored creds (Chrome, Firefox, Brave), and crypto wallets. Notable: plants persistence hooks targeting Claude Code and VS Code, the first documented in-the-wild abuse of Claude Code's hook system. Family: Mini Shai-Hulud, same author lineage as the npm Shai-Hulud worm wave. Last clean version: 2.6.1 (2026-01-30). Advisory: GHSA-w37p-236h-pfx3.",
       "severity": "critical",
-      "cve": "CVE-2026-44484",
+      "cve": "no-cve-assigned",
       "disclosure_date": "2026-04-30",
       "source": "GitHub Security Advisory",
       "references": [
-        "https://github.com/advisories/GHSA-w37p-236h-pfx3"
+        "https://github.com/Lightning-AI/pytorch-lightning/security/advisories/GHSA-w37p-236h-pfx3",
+        "https://snyk.io/blog/lightning-pypi-compromise-bun-based-credential-stealer/",
+        "https://www.aikido.dev/blog/pytorch-lightning-pypi-compromise-mini-shai-hulud",
+        "https://socket.dev/blog/lightning-pypi-package-compromised",
+        "https://www.sonatype.com/blog/malicious-pytorch-lightning-packages-found-on-pypi",
+        "https://semgrep.dev/blog/2026/malicious-dependency-in-pytorch-lightning-used-for-ai-training/"
       ],
       "trojanized_deps": [],
-      "persistence_artifacts": [],
-      "remediation": "1. Pin pytorch-lightning to a version published AFTER the advisory's resolution.\n2. Wipe pip cache and reinstall: `pip cache purge && pip install --force-reinstall pytorch-lightning`.\n3. Audit any model-training infrastructure that ran during the disclosure window for unauthorized outbound traffic."
+      "persistence_artifacts": [
+        "_runtime/ directory inside the installed package (contains the Bun-based JS stealer)",
+        "Claude Code hook entries planted under ~/.claude/",
+        "VS Code extension hook tampering"
+      ],
+      "remediation": "1. Pin pytorch-lightning to <=2.6.1 (or to a clean release published after the 2.6.3 quarantine).\n2. Wipe pip cache and reinstall: `pip cache purge && pip install --force-reinstall 'pytorch-lightning<=2.6.1'`.\n3. If you installed or upgraded pytorch-lightning or lightning during the disclosure window on 2026-04-30, audit ~/.claude/ for unfamiliar hooks, audit installed VS Code extensions, rotate GitHub and cloud (AWS/Azure/GCP) tokens, and check for unauthorized outbound traffic from any host that imported the module."
     },
     {
       "ecosystem": "pypi",
@@ -1977,7 +1986,7 @@
       ],
       "attack_vector": "Two simultaneous 2026 advisories: (1) Stored XSS via maliciously-crafted Markdown content in translation comments and project descriptions; (2) Enumeration of private translations through an unprotected screenshot API endpoint. Both exploitable on shared multi-org Weblate deployments.",
       "severity": "medium",
-      "cve": "CVE-2026-44263",
+      "cve": "CVE-2026-44264",
       "disclosure_date": "2026-04-29",
       "source": "GitHub Security Advisory",
       "references": [
