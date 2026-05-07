@@ -85,6 +85,7 @@ At the checkpoint, Arcis:
 | **CSRF** | Double-submit cookie, token generation and validation |
 | **Rate Limiting** | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
 | **Bot Detection** | 650 patterns sourced from a curated MIT corpus + supplementary entries, 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. The corpus is also published standalone at [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots). |
+| **MCP server (`@arcis/mcp`)** | Model Context Protocol server exposing `arcis_audit`, `arcis_sca`, `arcis_scan`, and `arcis_detect_prompt_injection` as tools that Cursor, Claude Code, and any MCP-aware agent can call. |
 | **Prompt Injection** | 28 signatures across HIGH/MEDIUM/LOW tiers: jailbreak frameworks, system-prompt extraction, fake `<system>` tags, conversation-replay forgeries, base64/ROT13 smuggling hints |
 | **LLM Token Budget** | Per-key sliding-window token cap with optional per-request size limit. Custom estimator hook for tiktoken or your own counter. `X-Token-Budget-*` headers on every response |
 | **Security Headers** | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control (16 headers) |
@@ -529,6 +530,18 @@ Arcis uses regex-based pattern matching for attack detection. This is a delibera
 **Rate limiting specifically:** Application-level rate limiting protects against floods reaching your application code. For high-traffic production systems, this should complement edge-level rate limiting at your CDN, reverse proxy, or load balancer, not replace it. Arcis supports Redis-backed distributed rate limiting for multi-instance deployments.
 
 ---
+
+## Example apps
+
+Five public clone-and-run repos that show Arcis blocking real attack payloads end-to-end. Each one is a small server + an `attack` script that fires 8 payloads (XSS, SQL injection, NoSQL, path traversal, command injection, SSTI, XXE, plus a safe-input control) and reports which ones Arcis blocked.
+
+| Repo | Stack | Adapter |
+|---|---|---|
+| [`getarcis/arcis-example-express`](https://github.com/getarcis/arcis-example-express) | Node + Express | `arcis()` |
+| [`getarcis/arcis-example-nestjs`](https://github.com/getarcis/arcis-example-nestjs) | Node + NestJS | `@arcis/node/nestjs` |
+| [`getarcis/arcis-example-bun`](https://github.com/getarcis/arcis-example-bun) | Bun + Hono | `@arcis/node/bun` |
+| [`getarcis/arcis-example-fastapi`](https://github.com/getarcis/arcis-example-fastapi) | Python + FastAPI | `arcis.ArcisMiddleware` |
+| [`getarcis/arcis-example-gin`](https://github.com/getarcis/arcis-example-gin) | Go + Gin | `arcisgin.Middleware` |
 
 ## Documentation
 
