@@ -22,3 +22,10 @@ serde_json = { workspace = true }
 # Async runtime for `arcis scan`. Runtime is constructed once in scan.rs
 # and dropped after the run; the rest of the CLI stays synchronous.
 tokio = { workspace = true }
+
+[dev-dependencies]
+# End-to-end CLI tests under `tests/` need scratch dirs for fixtures
+# and baseline files. Already present in `arcis-engine`'s dev-deps;
+# adding here for the new `tests/audit_baseline.rs` integration suite
+# (cli-audit.md item 9b).
+tempfile = "3.10"
