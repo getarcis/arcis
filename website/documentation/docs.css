@@ -402,6 +402,25 @@ a:hover { color: var(--accent-hover); }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
+/* Framework picker variant: 12 buttons that wrap on narrow viewports.
+   Each button reads as a chip rather than a tab, since multi-row tabs
+   with single-line bottom borders look broken. */
+.framework-picker .tab-buttons {
+  border-bottom: none;
+  gap: 0.4rem;
+}
+.framework-picker .tab-btn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  margin-bottom: 0;
+}
+.framework-picker .tab-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 /* ─── Pagination ──────────────────────────────────── */
 .docs-pagination {
   display: flex;

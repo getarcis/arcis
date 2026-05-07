@@ -1,26 +1,87 @@
 version: 2
 
+# Monthly cadence + per-ecosystem grouping. Each ecosystem opens at most
+# one bundled PR per month instead of one PR per dep, so the dashboard
+# stays readable. The grouped PR carries every patch + minor + dev-dep
+# update together; security advisories still bypass the schedule and
+# open immediately.
+
 updates:
-  # Node.js
+  # Node SDK (@arcis/node) — peer dep on express, devDeps for build/lint
   - package-ecosystem: "npm"
     directory: "/packages/arcis-node"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    target-branch: "nwl"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(node)"
+    groups:
+      arcis-node:
+        patterns: ["*"]
 
-  # Python
+  # @arcis/cli npm wrapper — postinstall downloader for the Rust binary
+  - package-ecosystem: "npm"
+    directory: "/packages/arcis-cli-npm"
+    schedule:
+      interval: "monthly"
+    target-branch: "nwl"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(cli-npm)"
+    groups:
+      arcis-cli-npm:
+        patterns: ["*"]
+
+  # Python SDK — runtime deps are zero post-v1.5.0; this picks up [dev]
+  # extras (pytest, ruff, etc.)
   - package-ecosystem: "pip"
     directory: "/packages/arcis-python"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    target-branch: "nwl"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(python)"
+    groups:
+      arcis-python:
+        patterns: ["*"]
 
-  # Go
+  # Go SDK — gin, echo, chi adapters carry transitive deps
   - package-ecosystem: "gomod"
     directory: "/packages/arcis-go"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    target-branch: "nwl"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(go)"
+    groups:
+      arcis-go:
+        patterns: ["*"]
 
-  # GitHub Actions (once you add CI)
+  # Rust CLI workspace
+  - package-ecosystem: "cargo"
+    directory: "/packages/arcis-rust"
+    schedule:
+      interval: "monthly"
+    target-branch: "nwl"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(rust)"
+    groups:
+      arcis-rust:
+        patterns: ["*"]
+
+  # GitHub Actions used in workflows (.github/workflows/*.yml)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    target-branch: "nwl"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(actions)"
+    groups:
+      github-actions:
+        patterns: ["*"]

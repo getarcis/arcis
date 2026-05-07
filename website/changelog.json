@@ -2,15 +2,20 @@
   "_comment": "Single source of truth for the website's Recently Shipped section + the standalone changelog page. The dashboard's 'Changelog' sidebar link also points at the rendered HTML view. Add new versions to the top of `releases`. Keep summaries one sentence; full bullets in `details`.",
   "releases": [
     {
-      "version": "2.0.0",
+      "version": "1.5.0",
       "date": "2026-05-06",
-      "summary": "CLI moves to its own native-binary npm package. Python SDK becomes runtime-only with zero dependencies.",
+      "summary": "Five new Node framework adapters, AI-era protections (prompt-injection lib + LLM token-budget middleware), 646-pattern bot corpus, native-Rust CLI.",
       "details": [
-        "CLI (`audit` / `scan` / `sca`) ships separately as `npm install -g @arcis/cli` &mdash; a single static binary across Linux, macOS, Windows. No Python or other runtime required.",
+        "Five new first-party framework adapters in Node, each a clean subpath import: `@arcis/node/nestjs`, `@arcis/node/sveltekit`, `@arcis/node/astro`, `@arcis/node/nuxt`, `@arcis/node/bun` (Bun + Hono in one). Framework SDKs are type-only references. non-users pay no runtime cost.",
+        "Prompt-injection signature library across all 3 SDKs. ~28 patterns covering jailbreak frameworks (DAN/STAN/DUDE), system-prompt extraction, fake `&lt;system&gt;` tags, conversation-replay forgeries, base64/ROT13 smuggling. `detectPromptInjection()` + `sanitizePromptInjection()` with HIGH/MEDIUM/LOW severity tiers.",
+        "`tokenBudget` middleware for LLM-handler routes. Per-key sliding-window token cap with optional per-request size limit, custom estimator hook, `X-Token-Budget-*` response headers.",
+        "Bot corpus expanded from 80 to 646 patterns sourced from a curated MIT-licensed corpus + supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes).",
+        "CLI (`audit` / `scan` / `sca`) ships separately as `npm install -g @arcis/cli`. a single static native-Rust binary across Linux, macOS, Windows. No Python or other runtime required.",
         "Python `arcis` package is now SDK-only. `pip install arcis` no longer puts an `arcis` command on your shell PATH and no longer carries `rich` as a runtime dependency.",
         "Same scanner commands, faster cold start (~30&ndash;60ms vs ~700ms previously), embedded threat database for full offline use.",
         "Migration: if you previously relied on `pip install arcis` shipping the `arcis` command, switch to `npm install -g @arcis/cli`. The SDK middleware API is unchanged."
-      ]
+      ],
+      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)", "@arcis/cli (npm, native binary)"]
     },
     {
       "version": "1.4.4",
@@ -19,10 +24,10 @@
       "details": [
         "Block-mode middleware in Node, Python, and Go (`arcis({block:true})` / `ArcisMiddleware(block=True)` / `Config{Block:true}`). Returns 403 + tags telemetry marker on attack-pattern match.",
         "6 missing Python standalone detectors (XSS, SQL, NoSQL, path, command, prototype pollution).",
-        "Cross-SDK `scanThreats()` walker — vector ordering identical across SDKs. SSTI + XXE included.",
+        "Cross-SDK `scanThreats()` walker. vector ordering identical across SDKs. SSTI + XXE included.",
         "FastAPI name-mangling fix: `request.state.__arcis` markers were silently mangled to `_ArcisMiddleware__arcis`. Now uses `_arcis_marker` constant.",
         "Python middleware deny paths (CSRF, bot, signup) tag the marker so dashboard shows the right vector.",
-        "Telemetry queue capped with drop-oldest semantics — sustained dashboard outage no longer OOMs the worker.",
+        "Telemetry queue capped with drop-oldest semantics. Sustained dashboard outage no longer OOMs the worker.",
         "Dashboard ingest: per-field length caps + 4 MB body limit + workspace-switch race fixed.",
         "CLI overhaul: `arcis --list` discovery, live progress bars, summary blocks, `arcis update` command, optional interactive picker.",
         "End-to-end CLI → dashboard wiring: `arcis scan/audit/sca` POST results to the dashboard when env vars are set.",

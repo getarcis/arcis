@@ -15,7 +15,7 @@
 
   <title>Arcis: Security Middleware for Every Backend</title>
   <meta name="description" content="One line of code protects your app against 20+ attack vectors. Zero dependencies. Works with Node.js, Python, and Go.">
-  <meta property="og:title" content="Arcis — Security Middleware for Every Backend">
+  <meta property="og:title" content="Arcis. Security Middleware for Every Backend">
   <meta property="og:description" content="One line of code. 20+ attack vectors handled. Zero dependencies. Node.js, Python, Go.">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
@@ -1247,16 +1247,16 @@
     <div class="container">
       <div class="hero-badge">
         <span class="dot"></span>
-        v1.4.2 — LDAP injection, SSTI/XXE parity, 12 bypass closures
+        v1.5.0. 5 new framework adapters, prompt-injection guard, 646-pattern bot corpus
       </div>
 
       <h1 class="hero-rotate">
-        <span class="rotate-line" data-index="0">Your app is one line away from being <em>secure</em></span>
+        <span class="rotate-line" data-index="0">Inside-the-app security middleware. <em>One install. Three languages.</em></span>
         <span class="rotate-line" data-index="1">Security middleware that <em>just works</em></span>
       </h1>
 
       <p class="hero-sub">
-        Arcis is a security middleware for Node.js, Python, and Go. Drop one line into any app and 20+ attack types get handled automatically. No config, no dependencies.
+        Arcis blocks XSS, SQL injection, SSRF, CSRF, prompt injection, bot traffic, and 20+ more attack types before your handler runs. Twelve framework adapters across Node, Python, and Go. Fully open-source. No cloud dependency. No closed binaries. No agent.
       </p>
 
       <div class="hero-actions">
@@ -1326,7 +1326,7 @@
         </div>
         <div class="stat reveal reveal-delay-1">
           <div class="stat-number">3</div>
-          <div class="stat-label">SDKs &mdash; Node, Python, Go</div>
+          <div class="stat-label">SDKs. Node, Python, Go</div>
         </div>
         <div class="stat reveal reveal-delay-2">
           <div class="stat-number">2,800+</div>
@@ -1379,8 +1379,8 @@
             Without Arcis
           </h3>
           <ul>
-            <li>helmet, DOMPurify, csurf, cors, hpp, express-rate-limit, express-validator, cookie-parser</li>
-            <li>8 APIs. 8 configs. 8 update cycles.</li>
+            <li>Eight to twelve separate packages, one per concern: headers, sanitization, CSRF, rate limits, CORS, parameter pollution, validation, cookies.</li>
+            <li>Eight APIs. Eight configs. Eight release cycles.</li>
             <li>Days of research and integration.</li>
           </ul>
         </div>
@@ -1427,7 +1427,7 @@
           <div class="pipeline-num">2</div>
           <div class="pipeline-content">
             <h3>Bot Detection</h3>
-            <p>80+ patterns across 7 categories: crawlers, scrapers, AI bots, CLI tools, and behavioral fingerprinting.</p>
+            <p>646 patterns across 7 categories: search engines, social, monitoring, AI crawlers, scrapers, automated tools, and behavioral fingerprinting on missing browser headers.</p>
             <span class="pipeline-tag">403 Forbidden</span>
           </div>
         </div>
@@ -1452,14 +1452,14 @@
           <div class="pipeline-content">
             <h3>Your Code Runs</h3>
             <p>Clean, validated, sanitized input. Your application logic never sees raw attack payloads. Only safe data reaches your handlers.</p>
-            <span class="pipeline-tag">200 OK &mdash; safe and sound</span>
+            <span class="pipeline-tag">200 OK. safe and sound</span>
           </div>
         </div>
         <div class="pipeline-step reveal reveal-delay-5" data-step="5">
           <div class="pipeline-num">6</div>
           <div class="pipeline-content">
             <h3>Response Hardening</h3>
-            <p>16 security headers, secure cookies (HttpOnly, Secure, SameSite), CORS enforcement, error scrubbing &mdash; all applied automatically.</p>
+            <p>16 security headers, secure cookies (HttpOnly, Secure, SameSite), CORS enforcement, error scrubbing. all applied automatically.</p>
             <span class="pipeline-tag">headers + cookies + error scrubbing</span>
           </div>
         </div>
@@ -1495,7 +1495,7 @@
               <span class="keyword">import</span> <span class="punctuation">{</span> <span class="function">arcis</span> <span class="punctuation">}</span> <span class="keyword">from</span> <span class="string">'@arcis/node'</span><span class="punctuation">;</span><br>
               <span class="keyword">import</span> express <span class="keyword">from</span> <span class="string">'express'</span><span class="punctuation">;</span><br><br>
               <span class="keyword">const</span> app = <span class="function">express</span><span class="punctuation">();</span><br>
-              app.<span class="function">use</span><span class="punctuation">(</span><span class="function">arcis</span><span class="punctuation">());</span> <span class="comment">// All core protections active — add CSRF, CORS, bot detection as needed</span><br><br>
+              app.<span class="function">use</span><span class="punctuation">(</span><span class="function">arcis</span><span class="punctuation">());</span> <span class="comment">// All core protections active. Add CSRF, CORS, bot detection as needed.</span><br><br>
               app.<span class="function">get</span><span class="punctuation">(</span><span class="string">'/'</span><span class="punctuation">,</span> <span class="punctuation">(</span>req<span class="punctuation">,</span> res<span class="punctuation">)</span> <span class="keyword">=></span> <span class="punctuation">{</span><br>
               &nbsp;&nbsp;<span class="comment">// req.query and req.body are already sanitized</span><br>
               &nbsp;&nbsp;res.<span class="function">json</span><span class="punctuation">({</span> message<span class="punctuation">:</span> <span class="string">'Safe and sound.'</span> <span class="punctuation">});</span><br>
@@ -1516,7 +1516,7 @@
               <span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI<br>
               <span class="keyword">from</span> arcis <span class="keyword">import</span> ArcisMiddleware<br><br>
               app = <span class="function">FastAPI</span><span class="punctuation">()</span><br>
-              app.<span class="function">add_middleware</span><span class="punctuation">(</span>ArcisMiddleware<span class="punctuation">)</span> <span class="comment"># All core protections active — add CSRF, CORS, bot detection as needed</span><br><br>
+              app.<span class="function">add_middleware</span><span class="punctuation">(</span>ArcisMiddleware<span class="punctuation">)</span> <span class="comment"># All core protections active. Add CSRF, CORS, bot detection as needed.</span><br><br>
               <span class="keyword">@</span>app.<span class="function">get</span><span class="punctuation">(</span><span class="string">"/"</span><span class="punctuation">)</span><br>
               <span class="keyword">def</span> <span class="function">root</span><span class="punctuation">():</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Input already sanitized and validated</span><br>
@@ -1541,7 +1541,7 @@
               <span class="punctuation">)</span><br><br>
               <span class="keyword">func</span> <span class="function">main</span><span class="punctuation">()</span> <span class="punctuation">{</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;r <span class="punctuation">:=</span> gin.<span class="function">Default</span><span class="punctuation">()</span><br>
-              &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Use</span><span class="punctuation">(</span>arcisgin.<span class="function">Middleware</span><span class="punctuation">())</span> <span class="comment">// All core protections active — add CSRF, CORS, bot detection as needed</span><br>
+              &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Use</span><span class="punctuation">(</span>arcisgin.<span class="function">Middleware</span><span class="punctuation">())</span> <span class="comment">// All core protections active. Add CSRF, CORS, bot detection as needed.</span><br>
               &nbsp;&nbsp;&nbsp;&nbsp;r.<span class="function">Run</span><span class="punctuation">()</span><br>
               <span class="punctuation">}</span>
             </div>
@@ -1557,12 +1557,12 @@
       <div class="section-label reveal">Protection</div>
       <h2 class="section-title reveal">20+ attack vectors. One package.</h2>
       <p class="section-desc reveal" style="max-width: 700px;">
-        Covers OWASP Top 10 and beyond. From injection attacks to response hardening &mdash; if it can hurt your app, Arcis handles it.
+        Covers OWASP Top 10 and beyond. From injection attacks to response hardening. if it can hurt your app, Arcis handles it.
       </p>
 
       <div class="threats-grid">
         <div class="threat-item reveal"><div class="threat-name">XSS</div><div class="threat-desc">Script injection, event handlers, javascript: URIs, SVG payloads</div></div>
-        <div class="threat-item reveal"><div class="threat-name">SQL Injection</div><div class="threat-desc">Strips known SQL patterns from input as defense-in-depth. Not a replacement for parameterized queries — use both.</div></div>
+        <div class="threat-item reveal"><div class="threat-name">SQL Injection</div><div class="threat-desc">Strips known SQL patterns from input as defense-in-depth. Not a replacement for parameterized queries: use both.</div></div>
         <div class="threat-item reveal"><div class="threat-name">NoSQL Injection</div><div class="threat-desc">35 MongoDB operators: $gt, $where, $regex, $function</div></div>
         <div class="threat-item reveal"><div class="threat-name">Command Injection</div><div class="threat-desc">Shell metacharacters, subshells, redirections, newlines</div></div>
         <div class="threat-item reveal"><div class="threat-name">Path Traversal</div><div class="threat-desc">../ sequences, encoded variants, double-encoding, null bytes</div></div>
@@ -1571,9 +1571,9 @@
         <div class="threat-item reveal"><div class="threat-name">CSRF</div><div class="threat-desc">Double-submit cookie, constant-time token comparison</div></div>
         <div class="threat-item reveal"><div class="threat-name">SSTI</div><div class="threat-desc">Jinja2, Twig, Freemarker, ERB, Pug, Python dunder chains</div></div>
         <div class="threat-item reveal"><div class="threat-name">XXE</div><div class="threat-desc">DOCTYPE, ENTITY, SYSTEM/PUBLIC references stripped</div></div>
-        <div class="threat-item reveal"><div class="threat-name">Rate Limiting</div><div class="threat-desc">Application-level — fixed, sliding window, token bucket, memory or Redis. Complements proxy/CDN-level limiting, not a replacement.</div></div>
-        <div class="threat-item reveal"><div class="threat-name">Security Headers</div><div class="threat-desc">CSP, HSTS, X-Frame-Options, COOP, CORP, COEP &mdash; 16 total</div></div>
-        <div class="threat-item reveal"><div class="threat-name">Bot Detection</div><div class="threat-desc">80+ patterns, 7 categories, behavioral fingerprinting</div></div>
+        <div class="threat-item reveal"><div class="threat-name">Rate Limiting</div><div class="threat-desc">Application-level: fixed, sliding window, token bucket, memory or Redis. Complements proxy/CDN-level limiting, not a replacement.</div></div>
+        <div class="threat-item reveal"><div class="threat-name">Security Headers</div><div class="threat-desc">CSP, HSTS, X-Frame-Options, COOP, CORP, COEP. 16 total</div></div>
+        <div class="threat-item reveal"><div class="threat-name">Bot Detection</div><div class="threat-desc">646 patterns, 7 categories, behavioral fingerprinting</div></div>
         <div class="threat-item reveal"><div class="threat-name">Open Redirect</div><div class="threat-desc">Absolute URLs, javascript:, protocol-relative, backslash</div></div>
         <div class="threat-item reveal"><div class="threat-name">Error Leakage</div><div class="threat-desc">Stack traces, DB errors, internal IPs, connection strings</div></div>
         <div class="threat-item reveal"><div class="threat-name">Header Injection</div><div class="threat-desc">CRLF injection, response splitting, null bytes stripped</div></div>
@@ -1609,12 +1609,21 @@
             <tr><td>Bot detection</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td></tr>
             <tr><td>SSRF prevention</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="check">&#10003;</span></td></tr>
             <tr><td>Supply chain scanner</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td></tr>
-            <tr><td>Multi-language</td><td class="arcis-col"><span class="check">3 SDKs</span></td><td>Node only</td><td>Browser</td><td>Node only</td><td>4 SDKs</td><td>Node + Py</td></tr>
+            <tr><td>Multi-language</td><td class="arcis-col"><span class="check">3 SDKs</span></td><td>Node only</td><td>Browser</td><td>Node only</td><td>3 SDKs</td><td>Node + Py</td></tr>
             <tr><td>Zero dependencies</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td></tr>
             <tr><td>Open source</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td>Freemium</td><td>Paid</td></tr>
           </tbody>
         </table>
       </div>
+
+      <p style="text-align: center; margin-top: 2rem; color: var(--text-muted); font-size: 0.95rem;">
+        Want the deep-dive comparison? Read
+        <a href="documentation/comparisons/vs-arcjet.html" style="color: var(--accent); font-weight: 500;">vs Arcjet</a>,
+        <a href="documentation/comparisons/vs-aikido.html" style="color: var(--accent); font-weight: 500;">vs Aikido Zen</a>,
+        <a href="documentation/comparisons/vs-snyk.html" style="color: var(--accent); font-weight: 500;">vs Snyk</a>,
+        <a href="documentation/comparisons/vs-cloudflare-waf.html" style="color: var(--accent); font-weight: 500;">vs Cloudflare WAF</a>, or
+        <a href="documentation/comparisons/vs-captchas.html" style="color: var(--accent); font-weight: 500;">vs CAPTCHAs</a>.
+      </p>
     </div>
   </section>
 
@@ -1656,16 +1665,16 @@
            updates this section + changelog.html in one step. -->
       <div class="changelog-list" id="changelog-list">
         <div class="changelog-item reveal">
+          <span class="changelog-version">v1.5.0</span>
+          <span class="changelog-text">Five new Node framework adapters (NestJS, SvelteKit, Astro, Nuxt, Bun + Hono), AI-era protections (prompt-injection signature library + LLM token-budget middleware), 646-pattern bot corpus, native-Rust CLI.</span>
+        </div>
+        <div class="changelog-item reveal reveal-delay-1">
           <span class="changelog-version">v1.4.4</span>
           <span class="changelog-text">Detect-and-block middleware across all 3 SDKs. Block-mode 403s land on the dashboard with full vector attribution.</span>
         </div>
-        <div class="changelog-item reveal reveal-delay-1">
+        <div class="changelog-item reveal reveal-delay-2">
           <span class="changelog-version">v1.4.3</span>
           <span class="changelog-text">Telemetry pipeline shipped. Self-hosted dashboard accepts decision events from running middleware (Node + Python).</span>
-        </div>
-        <div class="changelog-item reveal reveal-delay-2">
-          <span class="changelog-version">v1.4.2</span>
-          <span class="changelog-text">12 security bypass vectors closed. SSTI and XXE parity added to Go. Unicode path traversal bypass fixed across all SDKs.</span>
         </div>
         <div class="changelog-item reveal reveal-delay-3">
           <span class="changelog-version">v1.4.1</span>
@@ -1697,9 +1706,13 @@
             .then(function (data) {
               var releases = (data.releases || []).slice(0, 4);
               if (releases.length === 0) return;
+              // Add `visible` directly to hydrated items. The page's
+              // IntersectionObserver only watches elements present at
+              // load time, so injected `.reveal` divs would otherwise
+              // stay opacity:0 forever.
               list.innerHTML = releases.map(function (r, i) {
                 var delayCls = i === 0 ? '' : ' reveal-delay-' + i;
-                return '<div class="changelog-item reveal' + delayCls + '">'
+                return '<div class="changelog-item reveal visible' + delayCls + '">'
                   + '<span class="changelog-version">v' + esc(r.version) + '</span>'
                   + '<span class="changelog-text">' + esc(r.summary) + '</span>'
                   + '</div>';
@@ -1714,7 +1727,7 @@
                   ? latest.summary.slice(0, 67) + '...'
                   : latest.summary;
                 badge.innerHTML = '<span class="dot"></span> v'
-                  + esc(latest.version) + ' — ' + esc(blurb);
+                  + esc(latest.version) + '. ' + esc(blurb);
               }
             })
             .catch(function () { /* keep SSR fallback */ });
@@ -1772,7 +1785,7 @@
       </div>
 
       <div class="reveal" style="margin-top: 3rem; padding-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
-        <p style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem; text-align: center;">Plus CLI tools for your dev workflow <span style="color: rgba(255,255,255,0.45);">(single static binary &mdash; <code style="color: #fff;">npm install -g @arcis/cli</code>):</span></p>
+        <p style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem; text-align: center;">Plus CLI tools for your dev workflow <span style="color: rgba(255,255,255,0.45);">(single static binary. <code style="color: #fff;">npm install -g @arcis/cli</code>):</span></p>
         <div style="display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; max-width: 700px; margin: 0 auto;">
           <code style="background: rgba(255,255,255,0.05); padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; color: #fff;">arcis sca <span style="color: rgba(255,255,255,0.5);">supply chain scanner</span></code>
           <code style="background: rgba(255,255,255,0.05); padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; color: #fff;">arcis scan <span style="color: rgba(255,255,255,0.5);">vulnerability scanner</span></code>
@@ -1785,11 +1798,11 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; max-width: 980px; margin: 0 auto; text-align: left;">
           <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 1rem 1.1rem;">
             <div style="font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.55); font-weight: 600;">Backend only</div>
-            <p style="margin: 0.5rem 0 0; font-size: 0.85rem; color: #fff; line-height: 1.5;">Install in your server project. Never in a frontend bundle &mdash; the API key would leak to the browser and the middleware never runs there.</p>
+            <p style="margin: 0.5rem 0 0; font-size: 0.85rem; color: #fff; line-height: 1.5;">Install in your server project. Never in a frontend bundle. the API key would leak to the browser and the middleware never runs there.</p>
           </div>
           <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 1rem 1.1rem;">
             <div style="font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.55); font-weight: 600;">.env location</div>
-            <p style="margin: 0.5rem 0 0; font-size: 0.85rem; color: #fff; line-height: 1.5;">Put <code style="color: #fff;">ARCIS_KEY</code> in the backend <code style="color: #fff;">.env</code>. No <code style="color: #fff;">NEXT_PUBLIC_</code> / <code style="color: #fff;">VITE_</code> / <code style="color: #fff;">REACT_APP_</code> prefix &mdash; those expose values to the browser.</p>
+            <p style="margin: 0.5rem 0 0; font-size: 0.85rem; color: #fff; line-height: 1.5;">Put <code style="color: #fff;">ARCIS_KEY</code> in the backend <code style="color: #fff;">.env</code>. No <code style="color: #fff;">NEXT_PUBLIC_</code> / <code style="color: #fff;">VITE_</code> / <code style="color: #fff;">REACT_APP_</code> prefix. those expose values to the browser.</p>
           </div>
           <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 1rem 1.1rem;">
             <div style="font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.55); font-weight: 600;">CLI is its own package</div>
@@ -1805,8 +1818,8 @@
     <div class="container">
       <div class="section-label reveal">Get In Touch</div>
       <h2 class="section-title reveal">Built by one developer. Open to everyone.</h2>
-      <p class="section-desc reveal" style="max-width: 650px;">
-        Arcis is maintained by <a href="https://github.com/Gagancm" style="color: var(--accent); font-weight: 500;">Gagan CM</a>. If you're using it, found a bug, want to contribute, or want to chat about security or integrations — reach out.
+      <p class="section-desc reveal" style="max-width: 650px; margin-left: auto; margin-right: auto; text-align: center;">
+        Arcis is maintained by <a href="https://github.com/Gagancm" style="color: var(--accent); font-weight: 500;">Gagan CM</a>. If you're using it, found a bug, want to contribute, or want to chat about security or integrations, reach out.
       </p>
 
       <div class="contact-options">
@@ -1870,8 +1883,8 @@
           <div class="footer-col">
             <h4>SDKs</h4>
             <ul>
-              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm &mdash; @arcis/node</a></li>
-              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI &mdash; arcis</a></li>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li>
               <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
             </ul>
           </div>

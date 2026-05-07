@@ -3,7 +3,7 @@
  * A cross-platform security library
  *
  * @module @arcis/node
- * @version 1.0.0
+ * @version 1.5.0
  *
  * @example
  * // Full protection (recommended)
@@ -43,6 +43,23 @@ export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from '
 export { botProtection, detectBot } from './middleware/bot-detection';
 export { csrfProtection, createCsrf, generateCsrfToken, validateCsrfToken } from './middleware/csrf';
 export { hpp, createHpp } from './middleware/hpp';
+export { tokenBudget } from './middleware/token-budget';
+export type {
+  TokenBudgetOptions,
+  TokenBudgetMiddleware,
+} from './middleware/token-budget';
+export { Guards } from './guards';
+export type {
+  GuardsConfig,
+  GuardsInput,
+  GuardsDecision,
+  GuardsVector,
+  GuardsSeverity,
+  GuardsRateLimitOptions,
+  GuardsTokenBudgetOptions,
+  GuardsPromptInjectionOptions,
+  GuardsBotOptions,
+} from './guards';
 export { signupProtection, checkSignup } from './middleware/signup-protection';
 export type {
   SignupProtectionOptions,
@@ -67,6 +84,15 @@ export { sanitizeCommand, detectCommandInjection } from './sanitizers/command';
 export { sanitizeSsti, detectSsti } from './sanitizers/ssti';
 export { sanitizeXxe, detectXxe } from './sanitizers/xxe';
 export { sanitizeJsonpCallback, detectJsonpInjection } from './sanitizers/jsonp';
+export {
+  detectPromptInjection,
+  sanitizePromptInjection,
+} from './sanitizers/prompt-injection';
+export type {
+  DetectPromptInjectionResult,
+  PromptInjectionMatch,
+  PromptInjectionSeverity,
+} from './sanitizers/prompt-injection';
 export { isDangerousNoSqlKey, detectNoSqlInjection } from './sanitizers/nosql';
 export { isDangerousProtoKey, detectPrototypePollution } from './sanitizers/prototype';
 export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './sanitizers/headers';

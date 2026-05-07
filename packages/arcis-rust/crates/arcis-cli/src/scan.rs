@@ -13,8 +13,8 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use arcis_engine::scan::{
-    attack_categories, discover_routes, payloads::slug, scan_route, DiscoveredRoute, RouteResult,
-    ScanOptions, DEFAULT_FIELDS,
+    attack_categories, discover_routes, execute_login, format_curl, payloads::slug, scan_route,
+    AuthConfig, DiscoveredRoute, LoginConfig, RouteResult, ScanOptions, DEFAULT_FIELDS,
 };
 
 const RESET: &str = "\x1b[0m";
@@ -38,6 +38,11 @@ struct Args {
     no_discovery: bool,
     no_control_plane: bool,
     json_output: bool,
+    bearer: Option<String>,
+    cookie: Option<String>,
+    login_url: Option<String>,
+    login_form: Vec<(String, String)>,
+    login_json: bool,
 }
 
 #[derive(Debug)]
@@ -62,6 +67,11 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         no_discovery: false,
         no_control_plane: false,
         json_output: false,
+        bearer: None,
+        cookie: None,
+        login_url: None,
+        login_form: Vec::new(),
+        login_json: false,
     };
 
     let mut i = 0;
@@ -106,11 +116,19 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                 args.timeout = n;
             }
             "--categories" | "-c" => {
-                // nargs+: consume args until the next flag.
+                // Accept either nargs+ (space-separated, `--categories xss
+                // sql path`) or comma-separated (`--categories xss,sql,path`)
+                // or a mix of both. Each consumed token is split on `,`,
+                // trimmed, and empty pieces (from a stray comma) are dropped.
                 let mut cats: Vec<String> = Vec::new();
                 while i + 1 < argv.len() && !argv[i + 1].starts_with('-') {
                     i += 1;
-                    cats.push(argv[i].clone());
+                    for piece in argv[i].split(',') {
+                        let p = piece.trim();
+                        if !p.is_empty() {
+                            cats.push(p.to_string());
+                        }
+                    }
                 }
                 if cats.is_empty() {
                     return ParseOutcome::Err(
@@ -122,6 +140,75 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "-l" => {
                 args.list = true;
             }
+            "--bearer" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --bearer needs a value".into());
+                };
+                match validate_bearer_value(v) {
+                    Ok(t) => args.bearer = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--bearer=") => {
+                let v = &arg["--bearer=".len()..];
+                match validate_bearer_value(v) {
+                    Ok(t) => args.bearer = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--cookie" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --cookie needs a value".into());
+                };
+                match validate_cookie_value(v) {
+                    Ok(t) => args.cookie = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--cookie=") => {
+                let v = &arg["--cookie=".len()..];
+                match validate_cookie_value(v) {
+                    Ok(t) => args.cookie = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--login" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --login needs a value".into());
+                };
+                match validate_login_url(v) {
+                    Ok(u) => args.login_url = Some(u),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--login=") => {
+                let v = &arg["--login=".len()..];
+                match validate_login_url(v) {
+                    Ok(u) => args.login_url = Some(u),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--login-form" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --login-form needs a value".into());
+                };
+                match parse_login_form_pair(v) {
+                    Ok(pair) => args.login_form.push(pair),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--login-form=") => {
+                let v = &arg["--login-form=".len()..];
+                match parse_login_form_pair(v) {
+                    Ok(pair) => args.login_form.push(pair),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--login-json" => args.login_json = true,
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
                 return ParseOutcome::Err(format!("arcis scan: unknown flag: {other}"));
             }
@@ -137,7 +224,66 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         i += 1;
     }
 
+    // Cross-flag validation. Run after the per-arg parse loop so the
+    // user sees the most relevant error first (mutex / orphan-flag
+    // checks fire only when the individual flags parsed cleanly).
+    if args.login_url.is_some() && (args.bearer.is_some() || args.cookie.is_some()) {
+        return ParseOutcome::Err(
+            "arcis scan: --login is mutually exclusive with --bearer / --cookie. \
+             Use --login OR manual flags, not both."
+                .into(),
+        );
+    }
+    if args.login_url.is_none() && !args.login_form.is_empty() {
+        return ParseOutcome::Err("arcis scan: --login-form requires --login".into());
+    }
+    if args.login_url.is_none() && args.login_json {
+        return ParseOutcome::Err("arcis scan: --login-json requires --login".into());
+    }
+
     ParseOutcome::Args(Box::new(args))
+}
+
+fn validate_bearer_value(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("arcis scan: --bearer cannot be empty or whitespace-only".into())
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+fn validate_cookie_value(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("arcis scan: --cookie cannot be empty or whitespace-only".into())
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+fn validate_login_url(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        return Err("arcis scan: --login cannot be empty or whitespace-only".into());
+    }
+    if !(value.starts_with("http://") || value.starts_with("https://")) {
+        return Err(format!(
+            "arcis scan: invalid --login URL scheme: {value}\n  Only http:// and https:// are supported."
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn parse_login_form_pair(value: &str) -> Result<(String, String), String> {
+    let Some((key, val)) = value.split_once('=') else {
+        return Err(format!(
+            "arcis scan: --login-form expects key=value, got: {value}"
+        ));
+    };
+    if key.is_empty() {
+        return Err(format!(
+            "arcis scan: --login-form expects key=value with non-empty key, got: {value}"
+        ));
+    }
+    Ok((key.to_string(), val.to_string()))
 }
 
 fn ansi(no_color: bool, code: &str) -> &str {
@@ -224,11 +370,11 @@ fn print_help(out: &mut dyn Write) -> io::Result<()> {
     )?;
     writeln!(
         out,
-        "  -c, --categories CAT [CAT..] Attack categories (default: all)."
+        "  -c, --categories CAT[,CAT..] Attack categories. Comma- or space-separated."
     )?;
     writeln!(
         out,
-        "                               Choices: {}",
+        "                               (default: all). Choices: {}",
         names.join(", ")
     )?;
     writeln!(
@@ -266,6 +412,54 @@ fn print_help(out: &mut dyn Write) -> io::Result<()> {
     writeln!(
         out,
         "      --json                   Print machine-readable JSON summary."
+    )?;
+    writeln!(
+        out,
+        "      --bearer <token>         Send Authorization: Bearer <token> on every request."
+    )?;
+    writeln!(
+        out,
+        "                               Token value never appears in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --cookie <value>         Send Cookie: <value> on every request. Pasted verbatim;"
+    )?;
+    writeln!(
+        out,
+        "                               join multi-cookie with `; `. Composes with --bearer."
+    )?;
+    writeln!(
+        out,
+        "                               Cookie value never appears in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --login <url>            POST credentials to <url> and capture an auth artifact."
+    )?;
+    writeln!(
+        out,
+        "                               Capture priority: Set-Cookie -> access_token -> token -> jwt."
+    )?;
+    writeln!(
+        out,
+        "                               Mutex with --bearer / --cookie."
+    )?;
+    writeln!(
+        out,
+        "      --login-form key=value   Field for the login request body. Repeatable."
+    )?;
+    writeln!(
+        out,
+        "                               Default encoding: form-urlencoded."
+    )?;
+    writeln!(
+        out,
+        "      --login-json             Send --login-form fields as JSON instead."
+    )?;
+    writeln!(
+        out,
+        "                               Form keys + values never appear in --json output."
     )?;
     writeln!(
         out,
@@ -364,6 +558,14 @@ fn print_human_report(
                 "    {dim}{mark}{reset} [{}] {} {dim}{}{reset}",
                 v.category, v.label, v.note
             )?;
+            // Emit a copyable curl reproducer for each vulnerable finding
+            // so the user can reproduce the probe + verify their fix
+            // without re-running the full scan. Blocked findings are
+            // intentionally skipped to keep the report scannable.
+            if !v.blocked {
+                let curl = format_curl(target_url, &rr.method, &rr.path, &rr.field, &v.payload);
+                writeln!(out, "       {dim}{curl}{reset}")?;
+            }
         }
     }
     writeln!(out)?;
@@ -383,6 +585,7 @@ fn print_human_report(
 fn print_json_report(
     out: &mut dyn Write,
     target_url: &str,
+    auth: Option<&AuthConfig>,
     results: &[RouteResult],
     summary: &ScanSummary,
 ) -> io::Result<()> {
@@ -402,6 +605,15 @@ fn print_json_report(
                     m.insert("status".into(), json!(v.status));
                     m.insert("blocked".into(), Value::Bool(v.blocked));
                     m.insert("note".into(), Value::String(v.note.clone()));
+                    // Include the curl reproducer for every vector (blocked
+                    // and vulnerable) so machine consumers can render or
+                    // filter as they please.
+                    m.insert(
+                        "curl".into(),
+                        Value::String(format_curl(
+                            target_url, &rr.method, &rr.path, &rr.field, &v.payload,
+                        )),
+                    );
                     Value::Object(m)
                 })
                 .collect();
@@ -413,6 +625,7 @@ fn print_json_report(
                 "error".into(),
                 rr.error.clone().map(Value::String).unwrap_or(Value::Null),
             );
+            m.insert("field".into(), Value::String(rr.field.clone()));
             m.insert("vectors".into(), Value::Array(vectors));
             Value::Object(m)
         })
@@ -421,6 +634,16 @@ fn print_json_report(
     let mut doc = Map::new();
     doc.insert("tool".into(), Value::String("arcis-scan".into()));
     doc.insert("target".into(), Value::String(target_url.into()));
+    // Auth metadata, redacted. Slot is between `target` and
+    // `durationMs` (run setup, before run results). Omitted entirely
+    // for unauthenticated runs so prior JSON output stays byte-equal.
+    // The redaction rule lives on `AuthConfig::redact_for_json`; see
+    // that doc-comment for the contract future flags must follow.
+    if let Some(auth) = auth {
+        if let Some(meta) = auth.redact_for_json() {
+            doc.insert("auth".into(), meta);
+        }
+    }
     doc.insert(
         "durationMs".into(),
         json!((summary.duration_secs * 1000.0).round() as u64),
@@ -524,6 +747,8 @@ pub fn run(argv: &[String]) -> ExitCode {
 
     let timeout = Duration::from_secs(args.timeout);
 
+    // Build the runtime first — login (--login) needs to await
+    // execute_login before we can build the AuthConfig.
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()
@@ -536,6 +761,51 @@ pub fn run(argv: &[String]) -> ExitCode {
         }
     };
 
+    // Build the auth config. Three exclusive paths (the `--login`
+    // mutex check at parse time guarantees at most one of these
+    // branches fires):
+    //   1. `--login` set: execute the login flow on the runtime,
+    //      capture the artifact into a populated AuthConfig.
+    //   2. `--bearer` and/or `--cookie` set: compose manually.
+    //   3. Neither: no auth.
+    let auth_config: Option<AuthConfig> = if let Some(url) = args.login_url.as_deref() {
+        let lcfg = LoginConfig {
+            url: url.to_string(),
+            form: args.login_form.clone(),
+            json: args.login_json,
+        };
+        match runtime.block_on(execute_login(&lcfg, timeout)) {
+            Ok(cfg) => Some(cfg),
+            Err(e) => {
+                let _ = writeln!(err, "arcis scan: {e}");
+                return ExitCode::from(2);
+            }
+        }
+    } else if args.bearer.is_some() || args.cookie.is_some() {
+        let mut cfg = AuthConfig::default();
+        if let Some(token) = args.bearer.as_deref() {
+            match AuthConfig::with_bearer(token) {
+                Ok(c) => cfg.bearer = c.bearer,
+                Err(e) => {
+                    let _ = writeln!(err, "arcis scan: {e}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        if let Some(value) = args.cookie.as_deref() {
+            match AuthConfig::with_cookie(value) {
+                Ok(c) => cfg.cookie = c.cookie,
+                Err(e) => {
+                    let _ = writeln!(err, "arcis scan: {e}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        Some(cfg)
+    } else {
+        None
+    };
+
     let start = Instant::now();
     let results: Vec<RouteResult> = runtime.block_on(async {
         let mut out: Vec<RouteResult> = Vec::with_capacity(routes.len());
@@ -546,6 +816,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                 timeout,
                 categories: categories.as_deref(),
                 thorough: args.thorough,
+                auth: auth_config.as_ref(),
             };
             out.push(scan_route(&target_url, method, path, &opts).await);
         }
@@ -556,7 +827,13 @@ pub fn run(argv: &[String]) -> ExitCode {
     let summary = summarize(&results, elapsed);
 
     if args.json_output {
-        let _ = print_json_report(&mut out, &target_url, &results, &summary);
+        let _ = print_json_report(
+            &mut out,
+            &target_url,
+            auth_config.as_ref(),
+            &results,
+            &summary,
+        );
     } else if !args.quiet {
         let _ = print_human_report(&mut out, &target_url, &results, &summary, args.no_color);
     }
@@ -629,6 +906,27 @@ mod tests {
         let a = args(&["-c", "xss", "sql", "--yes"]);
         assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql"]);
         assert!(a.yes);
+    }
+
+    #[test]
+    fn parses_categories_comma_separated() {
+        let a = args(&["-c", "xss,sql,path"]);
+        assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql", "path"]);
+    }
+
+    #[test]
+    fn parses_categories_mixed_comma_and_space() {
+        let a = args(&["--categories", "xss,sql", "path", "nosql, cmd"]);
+        assert_eq!(
+            a.categories.as_deref().unwrap(),
+            &["xss", "sql", "path", "nosql", "cmd"]
+        );
+    }
+
+    #[test]
+    fn categories_drops_empty_comma_pieces() {
+        let a = args(&["-c", "xss,,sql,"]);
+        assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql"]);
     }
 
     #[test]
@@ -706,6 +1004,462 @@ mod tests {
         assert_eq!(r, vec![("POST".into(), "http://example.com/x".into())]);
     }
 
+    /// Deliberately unique sentinels for the JSON-redaction tests below.
+    /// Pinned so a substring match against the emitted JSON cannot
+    /// false-positive on a hash digest, route URL, or vector label.
+    const TEST_BEARER_TOKEN: &str = "arcis-test-bearer-DEADBEEF-9f3a2c";
+    const TEST_COOKIE_VALUE: &str = "session=arcis-test-cookie-CAFEBABE-7e1f4d; csrf=feedface";
+
+    #[test]
+    fn parses_bearer_space_separated() {
+        let a = args(&["--bearer", "foo"]);
+        assert_eq!(a.bearer.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn parses_bearer_equals_inline() {
+        let a = args(&["--bearer=foo"]);
+        assert_eq!(a.bearer.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn bearer_empty_value_rejected() {
+        let argv: Vec<String> = ["--bearer", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bearer_whitespace_only_rejected() {
+        let argv: Vec<String> = ["--bearer", "   "].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bearer_inline_equals_empty_rejected() {
+        let argv: Vec<String> = ["--bearer="].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn json_report_includes_auth_methods_array_for_bearer_and_redacts_token() {
+        let auth = AuthConfig::with_bearer(TEST_BEARER_TOKEN).unwrap();
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        // Schema: `methods` is always an array (even for one entry).
+        assert_eq!(v["auth"]["methods"][0], "bearer");
+        assert_eq!(v["auth"]["methods"].as_array().unwrap().len(), 1);
+        // Sentinel: the literal token string must NEVER appear anywhere
+        // in the emitted JSON. This pins the redaction contract — users
+        // pipe `--json` output to logs and CI artifacts; secrets must
+        // not leak there.
+        assert!(
+            !s.contains(TEST_BEARER_TOKEN),
+            "token leaked to JSON output: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_includes_auth_methods_array_for_cookie_and_redacts_value() {
+        let auth = AuthConfig::with_cookie(TEST_COOKIE_VALUE).unwrap();
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["auth"]["methods"][0], "cookie");
+        assert_eq!(v["auth"]["methods"].as_array().unwrap().len(), 1);
+        // Cookie value sentinel must NOT appear anywhere in JSON. The
+        // verbatim no-parse policy means we never extract names either.
+        assert!(!s.contains(TEST_COOKIE_VALUE), "cookie value leaked: {s}");
+        assert!(
+            !s.contains("session="),
+            "cookie name should not leak under no-parse policy: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_with_bearer_and_cookie_lists_both_methods_and_redacts_both() {
+        // Composite path: alphabetical order pinned, both sentinels
+        // checked absent.
+        let auth = AuthConfig {
+            bearer: Some(TEST_BEARER_TOKEN.into()),
+            cookie: Some(TEST_COOKIE_VALUE.into()),
+            ..Default::default()
+        };
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let methods = v["auth"]["methods"].as_array().unwrap();
+        assert_eq!(methods.len(), 2);
+        assert_eq!(methods[0], "bearer");
+        assert_eq!(methods[1], "cookie");
+        assert!(
+            !s.contains(TEST_BEARER_TOKEN),
+            "bearer leaked in composite: {s}"
+        );
+        assert!(
+            !s.contains(TEST_COOKIE_VALUE),
+            "cookie leaked in composite: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_omits_auth_when_unauthenticated() {
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        // No-auth runs must not emit the key at all so prior
+        // unauthenticated JSON output stays byte-equal.
+        assert!(v.get("auth").is_none(), "got: {s}");
+        assert!(!s.contains("\"auth\""), "got: {s}");
+    }
+
+    #[test]
+    fn help_text_documents_bearer_redaction() {
+        // The "never appears in --json" line is load-bearing for users
+        // running scans in CI — it tells them piping --json to logs is
+        // safe. Pin it so future help-text refactors don't drop it.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--bearer <token>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("Authorization: Bearer"),
+            "missing header description: {s}"
+        );
+        assert!(
+            s.contains("Token value never appears in --json"),
+            "missing bearer redaction note: {s}"
+        );
+    }
+
+    #[test]
+    fn help_text_documents_cookie_redaction() {
+        // Parallel to the bearer pin: the redaction promise is also
+        // load-bearing for --cookie. Future help-text refactors must
+        // not drop either line.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--cookie <value>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("Send Cookie:"),
+            "missing header description: {s}"
+        );
+        assert!(
+            s.contains("Cookie value never appears in --json"),
+            "missing cookie redaction note: {s}"
+        );
+    }
+
+    #[test]
+    fn parses_cookie_space_separated() {
+        let a = args(&["--cookie", "session=abc; csrf=xyz"]);
+        assert_eq!(a.cookie.as_deref(), Some("session=abc; csrf=xyz"));
+    }
+
+    #[test]
+    fn parses_cookie_equals_inline() {
+        let a = args(&["--cookie=session=abc"]);
+        // Verbatim including the inner `=` — no further parsing.
+        assert_eq!(a.cookie.as_deref(), Some("session=abc"));
+    }
+
+    #[test]
+    fn cookie_empty_value_rejected() {
+        let argv: Vec<String> = ["--cookie", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cookie_whitespace_only_rejected() {
+        let argv: Vec<String> = ["--cookie", "   "].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cookie_inline_equals_empty_rejected() {
+        let argv: Vec<String> = ["--cookie="].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bearer_and_cookie_compose() {
+        let a = args(&["--bearer", "tok", "--cookie", "session=abc"]);
+        assert_eq!(a.bearer.as_deref(), Some("tok"));
+        assert_eq!(a.cookie.as_deref(), Some("session=abc"));
+    }
+
+    // --login flag tests
+
+    #[test]
+    fn parses_login_url_space_separated() {
+        let a = args(&["--login", "http://localhost:5000/auth/login"]);
+        assert_eq!(
+            a.login_url.as_deref(),
+            Some("http://localhost:5000/auth/login")
+        );
+    }
+
+    #[test]
+    fn parses_login_url_equals_inline() {
+        let a = args(&["--login=https://example.com/login"]);
+        assert_eq!(a.login_url.as_deref(), Some("https://example.com/login"));
+    }
+
+    #[test]
+    fn login_url_invalid_scheme_rejected() {
+        let argv: Vec<String> = ["--login", "ftp://example.com/login"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("invalid --login URL scheme"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_empty_value_rejected() {
+        let argv: Vec<String> = ["--login", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_login_form_repeatable() {
+        let a = args(&[
+            "--login",
+            "http://x/auth",
+            "--login-form",
+            "user=admin",
+            "--login-form",
+            "pass=hunter2",
+        ]);
+        assert_eq!(
+            a.login_form,
+            vec![
+                ("user".into(), "admin".into()),
+                ("pass".into(), "hunter2".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_login_form_value_with_inner_equals_kept_verbatim() {
+        // Only the FIRST `=` splits key from value — useful when the
+        // value itself contains `=` (base64, JWT-ish, etc.).
+        let a = args(&["--login", "http://x/auth", "--login-form", "raw=k=v=more"]);
+        assert_eq!(a.login_form, vec![("raw".into(), "k=v=more".into())]);
+    }
+
+    #[test]
+    fn login_form_rejects_no_equals() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--login-form", "bareword"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(
+                    e.contains("--login-form expects key=value, got: bareword"),
+                    "got: {e}"
+                )
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_form_rejects_empty_key() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--login-form", "=val"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("non-empty key"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_login_json_flag() {
+        let a = args(&["--login", "http://x/auth", "--login-json"]);
+        assert!(a.login_json);
+    }
+
+    #[test]
+    fn login_form_without_login_url_rejected() {
+        let argv: Vec<String> = ["--login-form", "user=admin"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login-form requires --login"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_json_without_login_url_rejected() {
+        let argv: Vec<String> = ["--login-json"].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login-json requires --login"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    /// The mutex error message is part of the documented contract.
+    /// Pin its exact wording so future refactors don't drift.
+    const MUTEX_MESSAGE: &str = "--login is mutually exclusive with --bearer / --cookie. \
+         Use --login OR manual flags, not both.";
+
+    #[test]
+    fn login_mutex_with_bearer_rejected_with_exact_message() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--bearer", "tok"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_mutex_with_cookie_rejected_with_exact_message() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--cookie", "session=abc"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_mutex_with_both_bearer_and_cookie_still_one_message() {
+        let argv: Vec<String> = [
+            "--login",
+            "http://x/auth",
+            "--bearer",
+            "tok",
+            "--cookie",
+            "s=a",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn help_text_documents_login_capture_priority() {
+        // The capture priority (Set-Cookie -> access_token -> token ->
+        // jwt) is part of the documented user contract — pin it so
+        // future help-text refactors don't drop it. Users with weird
+        // login responses need a clear failure mode.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--login <url>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("--login-form key=value"),
+            "missing form flag: {s}"
+        );
+        assert!(s.contains("--login-json"), "missing json flag: {s}");
+        // Capture priority — all four tokens in the documented order.
+        let priority_pos = s.find("Set-Cookie -> access_token -> token -> jwt");
+        assert!(
+            priority_pos.is_some(),
+            "missing capture-priority order line: {s}"
+        );
+        // Mutex hint.
+        assert!(
+            s.contains("Mutex with --bearer / --cookie"),
+            "missing mutex hint: {s}"
+        );
+        // Form-redaction hint.
+        assert!(
+            s.contains("Form keys + values never appear in --json"),
+            "missing form redaction note: {s}"
+        );
+    }
+
     #[test]
     fn catalog_output_no_color_byte_shape() {
         let mut buf: Vec<u8> = Vec::new();
@@ -745,5 +1499,80 @@ mod tests {
         assert!(s.contains(RESET));
         assert!(s.contains(DIM));
         assert!(s.contains(CYAN));
+    }
+
+    fn fixture_route() -> RouteResult {
+        use arcis_engine::scan::VectorResult;
+        RouteResult {
+            method: "POST".into(),
+            path: "/api/login".into(),
+            reachable: true,
+            error: None,
+            field: "username".into(),
+            vectors: vec![
+                VectorResult {
+                    category: "XSS".into(),
+                    label: "script tag".into(),
+                    payload: "<script>alert(1)</script>".into(),
+                    status: 200,
+                    blocked: false,
+                    note: "reflected in response (200)".into(),
+                },
+                VectorResult {
+                    category: "SQL Injection".into(),
+                    label: "OR bypass".into(),
+                    payload: "' OR '1'='1' --".into(),
+                    status: 400,
+                    blocked: true,
+                    note: "rejected (400)".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn human_report_includes_curl_for_vulnerable_only() {
+        let rr = fixture_route();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // Vulnerable XSS finding should be followed by a curl line.
+        assert!(
+            s.contains("curl -fsSL -X POST 'http://localhost:5000/api/login'"),
+            "expected curl reproducer for vulnerable finding, got:\n{s}"
+        );
+        // Blocked SQL finding should NOT have a curl line for it.
+        // We check that the OR-bypass payload does not appear inside any
+        // curl command — it would only show up if format_curl ran.
+        assert!(
+            !s.contains("' OR '1"),
+            "blocked findings should not emit a curl line, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn json_report_includes_curl_per_vector_and_field_per_route() {
+        let rr = fixture_route();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[rr], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let route0 = &v["routes"][0];
+        assert_eq!(route0["field"], "username");
+        let vectors = route0["vectors"].as_array().unwrap();
+        // Both blocked and vulnerable vectors carry a curl reproducer in JSON.
+        assert_eq!(vectors.len(), 2);
+        for vec in vectors {
+            let curl = vec["curl"].as_str().unwrap();
+            assert!(curl.starts_with("curl -fsSL"), "curl prefix: {curl}");
+        }
+        // Vulnerable XSS payload appears URL-encoded INSIDE the JSON body
+        // of its own POST curl command (since method=POST). Confirm the
+        // method + path land correctly.
+        let xss_curl = vectors[0]["curl"].as_str().unwrap();
+        assert!(xss_curl.contains("-X POST"), "got: {xss_curl}");
+        assert!(xss_curl.contains("/api/login"), "got: {xss_curl}");
     }
 }

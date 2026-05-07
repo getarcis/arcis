@@ -10,7 +10,7 @@
 
 Arcis is a cross-platform security library that provides drop-in protection against common web vulnerabilities. Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
-## What's new in v2.0.0
+## What's new in v1.5.0
 
 - **SDK-only release.** `pip install arcis` now ships the runtime middleware only — zero runtime dependencies. The CLI moved to its own package: `npm install -g @arcis/cli`. See "CLI" below.
 - The middleware API is unchanged. Existing `Arcis(app)` / `app.add_middleware(ArcisMiddleware, ...)` code keeps working.

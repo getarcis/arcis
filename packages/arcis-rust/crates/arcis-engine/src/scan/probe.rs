@@ -19,6 +19,7 @@ use reqwest::{Client, Method};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
+use super::auth::AuthConfig;
 use super::classifier::classify;
 use super::payloads::{attack_categories, slug};
 
@@ -41,12 +42,18 @@ pub struct VectorResult {
 }
 
 /// Result of scanning one route (probe + all active vectors).
+///
+/// `field` is the JSON body / query key the probe step settled on; empty
+/// string when the route never reached the vector dispatch stage. Carried
+/// here so renderers (human + JSON) can build a faithful `curl`
+/// reproducer per vector — see `scan::repro::format_curl`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RouteResult {
     pub method: String,
     pub path: String,
     pub reachable: bool,
     pub error: Option<String>,
+    pub field: String,
     pub vectors: Vec<VectorResult>,
 }
 
@@ -60,6 +67,11 @@ pub struct ScanOptions<'a> {
     /// `c.lower().replace(" ", "")`.
     pub categories: Option<&'a [String]>,
     pub thorough: bool,
+    /// Optional auth state. `None` is the zero-cost no-auth path
+    /// (no header-map allocation, no `default_headers` call). Carries
+    /// the bearer token (and, in follow-up commits, cookies + login
+    /// artifacts) injected on every probe + vector request.
+    pub auth: Option<&'a AuthConfig>,
 }
 
 /// Send one HTTP request with `payload` injected into `field`. Returns
@@ -155,7 +167,14 @@ pub async fn scan_route(
         ..Default::default()
     };
 
-    let client = match Client::builder().timeout(options.timeout).build() {
+    // Single header-injection site for all auth flags. `default_headers`
+    // is set once on the Client; probe step + every vector inherits.
+    // No-auth path skips the call entirely (no allocation, no copy).
+    let mut builder = Client::builder().timeout(options.timeout);
+    if let Some(auth) = options.auth {
+        builder = builder.default_headers(auth.to_header_map());
+    }
+    let client = match builder.build() {
         Ok(c) => c,
         Err(e) => {
             result.error = Some(format!("client init failed: {e}"));
@@ -184,6 +203,7 @@ pub async fn scan_route(
         return result;
     }
     result.reachable = true;
+    result.field = working_field.clone();
 
     let tasks = build_tasks(options.categories, options.thorough);
 
@@ -400,6 +420,7 @@ mod tests {
             timeout: Duration::from_millis(500),
             categories: None,
             thorough: false,
+            auth: None,
         };
         let rr = scan_route(&format!("http://{addr}"), "POST", "/api/login", &opts).await;
         assert!(!rr.reachable);
@@ -415,6 +436,7 @@ mod tests {
             timeout: Duration::from_secs(2),
             categories: None,
             thorough: false,
+            auth: None,
         };
         let rr = scan_route(&format!("http://{addr}"), "POST", "/missing", &opts).await;
         assert!(!rr.reachable);
@@ -445,6 +467,7 @@ mod tests {
             timeout: Duration::from_secs(2),
             categories: Some(&cats),
             thorough: false,
+            auth: None,
         };
         let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
         assert!(rr.reachable);
@@ -480,6 +503,7 @@ mod tests {
             timeout: Duration::from_secs(2),
             categories: None, // all categories
             thorough: false,
+            auth: None,
         };
         let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
         assert!(rr.reachable);
@@ -534,5 +558,157 @@ mod tests {
         assert!(names.contains("NoSQL Injection"));
         assert!(names.contains("SQL Blind"));
         assert_eq!(names.len(), 2);
+    }
+
+    // The two tests below use the per-route mock server from
+    // `super::test_server` rather than `spawn_mock`, since they assert
+    // against captured request headers — a surface the single-responder
+    // mock doesn't expose.
+    #[tokio::test]
+    async fn scan_route_with_bearer_sends_authorization_on_every_request() {
+        use crate::scan::test_server::{MockResponse, MockServer};
+
+        let server = MockServer::start().await;
+        // Every request: 200 OK so the probe step succeeds and vector
+        // dispatch fires.
+        server.on("POST", "/api/test", |_req| MockResponse::ok("{}"));
+
+        let auth = AuthConfig::with_bearer("test-bearer-token-xyz").unwrap();
+        let cats = vec!["xss".to_string()];
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: Some(&cats),
+            thorough: false,
+            auth: Some(&auth),
+        };
+        let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
+
+        let captured = server.requests();
+        assert!(!captured.is_empty(), "expected at least one request");
+        for req in &captured {
+            assert_eq!(
+                req.headers.get("authorization").map(String::as_str),
+                Some("Bearer test-bearer-token-xyz"),
+                "every probe + vector request must carry the bearer header; got: {req:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn scan_route_without_auth_omits_authorization_header() {
+        use crate::scan::test_server::{MockResponse, MockServer};
+
+        let server = MockServer::start().await;
+        server.on("POST", "/api/test", |_req| MockResponse::ok("{}"));
+
+        let cats = vec!["xss".to_string()];
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: Some(&cats),
+            thorough: false,
+            auth: None,
+        };
+        let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
+
+        let captured = server.requests();
+        assert!(!captured.is_empty(), "expected at least one request");
+        for req in &captured {
+            assert!(
+                !req.headers.contains_key("authorization"),
+                "no-auth runs must NOT send an Authorization header; got: {req:?}"
+            );
+            assert!(
+                !req.headers.contains_key("cookie"),
+                "no-auth runs must NOT send a Cookie header; got: {req:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn scan_route_with_cookie_sends_cookie_header_verbatim() {
+        use crate::scan::test_server::{MockResponse, MockServer};
+
+        let server = MockServer::start().await;
+        server.on("POST", "/api/test", |_req| MockResponse::ok("{}"));
+
+        // Multi-cookie semicolon form must round-trip on the wire
+        // exactly as the user pasted it — no parsing, no reordering.
+        let cookie = "session=abc; csrf=xyz; flavor=chocolate";
+        let auth = AuthConfig::with_cookie(cookie).unwrap();
+        let cats = vec!["xss".to_string()];
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: Some(&cats),
+            thorough: false,
+            auth: Some(&auth),
+        };
+        let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
+
+        let captured = server.requests();
+        assert!(!captured.is_empty(), "expected at least one request");
+        for req in &captured {
+            assert_eq!(
+                req.headers.get("cookie").map(String::as_str),
+                Some(cookie),
+                "every probe + vector request must carry the cookie verbatim; got: {req:?}"
+            );
+            assert!(
+                !req.headers.contains_key("authorization"),
+                "cookie-only run must NOT carry Authorization; got: {req:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn scan_route_with_bearer_and_cookie_sends_both_headers() {
+        // Composition test: per session direction, assert presence and
+        // per-header value equality independently. HTTP treats headers
+        // as orderless, HeaderMap iteration order is not stable —
+        // never compare full sequences.
+        use crate::scan::test_server::{MockResponse, MockServer};
+
+        let server = MockServer::start().await;
+        server.on("POST", "/api/test", |_req| MockResponse::ok("{}"));
+
+        let auth = AuthConfig {
+            bearer: Some("test-bearer-token-xyz".into()),
+            cookie: Some("session=abc; csrf=xyz".into()),
+            ..Default::default()
+        };
+        let cats = vec!["xss".to_string()];
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: Some(&cats),
+            thorough: false,
+            auth: Some(&auth),
+        };
+        let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
+
+        let captured = server.requests();
+        assert!(!captured.is_empty(), "expected at least one request");
+        for req in &captured {
+            // Presence — independent checks per header.
+            assert!(
+                req.headers.contains_key("authorization"),
+                "missing authorization header; got: {req:?}"
+            );
+            assert!(
+                req.headers.contains_key("cookie"),
+                "missing cookie header; got: {req:?}"
+            );
+            // Value equality — per-header, no order assumptions.
+            assert_eq!(
+                req.headers.get("authorization").map(String::as_str),
+                Some("Bearer test-bearer-token-xyz")
+            );
+            assert_eq!(
+                req.headers.get("cookie").map(String::as_str),
+                Some("session=abc; csrf=xyz")
+            );
+        }
     }
 }

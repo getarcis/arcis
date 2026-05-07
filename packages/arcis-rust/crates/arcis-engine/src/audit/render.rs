@@ -52,6 +52,18 @@ pub struct JsonReport<'a> {
     pub by_severity: &'a BTreeMap<Severity, usize>,
     pub duration_ms: u64,
     pub severity_filter: Option<Severity>,
+    /// Findings that fired but were silenced by a suppress-comment
+    /// directive (cli-audit.md item 6). Surfaces as
+    /// `summary.suppressed` in the JSON output. Suppressed findings
+    /// are NOT included in the `findings` array — only the count
+    /// surfaces, by design.
+    pub suppressed: usize,
+    /// Files excluded by an `.arcisignore` / `.gitignore` /
+    /// `.git/info/exclude` rule (cli-audit.md item 7). Surfaces as
+    /// `summary.ignored` in the JSON output. Always emitted (zero is
+    /// informative — confirms the field exists even on a clean run).
+    /// Ignored files do NOT appear in `filesScanned` or `byLanguage`.
+    pub ignored: usize,
 }
 
 /// Render the audit result as a JSON document. Schema:
@@ -106,12 +118,26 @@ pub fn render_json(report: &JsonReport<'_>) -> String {
     summary.insert("bySeverity".into(), Value::Object(by_sev));
 
     summary.insert("totalFindings".into(), Value::from(report.findings.len()));
+    // cli-audit.md item 6: count of suppress-comment-silenced findings.
+    // Always emitted (zero is informative — confirms the field exists
+    // even on a clean run). Suppressed findings themselves are NOT
+    // listed; only the count.
+    summary.insert("suppressed".into(), Value::from(report.suppressed));
+    // cli-audit.md item 7: count of files excluded by `.arcisignore` /
+    // `.gitignore` / `.git/info/exclude`. Always emitted (same noise
+    // tradeoff as `suppressed`); the human report hides the line at 0.
+    summary.insert("ignored".into(), Value::from(report.ignored));
     doc.insert("summary".into(), Value::Object(summary));
 
     let mut findings_arr = Vec::with_capacity(report.findings.len());
     for f in report.findings {
         let mut item = Map::new();
         item.insert("ruleId".into(), Value::from(f.rule_id));
+        // `id` is the deterministic `<RULE_ID>-<16hex>` fingerprint.
+        // Sits second so consumers can scan a finding's identity in the
+        // first two keys without paging through the message/file/line
+        // body. cli-audit.md item 10.
+        item.insert("id".into(), Value::from(f.id.as_str()));
         item.insert("severity".into(), Value::from(f.severity.as_str()));
         item.insert("message".into(), Value::from(f.message));
         item.insert("file".into(), Value::from(f.file.as_str()));
@@ -232,6 +258,18 @@ pub fn render_sarif(report: &SarifReport<'_>) -> String {
             "locations".into(),
             Value::Array(vec![Value::Object(location)]),
         );
+        // SARIF 2.1.0 §3.27.16: `partialFingerprints` is a tool-defined
+        // map that GitHub Code Scanning hashes for cross-run de-dupe.
+        // Versioned key (`arcis/v1`) gives us a clean rotation lane if
+        // we ever change the hash function — bumping to `arcis/v2`
+        // signals to GitHub that the fingerprint domain shifted.
+        // Empty `id` (scan_file path that bypassed assign_ids) is
+        // skipped so we don't emit empty-string fingerprints.
+        if !f.id.is_empty() {
+            let mut pf = Map::new();
+            pf.insert("arcis/v1".into(), Value::from(f.id.as_str()));
+            result.insert("partialFingerprints".into(), Value::Object(pf));
+        }
         results.push(Value::Object(result));
     }
 
@@ -334,6 +372,9 @@ mod tests {
     use serde_json::Value as Json;
 
     fn finding(rule_id: &'static str, sev: Severity, file: &str, line: usize) -> Finding {
+        // Test fixture id mirrors the live `<RULE_ID>-<16hex>` shape
+        // without invoking the hasher — render tests should exercise
+        // the renderer, not the hasher.
         Finding {
             rule_id,
             severity: sev,
@@ -341,6 +382,7 @@ mod tests {
             file: file.to_string(),
             line,
             snippet: "yaml.load(f)".to_string(),
+            id: format!("{rule_id}-deadbeefcafef00d"),
         }
     }
 
@@ -364,6 +406,8 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 500,
             severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
         };
         let out = render_json(&report);
         let doc = parse(&out);
@@ -374,6 +418,9 @@ mod tests {
         assert_eq!(doc["summary"]["filesScanned"], Json::from(3u64));
         assert_eq!(doc["summary"]["rulesApplied"], Json::from(14u64));
         assert_eq!(doc["summary"]["totalFindings"], Json::from(0u64));
+        // cli-audit.md item 6: suppressed key always present, defaults
+        // to 0 even on a clean run.
+        assert_eq!(doc["summary"]["suppressed"], Json::from(0u64));
         assert!(doc["findings"].is_array());
         assert_eq!(doc["findings"].as_array().unwrap().len(), 0);
     }
@@ -392,6 +439,8 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: Some(Severity::High),
+            suppressed: 0,
+            ignored: 0,
         };
         let doc = parse(&render_json(&report));
         assert_eq!(doc["severityFilter"], Json::from("high"));
@@ -412,6 +461,8 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 100,
             severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
         };
         let out = render_json(&report);
         let doc = parse(&out);
@@ -421,10 +472,43 @@ mod tests {
         assert_eq!(arr.len(), 1);
         let item = &arr[0];
         assert_eq!(item["ruleId"], Json::from("YAML-UNSAFE"));
+        assert_eq!(item["id"], Json::from("YAML-UNSAFE-deadbeefcafef00d"));
         assert_eq!(item["severity"], Json::from("high"));
         assert_eq!(item["file"], Json::from("/tmp/a.py"));
         assert_eq!(item["line"], Json::from(42u64));
         assert_eq!(item["snippet"], Json::from("yaml.load(f)"));
+    }
+
+    #[test]
+    fn json_finding_id_appears_second_after_rule_id() {
+        // cli-audit.md item 10: `id` sits between `ruleId` and the
+        // body fields so consumers see the identity pair up front.
+        let f = finding("YAML-UNSAFE", Severity::High, "/tmp/a.py", 42);
+        let by_lang: BTreeMap<String, usize> = BTreeMap::new();
+        let by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: std::slice::from_ref(&f),
+            files_scanned: 1,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
+        });
+        // String-position sniff: ruleId opens the finding object, id
+        // follows immediately, severity comes after.
+        let rule_pos = out.find("\"ruleId\"").expect("ruleId key in output");
+        let id_pos = out.find("\"id\"").expect("id key in output");
+        let sev_pos = out.find("\"severity\"").expect("severity key in output");
+        assert!(
+            rule_pos < id_pos && id_pos < sev_pos,
+            "expected ruleId < id < severity in output, got positions \
+             rule={rule_pos} id={id_pos} sev={sev_pos}"
+        );
     }
 
     #[test]
@@ -444,6 +528,8 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
         });
         let positions: Vec<usize> = [
             "\"tool\"",
@@ -479,6 +565,8 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
         });
         assert!(
             out.contains("\\u2014"),
@@ -488,6 +576,82 @@ mod tests {
             !out.contains('\u{2014}'),
             "em dash should not appear literally — Python's default escapes it"
         );
+    }
+
+    #[test]
+    fn json_suppressed_count_emitted_in_summary() {
+        // cli-audit.md item 6: when the scan suppressed N findings,
+        // `summary.suppressed` reports the count. Suppressed findings
+        // do NOT appear in the `findings` array.
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 1,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 12,
+            ignored: 0,
+        });
+        let doc = parse(&out);
+        assert_eq!(doc["summary"]["suppressed"], Json::from(12u64));
+        assert_eq!(doc["summary"]["totalFindings"], Json::from(0u64));
+        assert_eq!(doc["findings"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn json_ignored_count_emitted_in_summary() {
+        // cli-audit.md item 7: when the walker excluded N files via
+        // `.arcisignore` / `.gitignore`, `summary.ignored` reports the
+        // count. Ignored files do NOT appear in `filesScanned` (the
+        // walker drops them before scanning).
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 7,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 4,
+        });
+        let doc = parse(&out);
+        assert_eq!(doc["summary"]["ignored"], Json::from(4u64));
+        assert_eq!(doc["summary"]["filesScanned"], Json::from(7u64));
+    }
+
+    #[test]
+    fn json_ignored_key_always_present_even_at_zero() {
+        // Same noise tradeoff as `suppressed`: zero is informative —
+        // confirms the field exists on a clean run, so consumers don't
+        // have to handle "missing" vs "zero".
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 0,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
+        });
+        let doc = parse(&out);
+        assert_eq!(doc["summary"]["ignored"], Json::from(0u64));
     }
 
     #[test]
@@ -504,6 +668,8 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
         });
         // Python `json.dumps(..., indent=2)` uses 2-space indent. Our
         // serde_json::to_string_pretty default is also 2 spaces. Pin
@@ -645,6 +811,48 @@ mod tests {
             .as_str()
             .unwrap();
         assert_eq!(target_uri, target_uri2);
+    }
+
+    #[test]
+    fn sarif_partial_fingerprints_emitted_under_arcis_v1_key() {
+        // GitHub Code Scanning de-dupes results across runs by hashing
+        // the partialFingerprints map. cli-audit.md item 10 — versioned
+        // key gives us a clean rotation lane.
+        let f = finding("YAML-UNSAFE", Severity::High, "/x.py", 1);
+        let doc = parse(&render_sarif(&SarifReport {
+            tool_version: "1.0",
+            target_abspath: "/tmp",
+            findings: std::slice::from_ref(&f),
+        }));
+        let pf = &doc["runs"][0]["results"][0]["partialFingerprints"];
+        assert!(pf.is_object(), "partialFingerprints must be an object");
+        assert_eq!(
+            pf["arcis/v1"],
+            Json::from("YAML-UNSAFE-deadbeefcafef00d"),
+            "fingerprint sits under tool-versioned key"
+        );
+    }
+
+    #[test]
+    fn sarif_partial_fingerprints_omitted_when_id_empty() {
+        // Finding produced by `scan_file` (no relpath context) carries
+        // an empty id. The SARIF renderer must skip emitting an empty
+        // partialFingerprints entry rather than ship a useless `""` —
+        // a downstream tool with strict schema validation would reject
+        // it as a degenerate fingerprint.
+        let mut f = finding("YAML-UNSAFE", Severity::High, "/x.py", 1);
+        f.id = String::new();
+        let doc = parse(&render_sarif(&SarifReport {
+            tool_version: "1.0",
+            target_abspath: "/tmp",
+            findings: std::slice::from_ref(&f),
+        }));
+        assert!(
+            doc["runs"][0]["results"][0]
+                .get("partialFingerprints")
+                .is_none(),
+            "partialFingerprints must be absent for empty id"
+        );
     }
 
     #[test]
