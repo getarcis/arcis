@@ -48,6 +48,18 @@ export type {
   TokenBudgetOptions,
   TokenBudgetMiddleware,
 } from './middleware/token-budget';
+export { Guards } from './guards';
+export type {
+  GuardsConfig,
+  GuardsInput,
+  GuardsDecision,
+  GuardsVector,
+  GuardsSeverity,
+  GuardsRateLimitOptions,
+  GuardsTokenBudgetOptions,
+  GuardsPromptInjectionOptions,
+  GuardsBotOptions,
+} from './guards';
 export { signupProtection, checkSignup } from './middleware/signup-protection';
 export type {
   SignupProtectionOptions,
