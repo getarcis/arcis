@@ -8,10 +8,19 @@
 use std::fs;
 use std::path::Path;
 
+use super::finding_id;
 use super::rules::{rules as compiled_rules, Language, Rule, Severity};
 use super::walker::{collect_files, detect_language};
 
-/// One audit finding. Field-for-field with Python's `Finding` dataclass.
+/// One audit finding.
+///
+/// `id` is the deterministic fingerprint computed by
+/// [`finding_id::assign_ids`]; `scan_file` leaves it empty (no relpath
+/// context), `scan_directory` fills it in. The CLI calls
+/// [`finding_id::assign_ids`] explicitly when it scans via
+/// `collect_files` + `scan_file` rather than `scan_directory` so it can
+/// pin the relpath to the user's input arg. Empty `id` indicates "not
+/// yet assigned" — never an error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     pub rule_id: &'static str,
@@ -20,6 +29,9 @@ pub struct Finding {
     pub file: String,
     pub line: usize,
     pub snippet: String,
+    /// `<RULE_ID>-<16hex>` deterministic fingerprint. See
+    /// [`finding_id`] for the derivation.
+    pub id: String,
 }
 
 /// Scan a single file. Returns empty if extension is unknown or read
@@ -84,6 +96,7 @@ pub fn scan_file(path: &Path) -> Vec<Finding> {
                 file: file_str.clone(),
                 line: line_num,
                 snippet,
+                id: String::new(),
             });
         }
     }
@@ -119,6 +132,13 @@ pub fn scan_directory(
             .then_with(|| a.file.cmp(&b.file))
             .then_with(|| a.line.cmp(&b.line))
     });
+
+    // Fill in deterministic ids so two runs of `scan_directory` over
+    // the same target return findings that compare PartialEq. The CLI
+    // can override later with a different `target_root` if the user
+    // passed one (e.g. ran `arcis audit .` and we want relpaths
+    // relative to cwd, not absolutized).
+    finding_id::assign_ids(&mut findings, path);
 
     findings
 }

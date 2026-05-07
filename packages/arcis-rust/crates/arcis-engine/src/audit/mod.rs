@@ -16,11 +16,13 @@
 //! next to the clap glue.
 
 pub mod engine;
+pub mod finding_id;
 pub mod render;
 pub mod rules;
 pub mod walker;
 
 pub use engine::{scan_directory, scan_file, Finding};
+pub use finding_id::{assign_ids, compute as compute_finding_id, normalize_relpath};
 pub use render::{render_json, render_sarif, JsonReport, SarifReport};
 pub use rules::{rules, Language, Rule, Severity};
 pub use walker::{collect_files, detect_language, SKIP_DIRS};

@@ -27,6 +27,9 @@ reqwest = { workspace = true }
 urlencoding = "2.1"
 # `~/.arcis/osv-cache.json` — OSV layer (cli-sca.md Phase B).
 dirs = { workspace = true }
+# Deterministic finding IDs for `arcis audit` (cli-audit.md Phase B
+# item 10). Used only by `audit::finding_id`; safe in the hot path.
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.10"

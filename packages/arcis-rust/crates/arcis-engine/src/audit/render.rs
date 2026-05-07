@@ -112,6 +112,11 @@ pub fn render_json(report: &JsonReport<'_>) -> String {
     for f in report.findings {
         let mut item = Map::new();
         item.insert("ruleId".into(), Value::from(f.rule_id));
+        // `id` is the deterministic `<RULE_ID>-<16hex>` fingerprint.
+        // Sits second so consumers can scan a finding's identity in the
+        // first two keys without paging through the message/file/line
+        // body. cli-audit.md item 10.
+        item.insert("id".into(), Value::from(f.id.as_str()));
         item.insert("severity".into(), Value::from(f.severity.as_str()));
         item.insert("message".into(), Value::from(f.message));
         item.insert("file".into(), Value::from(f.file.as_str()));
@@ -232,6 +237,18 @@ pub fn render_sarif(report: &SarifReport<'_>) -> String {
             "locations".into(),
             Value::Array(vec![Value::Object(location)]),
         );
+        // SARIF 2.1.0 §3.27.16: `partialFingerprints` is a tool-defined
+        // map that GitHub Code Scanning hashes for cross-run de-dupe.
+        // Versioned key (`arcis/v1`) gives us a clean rotation lane if
+        // we ever change the hash function — bumping to `arcis/v2`
+        // signals to GitHub that the fingerprint domain shifted.
+        // Empty `id` (scan_file path that bypassed assign_ids) is
+        // skipped so we don't emit empty-string fingerprints.
+        if !f.id.is_empty() {
+            let mut pf = Map::new();
+            pf.insert("arcis/v1".into(), Value::from(f.id.as_str()));
+            result.insert("partialFingerprints".into(), Value::Object(pf));
+        }
         results.push(Value::Object(result));
     }
 
@@ -334,6 +351,9 @@ mod tests {
     use serde_json::Value as Json;
 
     fn finding(rule_id: &'static str, sev: Severity, file: &str, line: usize) -> Finding {
+        // Test fixture id mirrors the live `<RULE_ID>-<16hex>` shape
+        // without invoking the hasher — render tests should exercise
+        // the renderer, not the hasher.
         Finding {
             rule_id,
             severity: sev,
@@ -341,6 +361,7 @@ mod tests {
             file: file.to_string(),
             line,
             snippet: "yaml.load(f)".to_string(),
+            id: format!("{rule_id}-deadbeefcafef00d"),
         }
     }
 
@@ -421,10 +442,41 @@ mod tests {
         assert_eq!(arr.len(), 1);
         let item = &arr[0];
         assert_eq!(item["ruleId"], Json::from("YAML-UNSAFE"));
+        assert_eq!(item["id"], Json::from("YAML-UNSAFE-deadbeefcafef00d"));
         assert_eq!(item["severity"], Json::from("high"));
         assert_eq!(item["file"], Json::from("/tmp/a.py"));
         assert_eq!(item["line"], Json::from(42u64));
         assert_eq!(item["snippet"], Json::from("yaml.load(f)"));
+    }
+
+    #[test]
+    fn json_finding_id_appears_second_after_rule_id() {
+        // cli-audit.md item 10: `id` sits between `ruleId` and the
+        // body fields so consumers see the identity pair up front.
+        let f = finding("YAML-UNSAFE", Severity::High, "/tmp/a.py", 42);
+        let by_lang: BTreeMap<String, usize> = BTreeMap::new();
+        let by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: std::slice::from_ref(&f),
+            files_scanned: 1,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+        });
+        // String-position sniff: ruleId opens the finding object, id
+        // follows immediately, severity comes after.
+        let rule_pos = out.find("\"ruleId\"").expect("ruleId key in output");
+        let id_pos = out.find("\"id\"").expect("id key in output");
+        let sev_pos = out.find("\"severity\"").expect("severity key in output");
+        assert!(
+            rule_pos < id_pos && id_pos < sev_pos,
+            "expected ruleId < id < severity in output, got positions \
+             rule={rule_pos} id={id_pos} sev={sev_pos}"
+        );
     }
 
     #[test]
@@ -645,6 +697,48 @@ mod tests {
             .as_str()
             .unwrap();
         assert_eq!(target_uri, target_uri2);
+    }
+
+    #[test]
+    fn sarif_partial_fingerprints_emitted_under_arcis_v1_key() {
+        // GitHub Code Scanning de-dupes results across runs by hashing
+        // the partialFingerprints map. cli-audit.md item 10 — versioned
+        // key gives us a clean rotation lane.
+        let f = finding("YAML-UNSAFE", Severity::High, "/x.py", 1);
+        let doc = parse(&render_sarif(&SarifReport {
+            tool_version: "1.0",
+            target_abspath: "/tmp",
+            findings: std::slice::from_ref(&f),
+        }));
+        let pf = &doc["runs"][0]["results"][0]["partialFingerprints"];
+        assert!(pf.is_object(), "partialFingerprints must be an object");
+        assert_eq!(
+            pf["arcis/v1"],
+            Json::from("YAML-UNSAFE-deadbeefcafef00d"),
+            "fingerprint sits under tool-versioned key"
+        );
+    }
+
+    #[test]
+    fn sarif_partial_fingerprints_omitted_when_id_empty() {
+        // Finding produced by `scan_file` (no relpath context) carries
+        // an empty id. The SARIF renderer must skip emitting an empty
+        // partialFingerprints entry rather than ship a useless `""` —
+        // a downstream tool with strict schema validation would reject
+        // it as a degenerate fingerprint.
+        let mut f = finding("YAML-UNSAFE", Severity::High, "/x.py", 1);
+        f.id = String::new();
+        let doc = parse(&render_sarif(&SarifReport {
+            tool_version: "1.0",
+            target_abspath: "/tmp",
+            findings: std::slice::from_ref(&f),
+        }));
+        assert!(
+            doc["runs"][0]["results"][0]
+                .get("partialFingerprints")
+                .is_none(),
+            "partialFingerprints must be absent for empty id"
+        );
     }
 
     #[test]

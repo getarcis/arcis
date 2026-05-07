@@ -14,8 +14,8 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use arcis_engine::audit::{
-    collect_files, detect_language, render_json, render_sarif, rules as compiled_rules, scan_file,
-    Finding, JsonReport, Language, SarifReport, Severity,
+    assign_ids, collect_files, detect_language, render_json, render_sarif, rules as compiled_rules,
+    scan_file, Finding, JsonReport, Language, SarifReport, Severity,
 };
 
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -354,6 +354,12 @@ pub fn run(argv: &[String]) -> ExitCode {
             .then_with(|| a.file.cmp(&b.file))
             .then_with(|| a.line.cmp(&b.line))
     });
+
+    // Deterministic finding ids — `<RULE_ID>-<16hex>` over
+    // `(rule_id, relpath, line, snippet)`. Pinned to the user's input
+    // path so `arcis audit .` and `arcis audit /abs/repo` produce the
+    // same id for the same source line. cli-audit.md item 10.
+    assign_ids(&mut findings, &path);
 
     // Per-severity counts. Sorted by Severity Ord so the JSON
     // `bySeverity` map keys come out in [critical, high, medium, low]
