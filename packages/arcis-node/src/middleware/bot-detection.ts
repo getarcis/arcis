@@ -14,6 +14,7 @@
  */
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import BOT_PATTERN_DATA from '../data/bot-patterns.json';
 
 // =============================================================================
 // BOT CATEGORIES
@@ -64,115 +65,49 @@ export interface BotProtectionOptions {
 // =============================================================================
 
 interface BotPattern {
-  /** Regex pattern to match against User-Agent */
-  pattern: RegExp;
-  /** Bot name */
+  /** Compiled regex(es) to match against the User-Agent. ANY match counts. */
+  patterns: RegExp[];
+  /** Compiled forbidden patterns. If ANY matches, this entry is rejected. */
+  forbidden: RegExp[];
+  /** Bot name (e.g. 'Googlebot') */
   name: string;
   /** Category */
   category: BotCategory;
+  /** Stable identifier from the source corpus */
+  id: string;
 }
 
 /**
- * Bot patterns ordered by specificity — more specific patterns first.
- * All patterns are case-insensitive and tested against the full UA string.
+ * Source data for the bot corpus — `packages/core/bot-patterns.json`, derived
+ * from arcjet/well-known-bots (MIT) plus a supplementary list of browser
+ * automation tools the upstream doesn't separately track. Regenerate via
+ * `python packages/core/generate-bot-patterns.py` after upgrading the source.
  */
-const BOT_PATTERNS: BotPattern[] = [
-  // --- SEARCH ENGINES (specific variants before generic) ---
-  { pattern: /Googlebot-Image/i, name: 'Googlebot-Image', category: 'SEARCH_ENGINE' },
-  { pattern: /Googlebot-Video/i, name: 'Googlebot-Video', category: 'SEARCH_ENGINE' },
-  { pattern: /Googlebot-News/i, name: 'Googlebot-News', category: 'SEARCH_ENGINE' },
-  { pattern: /Googlebot/i, name: 'Googlebot', category: 'SEARCH_ENGINE' },
-  { pattern: /AdsBot-Google/i, name: 'AdsBot-Google', category: 'SEARCH_ENGINE' },
-  { pattern: /Mediapartners-Google/i, name: 'Mediapartners-Google', category: 'SEARCH_ENGINE' },
-  { pattern: /Bingbot/i, name: 'Bingbot', category: 'SEARCH_ENGINE' },
-  { pattern: /msnbot/i, name: 'msnbot', category: 'SEARCH_ENGINE' },
-  { pattern: /Slurp/i, name: 'Yahoo Slurp', category: 'SEARCH_ENGINE' },
-  { pattern: /DuckDuckBot/i, name: 'DuckDuckBot', category: 'SEARCH_ENGINE' },
-  { pattern: /Baiduspider/i, name: 'Baiduspider', category: 'SEARCH_ENGINE' },
-  { pattern: /YandexBot/i, name: 'YandexBot', category: 'SEARCH_ENGINE' },
-  { pattern: /YandexImages/i, name: 'YandexImages', category: 'SEARCH_ENGINE' },
-  { pattern: /Sogou/i, name: 'Sogou', category: 'SEARCH_ENGINE' },
-  { pattern: /Exabot/i, name: 'Exabot', category: 'SEARCH_ENGINE' },
-  { pattern: /ia_archiver/i, name: 'Alexa', category: 'SEARCH_ENGINE' },
-  { pattern: /Applebot/i, name: 'Applebot', category: 'SEARCH_ENGINE' },
-  { pattern: /Qwantify/i, name: 'Qwantify', category: 'SEARCH_ENGINE' },
-  { pattern: /PetalBot/i, name: 'PetalBot', category: 'SEARCH_ENGINE' },
-  { pattern: /SeznamBot/i, name: 'SeznamBot', category: 'SEARCH_ENGINE' },
+interface BotPatternData {
+  id: string;
+  name: string;
+  category: string;
+  patterns: string[];
+  forbidden: string[];
+}
 
-  // --- SOCIAL ---
-  { pattern: /Twitterbot/i, name: 'Twitterbot', category: 'SOCIAL' },
-  { pattern: /facebookexternalhit/i, name: 'Facebook', category: 'SOCIAL' },
-  { pattern: /Facebot/i, name: 'Facebot', category: 'SOCIAL' },
-  { pattern: /LinkedInBot/i, name: 'LinkedInBot', category: 'SOCIAL' },
-  { pattern: /Pinterest/i, name: 'Pinterest', category: 'SOCIAL' },
-  { pattern: /Slackbot/i, name: 'Slackbot', category: 'SOCIAL' },
-  { pattern: /TelegramBot/i, name: 'TelegramBot', category: 'SOCIAL' },
-  { pattern: /WhatsApp/i, name: 'WhatsApp', category: 'SOCIAL' },
-  { pattern: /Discordbot/i, name: 'Discordbot', category: 'SOCIAL' },
-  { pattern: /Redditbot/i, name: 'Redditbot', category: 'SOCIAL' },
-  { pattern: /Embedly/i, name: 'Embedly', category: 'SOCIAL' },
-  { pattern: /Quora Link Preview/i, name: 'Quora', category: 'SOCIAL' },
-  { pattern: /Mastodon/i, name: 'Mastodon', category: 'SOCIAL' },
+function compilePattern(source: string): RegExp {
+  // Patterns from the corpus are JS-style regex bodies (no enclosing /.../ ).
+  // Compile case-insensitive: matches Arcis's documented contract that bot
+  // detection ignores UA case (`GPTBOT` and `gptbot` match the same entry).
+  // This is additive on top of Arcjet's explicit character classes like
+  // `[wW]get` — the `i` flag doesn't conflict with character ranges.
+  return new RegExp(source, 'i');
+}
 
-  // --- MONITORING ---
-  { pattern: /UptimeRobot/i, name: 'UptimeRobot', category: 'MONITORING' },
-  { pattern: /Pingdom/i, name: 'Pingdom', category: 'MONITORING' },
-  { pattern: /Site24x7/i, name: 'Site24x7', category: 'MONITORING' },
-  { pattern: /StatusCake/i, name: 'StatusCake', category: 'MONITORING' },
-  { pattern: /Datadog/i, name: 'Datadog', category: 'MONITORING' },
-  { pattern: /NewRelicPinger/i, name: 'New Relic', category: 'MONITORING' },
-  { pattern: /Better Uptime Bot/i, name: 'Better Uptime', category: 'MONITORING' },
-  { pattern: /GTmetrix/i, name: 'GTmetrix', category: 'MONITORING' },
-  { pattern: /PageSpeed/i, name: 'PageSpeed Insights', category: 'MONITORING' },
+const BOT_PATTERNS: BotPattern[] = (BOT_PATTERN_DATA as BotPatternData[]).map((entry) => ({
+  id: entry.id,
+  name: entry.name,
+  category: entry.category as BotCategory,
+  patterns: entry.patterns.map(compilePattern),
+  forbidden: entry.forbidden.map(compilePattern),
+}));
 
-  // --- AI CRAWLERS ---
-  { pattern: /GPTBot/i, name: 'GPTBot', category: 'AI_CRAWLER' },
-  { pattern: /ChatGPT-User/i, name: 'ChatGPT-User', category: 'AI_CRAWLER' },
-  { pattern: /Claude-Web/i, name: 'Claude-Web', category: 'AI_CRAWLER' },
-  { pattern: /ClaudeBot/i, name: 'ClaudeBot', category: 'AI_CRAWLER' },
-  { pattern: /anthropic-ai/i, name: 'Anthropic', category: 'AI_CRAWLER' },
-  { pattern: /Bytespider/i, name: 'Bytespider', category: 'AI_CRAWLER' },
-  { pattern: /CCBot/i, name: 'CCBot', category: 'AI_CRAWLER' },
-  { pattern: /cohere-ai/i, name: 'Cohere', category: 'AI_CRAWLER' },
-  { pattern: /PerplexityBot/i, name: 'PerplexityBot', category: 'AI_CRAWLER' },
-  { pattern: /YouBot/i, name: 'YouBot', category: 'AI_CRAWLER' },
-  { pattern: /Google-Extended/i, name: 'Google-Extended', category: 'AI_CRAWLER' },
-  { pattern: /Diffbot/i, name: 'Diffbot', category: 'AI_CRAWLER' },
-  { pattern: /Amazonbot/i, name: 'Amazonbot', category: 'AI_CRAWLER' },
-  { pattern: /meta-externalagent/i, name: 'Meta AI', category: 'AI_CRAWLER' },
-
-  // --- AUTOMATED TOOLS (headless browsers, testing frameworks) ---
-  { pattern: /HeadlessChrome/i, name: 'Headless Chrome', category: 'AUTOMATED' },
-  { pattern: /PhantomJS/i, name: 'PhantomJS', category: 'AUTOMATED' },
-  { pattern: /Selenium/i, name: 'Selenium', category: 'AUTOMATED' },
-  { pattern: /Puppeteer/i, name: 'Puppeteer', category: 'AUTOMATED' },
-  { pattern: /Playwright/i, name: 'Playwright', category: 'AUTOMATED' },
-  { pattern: /Cypress/i, name: 'Cypress', category: 'AUTOMATED' },
-  { pattern: /webdriver/i, name: 'WebDriver', category: 'AUTOMATED' },
-  { pattern: /MSIE 6\.0/i, name: 'Fake IE6', category: 'AUTOMATED' },
-
-  // --- SCRAPERS / CLI TOOLS ---
-  { pattern: /^curl\//i, name: 'curl', category: 'SCRAPER' },
-  { pattern: /^wget\//i, name: 'wget', category: 'SCRAPER' },
-  { pattern: /^python-requests\//i, name: 'python-requests', category: 'SCRAPER' },
-  { pattern: /^python-httpx\//i, name: 'python-httpx', category: 'SCRAPER' },
-  { pattern: /^Python-urllib/i, name: 'Python-urllib', category: 'SCRAPER' },
-  { pattern: /^aiohttp\//i, name: 'aiohttp', category: 'SCRAPER' },
-  { pattern: /^Go-http-client/i, name: 'Go-http-client', category: 'SCRAPER' },
-  { pattern: /^Java\//i, name: 'Java HttpClient', category: 'SCRAPER' },
-  { pattern: /^Apache-HttpClient/i, name: 'Apache HttpClient', category: 'SCRAPER' },
-  { pattern: /^okhttp\//i, name: 'OkHttp', category: 'SCRAPER' },
-  { pattern: /^node-fetch\//i, name: 'node-fetch', category: 'SCRAPER' },
-  { pattern: /^axios\//i, name: 'axios', category: 'SCRAPER' },
-  { pattern: /^got\//i, name: 'got', category: 'SCRAPER' },
-  { pattern: /^libwww-perl/i, name: 'libwww-perl', category: 'SCRAPER' },
-  { pattern: /^Ruby/i, name: 'Ruby', category: 'SCRAPER' },
-  { pattern: /^PHP\//i, name: 'PHP', category: 'SCRAPER' },
-  { pattern: /Scrapy/i, name: 'Scrapy', category: 'SCRAPER' },
-  { pattern: /^Postman/i, name: 'Postman', category: 'SCRAPER' },
-  { pattern: /^Insomnia/i, name: 'Insomnia', category: 'SCRAPER' },
-  { pattern: /^HTTPie\//i, name: 'HTTPie', category: 'SCRAPER' },
-];
 
 // =============================================================================
 // DETECTION ENGINE
@@ -253,17 +188,39 @@ export function detectBot(req: Request): BotDetectionResult {
     };
   }
 
-  // Match against known bot patterns
+  // Match against known bot patterns. An entry matches when ALL of its
+  // accepted patterns match AND none of its forbidden patterns matches.
+  // ALL-of semantics makes multi-pattern entries (e.g. iMessage-Preview which
+  // expects both `facebookexternalhit` and `Twitterbot` in the same UA) only
+  // fire on real iMessage traffic, not on bare `Twitterbot/1.0` requests.
+  // Single-pattern entries (the common case) reduce trivially to that one
+  // pattern matching.
   for (const bot of BOT_PATTERNS) {
-    if (bot.pattern.test(ua)) {
-      return {
-        isBot: true,
-        category: bot.category,
-        name: bot.name,
-        confidence: 0.95,
-        signals,
-      };
+    let allMatched = bot.patterns.length > 0;
+    for (const pattern of bot.patterns) {
+      if (!pattern.test(ua)) {
+        allMatched = false;
+        break;
+      }
     }
+    if (!allMatched) continue;
+
+    let forbidden = false;
+    for (const pattern of bot.forbidden) {
+      if (pattern.test(ua)) {
+        forbidden = true;
+        break;
+      }
+    }
+    if (forbidden) continue;
+
+    return {
+      isBot: true,
+      category: bot.category,
+      name: bot.name,
+      confidence: 0.95,
+      signals,
+    };
   }
 
   // Behavioral analysis for unrecognized UAs
