@@ -99,11 +99,11 @@ type Input struct {
 
 // Decision is what Run() returns.
 type Decision struct {
-	OK                bool                            `json:"ok"`
-	Vector            Vector                          `json:"vector,omitempty"`
-	Reason            string                          `json:"reason,omitempty"`
-	Severity          Severity                        `json:"severity,omitempty"`
-	RetryAfterSeconds int                             `json:"retryAfterSeconds,omitempty"`
+	OK                bool                              `json:"ok"`
+	Vector            Vector                            `json:"vector,omitempty"`
+	Reason            string                            `json:"reason,omitempty"`
+	Severity          Severity                          `json:"severity,omitempty"`
+	RetryAfterSeconds int                               `json:"retryAfterSeconds,omitempty"`
 	Matches           []sanitizers.PromptInjectionMatch `json:"matches,omitempty"`
 }
 

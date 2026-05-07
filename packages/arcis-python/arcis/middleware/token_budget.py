@@ -52,7 +52,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 
 # ─── Defaults ──────────────────────────────────────────────────────────────

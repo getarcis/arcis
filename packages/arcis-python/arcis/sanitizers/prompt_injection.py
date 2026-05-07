@@ -14,7 +14,7 @@ Mirrors the Node API in ``packages/arcis-node/src/sanitizers/prompt-injection.ts
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Union
 
 PromptInjectionSeverity = Literal["low", "medium", "high"]
 

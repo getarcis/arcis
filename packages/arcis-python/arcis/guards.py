@@ -36,7 +36,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Iterable, List, Literal, Optional, Tuple, Union
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 from .middleware.bot_detection import detect_bot
 from .sanitizers.prompt_injection import detect_prompt_injection

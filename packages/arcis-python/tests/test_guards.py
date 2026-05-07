@@ -2,9 +2,8 @@
 
 import math
 
-import pytest
 
-from arcis.guards import Guards, GuardsDecision
+from arcis.guards import Guards
 
 
 # ─── input validation ────────────────────────────────────────────────────
