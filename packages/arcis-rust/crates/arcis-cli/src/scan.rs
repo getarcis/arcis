@@ -13,8 +13,8 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use arcis_engine::scan::{
-    attack_categories, discover_routes, format_curl, payloads::slug, scan_route, AuthConfig,
-    DiscoveredRoute, RouteResult, ScanOptions, DEFAULT_FIELDS,
+    attack_categories, discover_routes, execute_login, format_curl, payloads::slug, scan_route,
+    AuthConfig, DiscoveredRoute, LoginConfig, RouteResult, ScanOptions, DEFAULT_FIELDS,
 };
 
 const RESET: &str = "\x1b[0m";
@@ -40,6 +40,9 @@ struct Args {
     json_output: bool,
     bearer: Option<String>,
     cookie: Option<String>,
+    login_url: Option<String>,
+    login_form: Vec<(String, String)>,
+    login_json: bool,
 }
 
 #[derive(Debug)]
@@ -66,6 +69,9 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         json_output: false,
         bearer: None,
         cookie: None,
+        login_url: None,
+        login_form: Vec::new(),
+        login_json: false,
     };
 
     let mut i = 0;
@@ -168,12 +174,41 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                     Err(e) => return ParseOutcome::Err(e),
                 }
             }
-            // note(commit #4 --login): when --login lands, add a mutex
-            // check here:
-            //   if args.login.is_some() && args.bearer.is_some() { exit 2 }
-            //   if args.login.is_some() && args.cookie.is_some() { exit 2 }
-            // --login generates its own auth artifact, so combining it
-            // with manual flags is ambiguous. Reject early.
+            "--login" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --login needs a value".into());
+                };
+                match validate_login_url(v) {
+                    Ok(u) => args.login_url = Some(u),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--login=") => {
+                let v = &arg["--login=".len()..];
+                match validate_login_url(v) {
+                    Ok(u) => args.login_url = Some(u),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--login-form" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --login-form needs a value".into());
+                };
+                match parse_login_form_pair(v) {
+                    Ok(pair) => args.login_form.push(pair),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--login-form=") => {
+                let v = &arg["--login-form=".len()..];
+                match parse_login_form_pair(v) {
+                    Ok(pair) => args.login_form.push(pair),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--login-json" => args.login_json = true,
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
                 return ParseOutcome::Err(format!("arcis scan: unknown flag: {other}"));
             }
@@ -187,6 +222,23 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             }
         }
         i += 1;
+    }
+
+    // Cross-flag validation. Run after the per-arg parse loop so the
+    // user sees the most relevant error first (mutex / orphan-flag
+    // checks fire only when the individual flags parsed cleanly).
+    if args.login_url.is_some() && (args.bearer.is_some() || args.cookie.is_some()) {
+        return ParseOutcome::Err(
+            "arcis scan: --login is mutually exclusive with --bearer / --cookie. \
+             Use --login OR manual flags, not both."
+                .into(),
+        );
+    }
+    if args.login_url.is_none() && !args.login_form.is_empty() {
+        return ParseOutcome::Err("arcis scan: --login-form requires --login".into());
+    }
+    if args.login_url.is_none() && args.login_json {
+        return ParseOutcome::Err("arcis scan: --login-json requires --login".into());
     }
 
     ParseOutcome::Args(Box::new(args))
@@ -206,6 +258,32 @@ fn validate_cookie_value(value: &str) -> Result<String, String> {
     } else {
         Ok(value.to_string())
     }
+}
+
+fn validate_login_url(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        return Err("arcis scan: --login cannot be empty or whitespace-only".into());
+    }
+    if !(value.starts_with("http://") || value.starts_with("https://")) {
+        return Err(format!(
+            "arcis scan: invalid --login URL scheme: {value}\n  Only http:// and https:// are supported."
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn parse_login_form_pair(value: &str) -> Result<(String, String), String> {
+    let Some((key, val)) = value.split_once('=') else {
+        return Err(format!(
+            "arcis scan: --login-form expects key=value, got: {value}"
+        ));
+    };
+    if key.is_empty() {
+        return Err(format!(
+            "arcis scan: --login-form expects key=value with non-empty key, got: {value}"
+        ));
+    }
+    Ok((key.to_string(), val.to_string()))
 }
 
 fn ansi(no_color: bool, code: &str) -> &str {
@@ -354,6 +432,34 @@ fn print_help(out: &mut dyn Write) -> io::Result<()> {
     writeln!(
         out,
         "                               Cookie value never appears in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --login <url>            POST credentials to <url> and capture an auth artifact."
+    )?;
+    writeln!(
+        out,
+        "                               Capture priority: Set-Cookie -> access_token -> token -> jwt."
+    )?;
+    writeln!(
+        out,
+        "                               Mutex with --bearer / --cookie."
+    )?;
+    writeln!(
+        out,
+        "      --login-form key=value   Field for the login request body. Repeatable."
+    )?;
+    writeln!(
+        out,
+        "                               Default encoding: form-urlencoded."
+    )?;
+    writeln!(
+        out,
+        "      --login-json             Send --login-form fields as JSON instead."
+    )?;
+    writeln!(
+        out,
+        "                               Form keys + values never appear in --json output."
     )?;
     writeln!(
         out,
@@ -641,12 +747,41 @@ pub fn run(argv: &[String]) -> ExitCode {
 
     let timeout = Duration::from_secs(args.timeout);
 
-    // Build the auth config once. Parser already rejected empty/
-    // whitespace-only inputs; the engine validator below is belt-and-
-    // braces for any future direct API caller that bypasses the parser.
-    // `--bearer` and `--cookie` compose: distinct header names, no
-    // collision logic needed.
-    let auth_config: Option<AuthConfig> = if args.bearer.is_some() || args.cookie.is_some() {
+    // Build the runtime first — login (--login) needs to await
+    // execute_login before we can build the AuthConfig.
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            let _ = writeln!(err, "arcis scan: tokio runtime init failed: {e}");
+            return ExitCode::from(2);
+        }
+    };
+
+    // Build the auth config. Three exclusive paths (the `--login`
+    // mutex check at parse time guarantees at most one of these
+    // branches fires):
+    //   1. `--login` set: execute the login flow on the runtime,
+    //      capture the artifact into a populated AuthConfig.
+    //   2. `--bearer` and/or `--cookie` set: compose manually.
+    //   3. Neither: no auth.
+    let auth_config: Option<AuthConfig> = if let Some(url) = args.login_url.as_deref() {
+        let lcfg = LoginConfig {
+            url: url.to_string(),
+            form: args.login_form.clone(),
+            json: args.login_json,
+        };
+        match runtime.block_on(execute_login(&lcfg, timeout)) {
+            Ok(cfg) => Some(cfg),
+            Err(e) => {
+                let _ = writeln!(err, "arcis scan: {e}");
+                return ExitCode::from(2);
+            }
+        }
+    } else if args.bearer.is_some() || args.cookie.is_some() {
         let mut cfg = AuthConfig::default();
         if let Some(token) = args.bearer.as_deref() {
             match AuthConfig::with_bearer(token) {
@@ -669,18 +804,6 @@ pub fn run(argv: &[String]) -> ExitCode {
         Some(cfg)
     } else {
         None
-    };
-
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4)
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => {
-            let _ = writeln!(err, "arcis scan: tokio runtime init failed: {e}");
-            return ExitCode::from(2);
-        }
     };
 
     let start = Instant::now();
@@ -1123,6 +1246,218 @@ mod tests {
         let a = args(&["--bearer", "tok", "--cookie", "session=abc"]);
         assert_eq!(a.bearer.as_deref(), Some("tok"));
         assert_eq!(a.cookie.as_deref(), Some("session=abc"));
+    }
+
+    // --login flag tests
+
+    #[test]
+    fn parses_login_url_space_separated() {
+        let a = args(&["--login", "http://localhost:5000/auth/login"]);
+        assert_eq!(
+            a.login_url.as_deref(),
+            Some("http://localhost:5000/auth/login")
+        );
+    }
+
+    #[test]
+    fn parses_login_url_equals_inline() {
+        let a = args(&["--login=https://example.com/login"]);
+        assert_eq!(a.login_url.as_deref(), Some("https://example.com/login"));
+    }
+
+    #[test]
+    fn login_url_invalid_scheme_rejected() {
+        let argv: Vec<String> = ["--login", "ftp://example.com/login"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("invalid --login URL scheme"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_empty_value_rejected() {
+        let argv: Vec<String> = ["--login", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_login_form_repeatable() {
+        let a = args(&[
+            "--login",
+            "http://x/auth",
+            "--login-form",
+            "user=admin",
+            "--login-form",
+            "pass=hunter2",
+        ]);
+        assert_eq!(
+            a.login_form,
+            vec![
+                ("user".into(), "admin".into()),
+                ("pass".into(), "hunter2".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_login_form_value_with_inner_equals_kept_verbatim() {
+        // Only the FIRST `=` splits key from value — useful when the
+        // value itself contains `=` (base64, JWT-ish, etc.).
+        let a = args(&["--login", "http://x/auth", "--login-form", "raw=k=v=more"]);
+        assert_eq!(a.login_form, vec![("raw".into(), "k=v=more".into())]);
+    }
+
+    #[test]
+    fn login_form_rejects_no_equals() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--login-form", "bareword"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(
+                    e.contains("--login-form expects key=value, got: bareword"),
+                    "got: {e}"
+                )
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_form_rejects_empty_key() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--login-form", "=val"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("non-empty key"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_login_json_flag() {
+        let a = args(&["--login", "http://x/auth", "--login-json"]);
+        assert!(a.login_json);
+    }
+
+    #[test]
+    fn login_form_without_login_url_rejected() {
+        let argv: Vec<String> = ["--login-form", "user=admin"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login-form requires --login"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_json_without_login_url_rejected() {
+        let argv: Vec<String> = ["--login-json"].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login-json requires --login"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    /// The mutex error message is part of the documented contract.
+    /// Pin its exact wording so future refactors don't drift.
+    const MUTEX_MESSAGE: &str = "--login is mutually exclusive with --bearer / --cookie. \
+         Use --login OR manual flags, not both.";
+
+    #[test]
+    fn login_mutex_with_bearer_rejected_with_exact_message() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--bearer", "tok"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_mutex_with_cookie_rejected_with_exact_message() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--cookie", "session=abc"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_mutex_with_both_bearer_and_cookie_still_one_message() {
+        let argv: Vec<String> = [
+            "--login",
+            "http://x/auth",
+            "--bearer",
+            "tok",
+            "--cookie",
+            "s=a",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn help_text_documents_login_capture_priority() {
+        // The capture priority (Set-Cookie -> access_token -> token ->
+        // jwt) is part of the documented user contract — pin it so
+        // future help-text refactors don't drop it. Users with weird
+        // login responses need a clear failure mode.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--login <url>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("--login-form key=value"),
+            "missing form flag: {s}"
+        );
+        assert!(s.contains("--login-json"), "missing json flag: {s}");
+        // Capture priority — all four tokens in the documented order.
+        let priority_pos = s.find("Set-Cookie -> access_token -> token -> jwt");
+        assert!(
+            priority_pos.is_some(),
+            "missing capture-priority order line: {s}"
+        );
+        // Mutex hint.
+        assert!(
+            s.contains("Mutex with --bearer / --cookie"),
+            "missing mutex hint: {s}"
+        );
+        // Form-redaction hint.
+        assert!(
+            s.contains("Form keys + values never appear in --json"),
+            "missing form redaction note: {s}"
+        );
     }
 
     #[test]
