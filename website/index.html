@@ -1247,16 +1247,16 @@
     <div class="container">
       <div class="hero-badge">
         <span class="dot"></span>
-        v1.4.2 — LDAP injection, SSTI/XXE parity, 12 bypass closures
+        v1.5.0 — 5 new framework adapters, prompt-injection guard, 646-pattern bot corpus
       </div>
 
       <h1 class="hero-rotate">
-        <span class="rotate-line" data-index="0">Your app is one line away from being <em>secure</em></span>
+        <span class="rotate-line" data-index="0">Inside-the-app security middleware. <em>One install. Three languages.</em></span>
         <span class="rotate-line" data-index="1">Security middleware that <em>just works</em></span>
       </h1>
 
       <p class="hero-sub">
-        Arcis is a security middleware for Node.js, Python, and Go. Drop one line into any app and 20+ attack types get handled automatically. No config, no dependencies.
+        Arcis blocks XSS, SQL injection, SSRF, CSRF, prompt injection, bot traffic, and 20+ more attack types before your handler runs. Twelve framework adapters across Node, Python, and Go. Fully open-source. No cloud dependency. No closed binaries. No agent.
       </p>
 
       <div class="hero-actions">
@@ -1379,8 +1379,8 @@
             Without Arcis
           </h3>
           <ul>
-            <li>helmet, DOMPurify, csurf, cors, hpp, express-rate-limit, express-validator, cookie-parser</li>
-            <li>8 APIs. 8 configs. 8 update cycles.</li>
+            <li>Eight to twelve separate packages, one per concern: headers, sanitization, CSRF, rate limits, CORS, parameter pollution, validation, cookies.</li>
+            <li>Eight APIs. Eight configs. Eight release cycles.</li>
             <li>Days of research and integration.</li>
           </ul>
         </div>
@@ -1427,7 +1427,7 @@
           <div class="pipeline-num">2</div>
           <div class="pipeline-content">
             <h3>Bot Detection</h3>
-            <p>80+ patterns across 7 categories: crawlers, scrapers, AI bots, CLI tools, and behavioral fingerprinting.</p>
+            <p>646 patterns across 7 categories: search engines, social, monitoring, AI crawlers, scrapers, automated tools, and behavioral fingerprinting on missing browser headers.</p>
             <span class="pipeline-tag">403 Forbidden</span>
           </div>
         </div>
@@ -1573,7 +1573,7 @@
         <div class="threat-item reveal"><div class="threat-name">XXE</div><div class="threat-desc">DOCTYPE, ENTITY, SYSTEM/PUBLIC references stripped</div></div>
         <div class="threat-item reveal"><div class="threat-name">Rate Limiting</div><div class="threat-desc">Application-level — fixed, sliding window, token bucket, memory or Redis. Complements proxy/CDN-level limiting, not a replacement.</div></div>
         <div class="threat-item reveal"><div class="threat-name">Security Headers</div><div class="threat-desc">CSP, HSTS, X-Frame-Options, COOP, CORP, COEP &mdash; 16 total</div></div>
-        <div class="threat-item reveal"><div class="threat-name">Bot Detection</div><div class="threat-desc">80+ patterns, 7 categories, behavioral fingerprinting</div></div>
+        <div class="threat-item reveal"><div class="threat-name">Bot Detection</div><div class="threat-desc">646 patterns, 7 categories, behavioral fingerprinting</div></div>
         <div class="threat-item reveal"><div class="threat-name">Open Redirect</div><div class="threat-desc">Absolute URLs, javascript:, protocol-relative, backslash</div></div>
         <div class="threat-item reveal"><div class="threat-name">Error Leakage</div><div class="threat-desc">Stack traces, DB errors, internal IPs, connection strings</div></div>
         <div class="threat-item reveal"><div class="threat-name">Header Injection</div><div class="threat-desc">CRLF injection, response splitting, null bytes stripped</div></div>
@@ -1656,16 +1656,16 @@
            updates this section + changelog.html in one step. -->
       <div class="changelog-list" id="changelog-list">
         <div class="changelog-item reveal">
+          <span class="changelog-version">v1.5.0</span>
+          <span class="changelog-text">Five new Node framework adapters (NestJS, SvelteKit, Astro, Nuxt, Bun + Hono), AI-era protections (prompt-injection signature library + LLM token-budget middleware), 646-pattern bot corpus, native-Rust CLI.</span>
+        </div>
+        <div class="changelog-item reveal reveal-delay-1">
           <span class="changelog-version">v1.4.4</span>
           <span class="changelog-text">Detect-and-block middleware across all 3 SDKs. Block-mode 403s land on the dashboard with full vector attribution.</span>
         </div>
-        <div class="changelog-item reveal reveal-delay-1">
+        <div class="changelog-item reveal reveal-delay-2">
           <span class="changelog-version">v1.4.3</span>
           <span class="changelog-text">Telemetry pipeline shipped. Self-hosted dashboard accepts decision events from running middleware (Node + Python).</span>
-        </div>
-        <div class="changelog-item reveal reveal-delay-2">
-          <span class="changelog-version">v1.4.2</span>
-          <span class="changelog-text">12 security bypass vectors closed. SSTI and XXE parity added to Go. Unicode path traversal bypass fixed across all SDKs.</span>
         </div>
         <div class="changelog-item reveal reveal-delay-3">
           <span class="changelog-version">v1.4.1</span>

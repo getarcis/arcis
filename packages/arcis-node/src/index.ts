@@ -3,7 +3,7 @@
  * A cross-platform security library
  *
  * @module @arcis/node
- * @version 1.0.0
+ * @version 1.5.0
  *
  * @example
  * // Full protection (recommended)
