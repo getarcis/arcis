@@ -41,12 +41,18 @@ pub struct VectorResult {
 }
 
 /// Result of scanning one route (probe + all active vectors).
+///
+/// `field` is the JSON body / query key the probe step settled on; empty
+/// string when the route never reached the vector dispatch stage. Carried
+/// here so renderers (human + JSON) can build a faithful `curl`
+/// reproducer per vector — see `scan::repro::format_curl`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RouteResult {
     pub method: String,
     pub path: String,
     pub reachable: bool,
     pub error: Option<String>,
+    pub field: String,
     pub vectors: Vec<VectorResult>,
 }
 
@@ -184,6 +190,7 @@ pub async fn scan_route(
         return result;
     }
     result.reachable = true;
+    result.field = working_field.clone();
 
     let tasks = build_tasks(options.categories, options.thorough);
 

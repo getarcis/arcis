@@ -13,8 +13,8 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use arcis_engine::scan::{
-    attack_categories, discover_routes, payloads::slug, scan_route, DiscoveredRoute, RouteResult,
-    ScanOptions, DEFAULT_FIELDS,
+    attack_categories, discover_routes, format_curl, payloads::slug, scan_route, DiscoveredRoute,
+    RouteResult, ScanOptions, DEFAULT_FIELDS,
 };
 
 const RESET: &str = "\x1b[0m";
@@ -372,6 +372,14 @@ fn print_human_report(
                 "    {dim}{mark}{reset} [{}] {} {dim}{}{reset}",
                 v.category, v.label, v.note
             )?;
+            // Emit a copyable curl reproducer for each vulnerable finding
+            // so the user can reproduce the probe + verify their fix
+            // without re-running the full scan. Blocked findings are
+            // intentionally skipped to keep the report scannable.
+            if !v.blocked {
+                let curl = format_curl(target_url, &rr.method, &rr.path, &rr.field, &v.payload);
+                writeln!(out, "       {dim}{curl}{reset}")?;
+            }
         }
     }
     writeln!(out)?;
@@ -410,6 +418,15 @@ fn print_json_report(
                     m.insert("status".into(), json!(v.status));
                     m.insert("blocked".into(), Value::Bool(v.blocked));
                     m.insert("note".into(), Value::String(v.note.clone()));
+                    // Include the curl reproducer for every vector (blocked
+                    // and vulnerable) so machine consumers can render or
+                    // filter as they please.
+                    m.insert(
+                        "curl".into(),
+                        Value::String(format_curl(
+                            target_url, &rr.method, &rr.path, &rr.field, &v.payload,
+                        )),
+                    );
                     Value::Object(m)
                 })
                 .collect();
@@ -421,6 +438,7 @@ fn print_json_report(
                 "error".into(),
                 rr.error.clone().map(Value::String).unwrap_or(Value::Null),
             );
+            m.insert("field".into(), Value::String(rr.field.clone()));
             m.insert("vectors".into(), Value::Array(vectors));
             Value::Object(m)
         })
@@ -774,5 +792,80 @@ mod tests {
         assert!(s.contains(RESET));
         assert!(s.contains(DIM));
         assert!(s.contains(CYAN));
+    }
+
+    fn fixture_route() -> RouteResult {
+        use arcis_engine::scan::VectorResult;
+        RouteResult {
+            method: "POST".into(),
+            path: "/api/login".into(),
+            reachable: true,
+            error: None,
+            field: "username".into(),
+            vectors: vec![
+                VectorResult {
+                    category: "XSS".into(),
+                    label: "script tag".into(),
+                    payload: "<script>alert(1)</script>".into(),
+                    status: 200,
+                    blocked: false,
+                    note: "reflected in response (200)".into(),
+                },
+                VectorResult {
+                    category: "SQL Injection".into(),
+                    label: "OR bypass".into(),
+                    payload: "' OR '1'='1' --".into(),
+                    status: 400,
+                    blocked: true,
+                    note: "rejected (400)".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn human_report_includes_curl_for_vulnerable_only() {
+        let rr = fixture_route();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // Vulnerable XSS finding should be followed by a curl line.
+        assert!(
+            s.contains("curl -fsSL -X POST 'http://localhost:5000/api/login'"),
+            "expected curl reproducer for vulnerable finding, got:\n{s}"
+        );
+        // Blocked SQL finding should NOT have a curl line for it.
+        // We check that the OR-bypass payload does not appear inside any
+        // curl command — it would only show up if format_curl ran.
+        assert!(
+            !s.contains("' OR '1"),
+            "blocked findings should not emit a curl line, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn json_report_includes_curl_per_vector_and_field_per_route() {
+        let rr = fixture_route();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", &[rr], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let route0 = &v["routes"][0];
+        assert_eq!(route0["field"], "username");
+        let vectors = route0["vectors"].as_array().unwrap();
+        // Both blocked and vulnerable vectors carry a curl reproducer in JSON.
+        assert_eq!(vectors.len(), 2);
+        for vec in vectors {
+            let curl = vec["curl"].as_str().unwrap();
+            assert!(curl.starts_with("curl -fsSL"), "curl prefix: {curl}");
+        }
+        // Vulnerable XSS payload appears URL-encoded INSIDE the JSON body
+        // of its own POST curl command (since method=POST). Confirm the
+        // method + path land correctly.
+        let xss_curl = vectors[0]["curl"].as_str().unwrap();
+        assert!(xss_curl.contains("-X POST"), "got: {xss_curl}");
+        assert!(xss_curl.contains("/api/login"), "got: {xss_curl}");
     }
 }

@@ -20,6 +20,7 @@ pub mod classifier;
 pub mod discover;
 pub mod payloads;
 pub mod probe;
+pub mod repro;
 
 pub use classifier::{classify, Classification};
 pub use discover::{
@@ -31,3 +32,4 @@ pub use payloads::{
     attack_categories, AttackCategory, AttackVector, BLOCKED_STATUS_CODES, DEFAULT_FIELDS,
 };
 pub use probe::{scan_route, send_one, RouteResult, ScanOptions, VectorResult};
+pub use repro::format_curl;
