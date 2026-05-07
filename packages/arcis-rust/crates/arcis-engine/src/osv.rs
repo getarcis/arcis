@@ -148,7 +148,10 @@ pub async fn query(
         return Ok(Vec::new());
     }
     let body = OsvQuery {
-        package: OsvPackageRef { name, ecosystem: eco },
+        package: OsvPackageRef {
+            name,
+            ecosystem: eco,
+        },
         version,
     };
     let resp = client
@@ -166,8 +169,7 @@ pub async fn query(
     if bytes.is_empty() {
         return Err(OsvError::EmptyBody);
     }
-    let parsed: OsvResponse =
-        serde_json::from_slice(&bytes).map_err(|_| OsvError::EmptyBody)?;
+    let parsed: OsvResponse = serde_json::from_slice(&bytes).map_err(|_| OsvError::EmptyBody)?;
     Ok(parsed.vulns)
 }
 

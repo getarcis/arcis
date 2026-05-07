@@ -585,7 +585,10 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
         w,
         "Supply Chain Attack Scanner \u{2014} detect compromised packages from"
     )?;
-    writeln!(w, "known supply chain attacks. Runs offline by default; pass")?;
+    writeln!(
+        w,
+        "known supply chain attacks. Runs offline by default; pass"
+    )?;
     writeln!(w, "--osv to augment with live data from api.osv.dev.")?;
     writeln!(w)?;
     writeln!(w, "positional arguments:")?;
@@ -923,10 +926,7 @@ mod tests {
         // threat DB only emits critical/high/medium, so `--fail-on low`
         // would be a footgun (selects nothing additional vs `any`). If a
         // low-severity finding ever lands, add `low` here AND in the enum.
-        let argv: Vec<String> = ["--fail-on", "low"]
-            .into_iter()
-            .map(String::from)
-            .collect();
+        let argv: Vec<String> = ["--fail-on", "low"].into_iter().map(String::from).collect();
         assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
     }
 
@@ -983,14 +983,20 @@ mod tests {
                 finding_with_severity("critical"),
                 finding_with_severity("medium"),
             ],
-            vec![finding_with_severity("medium"), finding_with_severity("high")],
+            vec![
+                finding_with_severity("medium"),
+                finding_with_severity("high"),
+            ],
         ];
         for f in &fixtures {
             let legacy = !f.is_empty();
             let any_mode = should_fail(f, FailOn::Any);
             let default_mode = should_fail(f, FailOn::default());
             assert_eq!(any_mode, legacy, "Any drifted from legacy for {f:?}");
-            assert_eq!(default_mode, legacy, "Default drifted from legacy for {f:?}");
+            assert_eq!(
+                default_mode, legacy,
+                "Default drifted from legacy for {f:?}"
+            );
             assert_eq!(any_mode, default_mode, "Default != Any for {f:?}");
         }
     }
@@ -1042,7 +1048,10 @@ mod tests {
             references: vec!["https://example.com/a".into()],
             finding_type: FindingType::CompromisedVersion,
         }];
-        print_sca_report(&mut buf, &path, &findings, 0.020, true, &manifests, 47, false).unwrap();
+        print_sca_report(
+            &mut buf, &path, &findings, 0.020, true, &manifests, 47, false,
+        )
+        .unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(out.contains("npm\n"));
         assert!(out.contains("[CRITICAL] COMPROMISED VERSION"));
