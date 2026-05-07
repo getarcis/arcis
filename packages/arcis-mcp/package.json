@@ -1,0 +1,57 @@
+{
+  "name": "@arcis/mcp",
+  "version": "1.5.0",
+  "description": "Arcis MCP server. Exposes Arcis CLI scanners (audit / scan / sca) and the prompt-injection detector as tools that Cursor, Claude Code, and any other MCP-aware AI agent can call. One install, four tools, zero cloud round trip.",
+  "main": "dist/server.js",
+  "bin": {
+    "arcis-mcp": "dist/server.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "arcis",
+    "security",
+    "cursor",
+    "claude-code",
+    "ai-agent",
+    "tool",
+    "prompt-injection"
+  ],
+  "author": "Gagan CM",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@arcis/node": "file:../arcis-node"
+  },
+  "peerDependenciesMeta": {
+    "@arcis/cli": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.0.1",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Gagancm/arcis",
+    "directory": "packages/arcis-mcp"
+  },
+  "homepage": "https://github.com/Gagancm/arcis/tree/main/packages/arcis-mcp",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
