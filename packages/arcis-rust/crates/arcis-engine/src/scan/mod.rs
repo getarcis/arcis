@@ -16,6 +16,7 @@
 //! Output formatting (human / `--json`) lives in `arcis-cli` next to the
 //! clap glue.
 
+pub mod auth;
 pub mod classifier;
 pub mod discover;
 pub mod payloads;
@@ -27,6 +28,7 @@ pub mod repro;
 #[cfg(test)]
 pub(crate) mod test_server;
 
+pub use auth::{AuthConfig, AuthError};
 pub use classifier::{classify, Classification};
 pub use discover::{
     detect_project_kind, detect_target, discover_routes, env_target, probe_control_plane,

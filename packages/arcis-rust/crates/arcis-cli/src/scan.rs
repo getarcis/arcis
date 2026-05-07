@@ -13,8 +13,8 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use arcis_engine::scan::{
-    attack_categories, discover_routes, format_curl, payloads::slug, scan_route, DiscoveredRoute,
-    RouteResult, ScanOptions, DEFAULT_FIELDS,
+    attack_categories, discover_routes, format_curl, payloads::slug, scan_route, AuthConfig,
+    DiscoveredRoute, RouteResult, ScanOptions, DEFAULT_FIELDS,
 };
 
 const RESET: &str = "\x1b[0m";
@@ -38,6 +38,7 @@ struct Args {
     no_discovery: bool,
     no_control_plane: bool,
     json_output: bool,
+    bearer: Option<String>,
 }
 
 #[derive(Debug)]
@@ -62,6 +63,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         no_discovery: false,
         no_control_plane: false,
         json_output: false,
+        bearer: None,
     };
 
     let mut i = 0;
@@ -130,6 +132,29 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "-l" => {
                 args.list = true;
             }
+            "--bearer" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --bearer needs a value".into());
+                };
+                match validate_bearer_value(v) {
+                    Ok(t) => args.bearer = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--bearer=") => {
+                let v = &arg["--bearer=".len()..];
+                match validate_bearer_value(v) {
+                    Ok(t) => args.bearer = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            // note(commit #4 --login): when --login lands, add a mutex
+            // check here:
+            //   if args.login.is_some() && args.bearer.is_some() { exit 2 }
+            //   if args.login.is_some() && !args.cookies.is_empty() { exit 2 }
+            // --login generates its own auth artifact, so combining it
+            // with manual flags is ambiguous. Reject early.
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
                 return ParseOutcome::Err(format!("arcis scan: unknown flag: {other}"));
             }
@@ -146,6 +171,14 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     }
 
     ParseOutcome::Args(Box::new(args))
+}
+
+fn validate_bearer_value(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("arcis scan: --bearer cannot be empty or whitespace-only".into())
+    } else {
+        Ok(value.to_string())
+    }
 }
 
 fn ansi(no_color: bool, code: &str) -> &str {
@@ -277,6 +310,14 @@ fn print_help(out: &mut dyn Write) -> io::Result<()> {
     )?;
     writeln!(
         out,
+        "      --bearer <token>         Send Authorization: Bearer <token> on every request."
+    )?;
+    writeln!(
+        out,
+        "                               Token value never appears in --json output."
+    )?;
+    writeln!(
+        out,
         "  -h, --help                   Show this help and exit."
     )?;
     writeln!(out)?;
@@ -399,6 +440,7 @@ fn print_human_report(
 fn print_json_report(
     out: &mut dyn Write,
     target_url: &str,
+    auth: Option<&AuthConfig>,
     results: &[RouteResult],
     summary: &ScanSummary,
 ) -> io::Result<()> {
@@ -447,6 +489,16 @@ fn print_json_report(
     let mut doc = Map::new();
     doc.insert("tool".into(), Value::String("arcis-scan".into()));
     doc.insert("target".into(), Value::String(target_url.into()));
+    // Auth metadata, redacted. Slot is between `target` and
+    // `durationMs` (run setup, before run results). Omitted entirely
+    // for unauthenticated runs so prior JSON output stays byte-equal.
+    // The redaction rule lives on `AuthConfig::redact_for_json`; see
+    // that doc-comment for the contract future flags must follow.
+    if let Some(auth) = auth {
+        if let Some(meta) = auth.redact_for_json() {
+            doc.insert("auth".into(), meta);
+        }
+    }
     doc.insert(
         "durationMs".into(),
         json!((summary.duration_secs * 1000.0).round() as u64),
@@ -550,6 +602,21 @@ pub fn run(argv: &[String]) -> ExitCode {
 
     let timeout = Duration::from_secs(args.timeout);
 
+    // Build the auth config once. Parser already rejected empty/
+    // whitespace-only tokens, so the engine validator should not fire
+    // here — but keep the belt-and-braces error path for the case where
+    // a future direct caller bypasses the parser.
+    let auth_config: Option<AuthConfig> = match args.bearer.as_deref() {
+        Some(token) => match AuthConfig::with_bearer(token) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                let _ = writeln!(err, "arcis scan: {e}");
+                return ExitCode::from(2);
+            }
+        },
+        None => None,
+    };
+
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()
@@ -572,6 +639,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                 timeout,
                 categories: categories.as_deref(),
                 thorough: args.thorough,
+                auth: auth_config.as_ref(),
             };
             out.push(scan_route(&target_url, method, path, &opts).await);
         }
@@ -582,7 +650,13 @@ pub fn run(argv: &[String]) -> ExitCode {
     let summary = summarize(&results, elapsed);
 
     if args.json_output {
-        let _ = print_json_report(&mut out, &target_url, &results, &summary);
+        let _ = print_json_report(
+            &mut out,
+            &target_url,
+            auth_config.as_ref(),
+            &results,
+            &summary,
+        );
     } else if !args.quiet {
         let _ = print_human_report(&mut out, &target_url, &results, &summary, args.no_color);
     }
@@ -753,6 +827,114 @@ mod tests {
         assert_eq!(r, vec![("POST".into(), "http://example.com/x".into())]);
     }
 
+    /// Deliberately unique sentinel for the JSON-redaction tests below.
+    /// Pinned so a substring match against the emitted JSON cannot
+    /// false-positive on a hash digest, route URL, or vector label.
+    const TEST_BEARER_TOKEN: &str = "arcis-test-bearer-DEADBEEF-9f3a2c";
+
+    #[test]
+    fn parses_bearer_space_separated() {
+        let a = args(&["--bearer", "foo"]);
+        assert_eq!(a.bearer.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn parses_bearer_equals_inline() {
+        let a = args(&["--bearer=foo"]);
+        assert_eq!(a.bearer.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn bearer_empty_value_rejected() {
+        let argv: Vec<String> = ["--bearer", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bearer_whitespace_only_rejected() {
+        let argv: Vec<String> = ["--bearer", "   "].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bearer_inline_equals_empty_rejected() {
+        let argv: Vec<String> = ["--bearer="].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn json_report_includes_auth_method_bearer_and_redacts_token() {
+        let auth = AuthConfig::with_bearer(TEST_BEARER_TOKEN).unwrap();
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["auth"]["method"], "bearer");
+        // Sentinel: the literal token string must NEVER appear anywhere
+        // in the emitted JSON. This pins the redaction contract — users
+        // pipe `--json` output to logs and CI artifacts; secrets must
+        // not leak there.
+        assert!(
+            !s.contains(TEST_BEARER_TOKEN),
+            "token leaked to JSON output: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_omits_auth_when_unauthenticated() {
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        // No-auth runs must not emit the key at all so prior
+        // unauthenticated JSON output stays byte-equal.
+        assert!(v.get("auth").is_none(), "got: {s}");
+        assert!(!s.contains("\"auth\""), "got: {s}");
+    }
+
+    #[test]
+    fn help_text_documents_bearer_redaction() {
+        // The "never appears in --json" line is load-bearing for users
+        // running scans in CI — it tells them piping --json to logs is
+        // safe. Pin it so future help-text refactors don't drop it.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--bearer <token>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("Authorization: Bearer"),
+            "missing header description: {s}"
+        );
+        assert!(
+            s.contains("never appears in --json"),
+            "missing redaction note: {s}"
+        );
+    }
+
     #[test]
     fn catalog_output_no_color_byte_shape() {
         let mut buf: Vec<u8> = Vec::new();
@@ -849,7 +1031,7 @@ mod tests {
         let rr = fixture_route();
         let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
         let mut buf: Vec<u8> = Vec::new();
-        print_json_report(&mut buf, "http://localhost:5000", &[rr], &summary).unwrap();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[rr], &summary).unwrap();
         let s = String::from_utf8(buf).unwrap();
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
         let route0 = &v["routes"][0];
