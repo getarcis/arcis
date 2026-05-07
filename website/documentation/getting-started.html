@@ -132,7 +132,7 @@
       <h3 id="cli-tools">CLI tools (audit / scan / sca)</h3>
       <p>The Arcis CLI scanners ship as a <strong>single static binary</strong> distributed via npm. The binary works regardless of whether your app is Node, Python, or Go:</p>
 <pre><code>npm install -g @arcis/cli</code></pre>
-      <p>The threat database, audit rules, and attack payload catalog are all embedded in the binary. no Python or other runtime required. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case.)</p>
+      <p>The threat database, audit rules, and attack payload catalog are all embedded in the binary. No Python or other runtime required. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case.)</p>
 
       <h3 id="env-setup">Environment variables (.env)</h3>
       <p>The dashboard expects three values in your backend <code>.env</code>:</p>
@@ -144,45 +144,115 @@ ARCIS_ENDPOINT=https://your-dashboard.example.com</code></pre>
       </div>
 
       <h2 id="basic-setup">Basic setup</h2>
-      <p>Add Arcis to your app before defining any routes. The core middleware activates sanitization, rate limiting, and security headers with secure defaults.</p>
+      <p>Pick your framework. Each setup is one install plus one middleware line. The core middleware activates sanitization, rate limiting, and security headers with secure defaults.</p>
 
-      <h3>Node.js with Express</h3>
-<pre><code><span class="k">import</span> express <span class="k">from</span> <span class="s">'express'</span><span class="p">;</span>
+      <div class="tabs framework-picker">
+        <div class="tab-buttons" style="flex-wrap: wrap;">
+          <button class="tab-btn active" data-tab="express">Express</button>
+          <button class="tab-btn" data-tab="nestjs">NestJS</button>
+          <button class="tab-btn" data-tab="sveltekit">SvelteKit</button>
+          <button class="tab-btn" data-tab="astro">Astro</button>
+          <button class="tab-btn" data-tab="nuxt">Nuxt</button>
+          <button class="tab-btn" data-tab="bun-hono">Bun + Hono</button>
+          <button class="tab-btn" data-tab="fastapi">FastAPI</button>
+          <button class="tab-btn" data-tab="flask">Flask</button>
+          <button class="tab-btn" data-tab="django">Django</button>
+          <button class="tab-btn" data-tab="gin">Gin</button>
+          <button class="tab-btn" data-tab="echo">Echo</button>
+          <button class="tab-btn" data-tab="nethttp">net/http</button>
+        </div>
+
+        <div class="tab-panel active" data-panel="express">
+<pre><code><span class="c">// Install: npm install @arcis/node dotenv</span>
+<span class="k">import</span> express <span class="k">from</span> <span class="s">'express'</span><span class="p">;</span>
 <span class="k">import</span> <span class="p">{</span> arcis <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
 <span class="k">import</span> <span class="s">'dotenv/config'</span><span class="p">;</span>
 
 <span class="k">const</span> app = <span class="f">express</span><span class="p">();</span>
 app.<span class="f">use</span><span class="p">(</span>express.<span class="f">json</span><span class="p">());</span>
-
-<span class="c">// block: true returns 403 on detected attacks. Defaults to false</span>
-<span class="c">// (sanitize + observe) so existing apps don't break on rollout.</span>
 app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">({</span> block<span class="p">:</span> <span class="k">true</span> <span class="p">}));</span>
 
-app.<span class="f">get</span><span class="p">(</span><span class="s">'/'</span><span class="p">,</span> <span class="p">(</span>req<span class="p">,</span> res<span class="p">)</span> <span class="k">=></span> <span class="p">{</span>
-  <span class="c">// req.body and req.query are now sanitized</span>
-  res.<span class="f">json</span><span class="p">({</span> ok<span class="p">:</span> <span class="k">true</span> <span class="p">});</span>
-<span class="p">});</span>
-
+app.<span class="f">get</span><span class="p">(</span><span class="s">'/'</span><span class="p">,</span> <span class="p">(</span>req<span class="p">,</span> res<span class="p">)</span> <span class="k">=></span> res.<span class="f">json</span><span class="p">({</span> ok<span class="p">:</span> <span class="k">true</span> <span class="p">}));</span>
 app.<span class="f">listen</span><span class="p">(</span><span class="n">3000</span><span class="p">);</span></code></pre>
+        </div>
 
-      <h3>Python with FastAPI</h3>
-<pre><code><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+        <div class="tab-panel" data-panel="nestjs">
+<pre><code><span class="c">// Install: npm install @arcis/node</span>
+<span class="c">// app.module.ts</span>
+<span class="k">import</span> <span class="p">{</span> Module<span class="p">,</span> MiddlewareConsumer<span class="p">,</span> NestModule <span class="p">}</span> <span class="k">from</span> <span class="s">'@nestjs/common'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> ArcisModule<span class="p">,</span> ArcisMiddleware <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/nestjs'</span><span class="p">;</span>
+
+@<span class="f">Module</span><span class="p">({</span> imports<span class="p">:</span> <span class="p">[</span>ArcisModule.<span class="f">forRoot</span><span class="p">({</span> block<span class="p">:</span> <span class="k">true</span> <span class="p">})]</span> <span class="p">})</span>
+<span class="k">export class</span> AppModule <span class="k">implements</span> NestModule <span class="p">{</span>
+  <span class="f">configure</span><span class="p">(</span>consumer<span class="p">:</span> MiddlewareConsumer<span class="p">)</span> <span class="p">{</span>
+    consumer.<span class="f">apply</span><span class="p">(</span>ArcisMiddleware<span class="p">).</span><span class="f">forRoutes</span><span class="p">(</span><span class="s">'*'</span><span class="p">);</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="sveltekit">
+<pre><code><span class="c">// Install: npm install @arcis/node</span>
+<span class="c">// src/hooks.server.ts</span>
+<span class="k">import</span> <span class="p">{</span> arcisHandle <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/sveltekit'</span><span class="p">;</span>
+
+<span class="k">export const</span> handle = <span class="f">arcisHandle</span><span class="p">({</span>
+  rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span>
+  bot<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+<span class="p">});</span></code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="astro">
+<pre><code><span class="c">// Install: npm install @arcis/node</span>
+<span class="c">// src/middleware.ts</span>
+<span class="k">import</span> <span class="p">{</span> onRequest <span class="k">as</span> arcisOnRequest <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/astro'</span><span class="p">;</span>
+
+<span class="k">export const</span> onRequest = <span class="f">arcisOnRequest</span><span class="p">({</span>
+  rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span>
+  bot<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+<span class="p">});</span></code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="nuxt">
+<pre><code><span class="c">// Install: npm install @arcis/node</span>
+<span class="c">// server/middleware/arcis.ts</span>
+<span class="k">import</span> <span class="p">{</span> defineEventHandler <span class="p">}</span> <span class="k">from</span> <span class="s">'h3'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> arcisHandler <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/nuxt'</span><span class="p">;</span>
+
+<span class="k">export default</span> <span class="f">defineEventHandler</span><span class="p">(</span><span class="f">arcisHandler</span><span class="p">({</span>
+  rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span>
+<span class="p">}));</span></code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="bun-hono">
+<pre><code><span class="c">// Install: bun add @arcis/node hono</span>
+<span class="k">import</span> <span class="p">{</span> Hono <span class="p">}</span> <span class="k">from</span> <span class="s">'hono'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> arcisHono <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/bun'</span><span class="p">;</span>
+
+<span class="k">const</span> app = <span class="k">new</span> <span class="f">Hono</span><span class="p">();</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcisHono</span><span class="p">({</span> rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">}</span> <span class="p">}));</span>
+app.<span class="f">get</span><span class="p">(</span><span class="s">'/'</span><span class="p">,</span> <span class="p">(</span>c<span class="p">)</span> <span class="k">=></span> c.<span class="f">json</span><span class="p">({</span> ok<span class="p">:</span> <span class="k">true</span> <span class="p">}));</span>
+
+<span class="k">export default</span> app<span class="p">;</span></code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="fastapi">
+<pre><code><span class="c"># Install: pip install arcis python-dotenv</span>
+<span class="k">from</span> fastapi <span class="k">import</span> FastAPI
 <span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware
 <span class="k">from</span> dotenv <span class="k">import</span> load_dotenv
 
 <span class="f">load_dotenv</span><span class="p">()</span>
 app = <span class="f">FastAPI</span><span class="p">()</span>
-
-<span class="c"># block=True returns 403 on detected attacks. Defaults to False</span>
-<span class="c"># (sanitize + observe) so existing apps don't break on rollout.</span>
 app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)</span>
 
 <span class="k">@</span>app.<span class="f">get</span><span class="p">(</span><span class="s">"/"</span><span class="p">)</span>
 <span class="k">def</span> <span class="f">root</span><span class="p">():</span>
     <span class="k">return</span> <span class="p">{</span><span class="s">"ok"</span><span class="p">:</span> <span class="k">True</span><span class="p">}</span></code></pre>
+        </div>
 
-      <h3>Python with Flask</h3>
-<pre><code><span class="k">from</span> flask <span class="k">import</span> Flask
+        <div class="tab-panel" data-panel="flask">
+<pre><code><span class="c"># Install: pip install arcis</span>
+<span class="k">from</span> flask <span class="k">import</span> Flask
 <span class="k">from</span> arcis <span class="k">import</span> Arcis
 
 app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p">)</span>
@@ -191,9 +261,21 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
 <span class="k">@</span>app.<span class="f">route</span><span class="p">(</span><span class="s">"/"</span><span class="p">)</span>
 <span class="k">def</span> <span class="f">root</span><span class="p">():</span>
     <span class="k">return</span> <span class="p">{</span><span class="s">"ok"</span><span class="p">:</span> <span class="k">True</span><span class="p">}</span></code></pre>
+        </div>
 
-      <h3>Go with Gin</h3>
-<pre><code><span class="k">package</span> main
+        <div class="tab-panel" data-panel="django">
+<pre><code><span class="c"># Install: pip install arcis</span>
+<span class="c"># settings.py</span>
+MIDDLEWARE = <span class="p">[</span>
+    <span class="c"># Place Arcis early so it sees the request before your views.</span>
+    <span class="s">'arcis.django.ArcisMiddleware'</span><span class="p">,</span>
+    <span class="c"># ... your other middleware</span>
+<span class="p">]</span></code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="gin">
+<pre><code><span class="c">// Install: go get github.com/GagancM/arcis</span>
+<span class="k">package</span> main
 
 <span class="k">import</span> <span class="p">(</span>
     <span class="s">"github.com/gin-gonic/gin"</span>
@@ -202,13 +284,52 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
 
 <span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
     r := gin.<span class="f">Default</span><span class="p">()</span>
-    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">())</span>  <span class="c">// core protections enabled</span>
-
+    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">())</span>
     r.<span class="f">GET</span><span class="p">(</span><span class="s">"/"</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span>c *gin.Context<span class="p">)</span> <span class="p">{</span>
         c.<span class="f">JSON</span><span class="p">(</span><span class="n">200</span><span class="p">,</span> gin.H<span class="p">{</span><span class="s">"ok"</span><span class="p">:</span> <span class="k">true</span><span class="p">})</span>
     <span class="p">})</span>
     r.<span class="f">Run</span><span class="p">()</span>
 <span class="p">}</span></code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="echo">
+<pre><code><span class="c">// Install: go get github.com/GagancM/arcis</span>
+<span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"github.com/labstack/echo/v4"</span>
+    arcisecho <span class="s">"github.com/GagancM/arcis/echo"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    e := echo.<span class="f">New</span><span class="p">()</span>
+    e.<span class="f">Use</span><span class="p">(</span>arcisecho.<span class="f">Middleware</span><span class="p">())</span>
+    e.<span class="f">GET</span><span class="p">(</span><span class="s">"/"</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span>c echo.Context<span class="p">)</span> <span class="k">error</span> <span class="p">{</span>
+        <span class="k">return</span> c.<span class="f">JSON</span><span class="p">(</span><span class="n">200</span><span class="p">,</span> map<span class="p">[</span><span class="k">string</span><span class="p">]</span><span class="k">any</span><span class="p">{</span><span class="s">"ok"</span><span class="p">:</span> <span class="k">true</span><span class="p">})</span>
+    <span class="p">})</span>
+    e.<span class="f">Logger</span>.<span class="f">Fatal</span><span class="p">(</span>e.<span class="f">Start</span><span class="p">(</span><span class="s">":3000"</span><span class="p">))</span>
+<span class="p">}</span></code></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="nethttp">
+<pre><code><span class="c">// Install: go get github.com/GagancM/arcis</span>
+<span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"net/http"</span>
+    <span class="s">"github.com/GagancM/arcis/middleware"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    mux := http.<span class="f">NewServeMux</span><span class="p">()</span>
+    mux.<span class="f">HandleFunc</span><span class="p">(</span><span class="s">"/"</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span>w http.ResponseWriter<span class="p">,</span> r *http.Request<span class="p">)</span> <span class="p">{</span>
+        w.<span class="f">Write</span><span class="p">([]</span><span class="k">byte</span><span class="p">(</span><span class="s">`{"ok":true}`</span><span class="p">))</span>
+    <span class="p">})</span>
+    handler := middleware.<span class="f">Sanitize</span><span class="p">()(</span>mux<span class="p">)</span>
+    http.<span class="f">ListenAndServe</span><span class="p">(</span><span class="s">":3000"</span><span class="p">,</span> handler<span class="p">)</span>
+<span class="p">}</span></code></pre>
+        </div>
+      </div>
 
       <div class="callout note">
         <p><strong>That's it.</strong> Your app is now protected against XSS, SQL injection, path traversal, command injection, and 16+ more attack types. Safe input passes through. Attack payloads are stripped.</p>
