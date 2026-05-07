@@ -6,6 +6,7 @@ export default defineConfig({
     'core/index': 'src/core/index.ts',
     'sanitizers/index': 'src/sanitizers/index.ts',
     'middleware/index': 'src/middleware/index.ts',
+    'nestjs/index': 'src/middleware/nestjs.ts',
     'validation/index': 'src/validation/index.ts',
     'logging/index': 'src/logging/index.ts',
     'stores/index': 'src/stores/index.ts',

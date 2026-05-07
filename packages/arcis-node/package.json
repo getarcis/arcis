@@ -50,6 +50,11 @@
       "types": "./dist/telemetry/index.d.ts",
       "import": "./dist/telemetry/index.mjs",
       "require": "./dist/telemetry/index.js"
+    },
+    "./nestjs": {
+      "types": "./dist/nestjs/index.d.ts",
+      "import": "./dist/nestjs/index.mjs",
+      "require": "./dist/nestjs/index.js"
     }
   },
   "files": [
@@ -99,6 +104,7 @@
     "express": ">=4.0.0"
   },
   "devDependencies": {
+    "@nestjs/common": "^11.1.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
