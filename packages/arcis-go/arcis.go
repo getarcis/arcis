@@ -122,6 +122,12 @@ var (
 	SanitizePromptInjection = sanitizers.SanitizePromptInjection
 )
 
+// Token-budget protection (LLM-cost guard) types
+type TokenBudgetOptions = middleware.TokenBudgetOptions
+type TokenBudget = middleware.TokenBudget
+
+var NewTokenBudget = middleware.NewTokenBudget
+
 // Email validation types
 type EmailValidationResult = validation.EmailValidationResult
 type EmailValidationOptions = validation.EmailValidationOptions

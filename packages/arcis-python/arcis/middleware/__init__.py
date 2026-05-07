@@ -11,6 +11,7 @@ from .cookies import SecureCookieDefaults, create_secure_cookies
 from .rate_limit_sliding import SlidingWindowLimiter
 from .rate_limit_token import TokenBucketLimiter
 from .bot_detection import BotProtection, BotDenied, BotDetectionResult, detect_bot
+from .token_budget import TokenBudget, TokenBudgetExceeded, token_budget
 
 __all__ = [
     "Arcis",
@@ -29,4 +30,7 @@ __all__ = [
     "BotDenied",
     "BotDetectionResult",
     "detect_bot",
+    "TokenBudget",
+    "TokenBudgetExceeded",
+    "token_budget",
 ]
