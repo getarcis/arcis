@@ -22,6 +22,11 @@ pub mod payloads;
 pub mod probe;
 pub mod repro;
 
+// Test-only mock HTTP server. `pub(crate)` so any scan submodule's
+// `#[cfg(test)] mod tests` can reach it (today `probe`, soon `auth`).
+#[cfg(test)]
+pub(crate) mod test_server;
+
 pub use classifier::{classify, Classification};
 pub use discover::{
     detect_project_kind, detect_target, discover_routes, env_target, probe_control_plane,
