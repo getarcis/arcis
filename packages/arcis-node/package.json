@@ -70,6 +70,11 @@
       "types": "./dist/nuxt/index.d.ts",
       "import": "./dist/nuxt/index.mjs",
       "require": "./dist/nuxt/index.js"
+    },
+    "./bun": {
+      "types": "./dist/bun/index.d.ts",
+      "import": "./dist/bun/index.mjs",
+      "require": "./dist/bun/index.js"
     }
   },
   "files": [
