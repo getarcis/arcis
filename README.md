@@ -84,7 +84,7 @@ At the checkpoint, Arcis:
 | **Open Redirect** | Absolute URLs, `javascript:`, protocol-relative, backslash/control char bypass |
 | **CSRF** | Double-submit cookie, token generation and validation |
 | **Rate Limiting** | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
-| **Bot Detection** | 646 patterns sourced from a curated MIT corpus + supplementary entries, 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers |
+| **Bot Detection** | 650 patterns sourced from a curated MIT corpus + supplementary entries, 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. The corpus is also published standalone at [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots). |
 | **Prompt Injection** | 28 signatures across HIGH/MEDIUM/LOW tiers: jailbreak frameworks, system-prompt extraction, fake `<system>` tags, conversation-replay forgeries, base64/ROT13 smuggling hints |
 | **LLM Token Budget** | Per-key sliding-window token cap with optional per-request size limit. Custom estimator hook for tiktoken or your own counter. `X-Token-Budget-*` headers on every response |
 | **Security Headers** | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control (16 headers) |
