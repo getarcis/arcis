@@ -551,6 +551,8 @@ mod tests {
             source: source.to_string(),
             references,
             finding_type: FindingType::CompromisedVersion,
+            paths: Vec::new(),
+            path_count: 0,
         }
     }
 

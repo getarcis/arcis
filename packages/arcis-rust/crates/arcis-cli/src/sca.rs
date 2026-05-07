@@ -1024,6 +1024,8 @@ mod tests {
             source: String::new(),
             references: Vec::new(),
             finding_type: FindingType::CompromisedVersion,
+            paths: Vec::new(),
+            path_count: 0,
         }
     }
 
@@ -1338,6 +1340,8 @@ mod tests {
             source: "npm Security Advisory".into(),
             references: vec!["https://example.com/a".into()],
             finding_type: FindingType::CompromisedVersion,
+            paths: Vec::new(),
+            path_count: 0,
         }];
         print_sca_report(
             &mut buf, &path, &findings, 0.020, true, &manifests, 47, false,
