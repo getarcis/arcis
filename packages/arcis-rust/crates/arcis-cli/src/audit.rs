@@ -326,6 +326,11 @@ pub fn run(argv: &[String]) -> ExitCode {
                     severity_filter: args.severity,
                     suppressed: 0,
                     ignored: ignored_count,
+                    // cli-audit.md item 9 (9b): baseline mode plumbing.
+                    // 9a ships the engine surface; CLI is still
+                    // baseline-unaware so we pass the disabled defaults.
+                    baseline: None,
+                    resolved_findings: &[],
                 })
             } else {
                 render_sarif(&SarifReport {
@@ -426,6 +431,11 @@ pub fn run(argv: &[String]) -> ExitCode {
                 severity_filter: args.severity,
                 suppressed: suppressed_total,
                 ignored: ignored_count,
+                // cli-audit.md item 9 (9b): baseline mode plumbing
+                // lands in the next commit. 9a leaves the CLI
+                // baseline-unaware; the engine surface is in place.
+                baseline: None,
+                resolved_findings: &[],
             })
         } else {
             render_sarif(&SarifReport {
