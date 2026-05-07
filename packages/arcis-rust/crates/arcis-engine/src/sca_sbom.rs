@@ -607,10 +607,7 @@ mod tests {
     #[test]
     fn purl_format() {
         assert_eq!(purl("npm", "axios", "1.14.1"), "pkg:npm/axios@1.14.1");
-        assert_eq!(
-            purl("pypi", "litellm", "1.82.7"),
-            "pkg:pypi/litellm@1.82.7"
-        );
+        assert_eq!(purl("pypi", "litellm", "1.82.7"), "pkg:pypi/litellm@1.82.7");
         // Ecosystem case folds to purl spec convention.
         assert_eq!(purl("PyPI", "x", "1.0"), "pkg:pypi/x@1.0");
     }
@@ -631,7 +628,10 @@ mod tests {
 
         let components = v["components"].as_array().unwrap();
         assert_eq!(components.len(), 5);
-        let purls: Vec<&str> = components.iter().map(|c| c["purl"].as_str().unwrap()).collect();
+        let purls: Vec<&str> = components
+            .iter()
+            .map(|c| c["purl"].as_str().unwrap())
+            .collect();
         assert!(purls.contains(&"pkg:npm/axios@1.14.1"));
         assert!(purls.contains(&"pkg:npm/axios@0.30.4"));
         assert!(purls.contains(&"pkg:npm/lodash@4.17.20"));
@@ -914,10 +914,7 @@ mod tests {
         // well-known reference. Tested against a hard-coded value
         // rather than a chrono round-trip to keep the engine free of
         // date dependencies.
-        assert_eq!(
-            format_iso8601_utc(1234567890),
-            "2009-02-13T23:31:30Z"
-        );
+        assert_eq!(format_iso8601_utc(1234567890), "2009-02-13T23:31:30Z");
     }
 
     #[test]
