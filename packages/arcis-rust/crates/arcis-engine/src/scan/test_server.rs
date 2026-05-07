@@ -25,6 +25,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -43,11 +44,18 @@ pub struct RecordedRequest {
 /// Server response built by a handler closure. Headers are an ordered
 /// `Vec` (not a map) so duplicates such as multi-cookie `Set-Cookie:`
 /// emit multiple lines on the wire in registration order.
+///
+/// `delay` is applied AFTER the handler closure runs and BEFORE the
+/// response writes back to the wire — so handlers stay synchronous
+/// (the closure can't `.await`) while still letting tests model slow
+/// endpoints. Used by the speculative-cancellation tests in `probe`
+/// where one fast probe must complete before slow siblings finish.
 #[derive(Debug, Clone)]
 pub struct MockResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: String,
+    pub delay: Option<Duration>,
 }
 
 impl MockResponse {
@@ -58,6 +66,7 @@ impl MockResponse {
             status: 200,
             headers: Vec::new(),
             body: body.into(),
+            delay: None,
         }
     }
 
@@ -83,6 +92,17 @@ impl MockResponse {
     /// chain to emit multiple cookies on one response.
     pub fn set_cookie(self, cookie: &str) -> Self {
         self.with_header("Set-Cookie", cookie)
+    }
+
+    /// Delay this response by `d` before writing it to the wire.
+    /// Handler closures must stay synchronous (no `.await` allowed in
+    /// `Fn(&RecordedRequest) -> MockResponse`), so the sleep happens
+    /// inside `handle_connection` AFTER the closure returns. Each
+    /// connection is its own spawned task — delays do not block the
+    /// accept loop or other in-flight requests.
+    pub fn with_delay(mut self, d: Duration) -> Self {
+        self.delay = Some(d);
+        self
     }
 }
 
@@ -251,10 +271,14 @@ async fn handle_connection(mut sock: tokio::net::TcpStream, state: Arc<MockState
                 status: 404,
                 headers: Vec::new(),
                 body: String::new(),
+                delay: None,
             },
         }
     };
 
+    if let Some(d) = response.delay {
+        tokio::time::sleep(d).await;
+    }
     let _ = write_response(&mut sock, &response).await;
 }
 
@@ -397,6 +421,66 @@ mod tests {
         assert_eq!(captured[0].path, "/a");
         assert_eq!(captured[1].path, "/b");
         assert_eq!(captured[2].path, "/a?q=1");
+    }
+
+    #[tokio::test]
+    async fn mock_response_with_delay_actually_delays_response() {
+        // Validates the timing primitive that the speculative-cancel
+        // tests in `probe` rely on. Floor assertion only — we assert the
+        // wall-clock is AT LEAST the configured delay (minus a small
+        // jitter slack) to avoid flaking on under-load CI runners.
+        let server = MockServer::start().await;
+        server.on("GET", "/slow", |_req| {
+            MockResponse::ok("late").with_delay(Duration::from_millis(120))
+        });
+
+        let start = std::time::Instant::now();
+        let response = raw_request(server.addr(), "GET /slow HTTP/1.1\r\nHost: x\r\n\r\n").await;
+        let elapsed = start.elapsed();
+
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.ends_with("late"));
+        // Floor: response must take at least the configured delay (with
+        // a tiny slack for tokio timer granularity).
+        assert!(
+            elapsed >= Duration::from_millis(100),
+            "delay was not honored: elapsed={elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_response_delay_does_not_block_other_connections() {
+        // Two endpoints, one slow, one fast. Issued concurrently, the
+        // fast one must complete WITHOUT waiting for the slow one's
+        // delay. This pins the per-connection-task isolation that the
+        // speculative-cancel tests depend on (a fast probe must finish
+        // and trigger cancel BEFORE the slow probes get to write).
+        let server = MockServer::start().await;
+        server.on("GET", "/slow", |_req| {
+            MockResponse::ok("slow").with_delay(Duration::from_millis(800))
+        });
+        server.on("GET", "/fast", |_req| MockResponse::ok("fast"));
+
+        let addr = server.addr();
+        let slow = tokio::spawn(async move {
+            raw_request(addr, "GET /slow HTTP/1.1\r\nHost: x\r\n\r\n").await
+        });
+        let fast = tokio::spawn(async move {
+            raw_request(addr, "GET /fast HTTP/1.1\r\nHost: x\r\n\r\n").await
+        });
+
+        let fast_start = std::time::Instant::now();
+        let fast_resp = fast.await.unwrap();
+        let fast_elapsed = fast_start.elapsed();
+        assert!(fast_resp.ends_with("fast"));
+        // Fast endpoint must NOT pay the slow endpoint's delay budget.
+        assert!(
+            fast_elapsed < Duration::from_millis(400),
+            "fast endpoint blocked behind slow: elapsed={fast_elapsed:?}"
+        );
+
+        // Drain the slow handle so the test doesn't leak a join.
+        let _ = slow.await;
     }
 
     #[tokio::test]

@@ -40,5 +40,8 @@ pub use login::{execute_login, LoginConfig, LoginError};
 pub use payloads::{
     attack_categories, AttackCategory, AttackVector, BLOCKED_STATUS_CODES, DEFAULT_FIELDS,
 };
-pub use probe::{scan_route, send_one, RouteResult, ScanOptions, VectorResult};
+pub use probe::{
+    scan_route, send_one, CancelInfo, CancelKind, CancelMode, RouteResult, ScanOptions,
+    VectorResult,
+};
 pub use repro::format_curl;

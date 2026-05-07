@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use reqwest::{Client, Method};
 use serde_json::Value;
-use tokio::sync::Semaphore;
+use tokio::sync::{watch, Semaphore};
 
 use super::auth::AuthConfig;
 use super::classifier::classify;
@@ -30,7 +30,81 @@ const PROBE_PAYLOAD: &str = "hello";
 /// Same cap as Python's `ThreadPoolExecutor(max_workers=10)`.
 const MAX_CONCURRENCY: usize = 10;
 
+/// Cancel-trigger policy for one scan run. `FirstVuln` (default) cuts
+/// the per-route fan-out short as soon as any vector lands as confirmed
+/// vulnerable (reflection in a 2xx response — see [`classify`]); `Never`
+/// runs every active vector to completion regardless. Connection
+/// errors, 3xx, 4xx (including 404), and 5xx do NOT trigger cancel —
+/// only the "got through" reflection case does, so the cancel signal
+/// never fires on infrastructure noise.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CancelMode {
+    /// Cancel siblings on first confirmed reflection finding.
+    #[default]
+    FirstVuln,
+    /// Disable cancellation; run every vector to completion.
+    Never,
+}
+
+/// How a vector got cancelled. Two cases — see
+/// [`VectorResult::cancelled_kind`] for the full schema contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancelKind {
+    /// Permit-blocked vector that was never started; cancel fired
+    /// while the task was waiting for a semaphore permit. No request
+    /// was sent.
+    Skipped,
+    /// Vector whose request was in flight when cancel fired; the
+    /// future was dropped at a `select!` await point. The request may
+    /// or may not have reached the server.
+    InFlight,
+}
+
+impl CancelKind {
+    /// Wire-format string. Stable contract — pinned by tests against
+    /// the literal output. New variants MUST extend this `match` AND
+    /// the [`VectorResult::cancelled_kind`] doc-comment in lockstep.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Skipped => "skipped",
+            Self::InFlight => "in_flight",
+        }
+    }
+}
+
+/// Identity of the finding that triggered route-level cancellation
+/// plus the count of vectors that did not run as a result. Surfaces
+/// in JSON output as the per-route `cancelled_after` block; see
+/// [`RouteResult::cancelled_after`] for the locked schema.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancelInfo {
+    pub category: String,
+    pub label: String,
+    pub vectors_skipped: usize,
+}
+
 /// Result of one attack vector against one route.
+///
+/// `cancelled_kind` is `None` for vectors that completed normally
+/// (request sent, classifier ran). It's `Some` only when the vector
+/// was short-circuited by [`CancelMode::FirstVuln`] cancellation —
+/// either skipped pre-permit or aborted in flight. See
+/// [`CancelKind`] for the variant contract.
+///
+/// **Locked schema (JSON output).** `cancelled_kind` is rendered into
+/// the per-vector JSON object as `"cancelled_kind"` (snake_case) when
+/// `Some`. The string values are exactly `"skipped"` or `"in_flight"`,
+/// matching [`CancelKind::as_str`]. The key is **omitted entirely**
+/// when `None` so prior JSON output stays byte-equal for non-cancel
+/// runs. Future cancel kinds MUST extend the `CancelKind` enum AND
+/// add a bullet to that doc-comment — never add sibling keys to the
+/// vector object.
+///
+/// On cancelled vectors: `status == 0`, `blocked == false`,
+/// `note == "skipped (cancelled)"` or `"cancelled in-flight"`. These
+/// rows still occupy their original index in `RouteResult::vectors`
+/// so consumers see the full task set in original order — slot
+/// preservation is a load-bearing contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VectorResult {
     pub category: String,
@@ -39,6 +113,7 @@ pub struct VectorResult {
     pub status: u16,
     pub blocked: bool,
     pub note: String,
+    pub cancelled_kind: Option<CancelKind>,
 }
 
 /// Result of scanning one route (probe + all active vectors).
@@ -47,6 +122,15 @@ pub struct VectorResult {
 /// string when the route never reached the vector dispatch stage. Carried
 /// here so renderers (human + JSON) can build a faithful `curl`
 /// reproducer per vector — see `scan::repro::format_curl`.
+///
+/// **Locked schema (JSON output).** `cancelled_after` is rendered into
+/// the per-route JSON object as `"cancelled_after"` (snake_case) when
+/// `Some`, with shape `{"category": String, "label": String,
+/// "vectors_skipped": Number}`. The key is **omitted entirely** when
+/// `None` so prior JSON output stays byte-equal for runs that did not
+/// trigger cancellation. Future cancel-related metadata MUST extend
+/// this struct AND update this doc-comment in lockstep — never add
+/// sibling keys to the route object.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RouteResult {
     pub method: String,
@@ -55,6 +139,7 @@ pub struct RouteResult {
     pub error: Option<String>,
     pub field: String,
     pub vectors: Vec<VectorResult>,
+    pub cancelled_after: Option<CancelInfo>,
 }
 
 /// Caller-supplied options for [`scan_route`]. Names mirror the Python
@@ -72,6 +157,9 @@ pub struct ScanOptions<'a> {
     /// the bearer token (and, in follow-up commits, cookies + login
     /// artifacts) injected on every probe + vector request.
     pub auth: Option<&'a AuthConfig>,
+    /// Speculative-cancellation policy. See [`CancelMode`]. The CLI
+    /// surfaces this as `--cancel-on first-vuln|never`.
+    pub cancel_on: CancelMode,
 }
 
 /// Send one HTTP request with `payload` injected into `field`. Returns
@@ -213,6 +301,16 @@ pub async fn scan_route(
     let field = Arc::new(working_field);
     let method = Arc::new(method.to_string());
     let timeout = options.timeout;
+    let cancel_mode = options.cancel_on;
+
+    // Cancellation channel. `watch` retains the latest value so a task
+    // that subscribes after `tx.send(true)` still sees `true` on the
+    // initial `rx.borrow()` check — the property `Notify::notify_waiters`
+    // does not have. `Sender::send` returns `Err` only after every
+    // receiver drops, which never happens while spawned tasks live;
+    // ignored via `.ok()` either way (idempotent, multi-fire safe).
+    let (cancel_tx, _initial_rx) = watch::channel(false);
+    let cancel_tx = Arc::new(cancel_tx);
 
     let mut handles: Vec<tokio::task::JoinHandle<(usize, VectorResult)>> =
         Vec::with_capacity(tasks.len());
@@ -222,21 +320,57 @@ pub async fn scan_route(
         let url = url.clone();
         let field = field.clone();
         let method = method.clone();
+        let cancel_tx = cancel_tx.clone();
+        let mut cancel_rx = cancel_tx.subscribe();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore not closed");
-            let (status, body) = send_one(&client, &url, &method, &field, &payload, timeout).await;
-            let cls = classify(status, &body, &payload);
-            (
-                idx,
-                VectorResult {
-                    category: cat,
-                    label,
-                    payload,
-                    status,
-                    blocked: cls.blocked,
-                    note: cls.note,
-                },
-            )
+
+            // Pre-flight check: cancel may have fired while this task
+            // was permit-blocked. Skip the request entirely and emit a
+            // synthetic `Skipped` row so original-task ordering is
+            // preserved in the result vector.
+            if *cancel_rx.borrow() {
+                return (
+                    idx,
+                    cancelled_vector_result(cat, label, payload, CancelKind::Skipped),
+                );
+            }
+
+            // `biased` so the cancel arm wins ties — when both are
+            // ready in the same poll, we prefer to abort the request
+            // rather than record a normal completion.
+            tokio::select! {
+                biased;
+                _ = cancel_rx.changed() => {
+                    (idx, cancelled_vector_result(cat, label, payload, CancelKind::InFlight))
+                }
+                (status, body) = send_one(&client, &url, &method, &field, &payload, timeout) => {
+                    let cls = classify(status, &body, &payload);
+                    let blocked = cls.blocked;
+                    let vr = VectorResult {
+                        category: cat,
+                        label,
+                        payload,
+                        status,
+                        blocked,
+                        note: cls.note,
+                        cancelled_kind: None,
+                    };
+                    // Fire cancel signal on confirmed reflection: a 2xx
+                    // response that was NOT classified as blocked. This
+                    // excludes connection errors (status==0), 3xx, 4xx
+                    // (including 404), and 5xx — none of which are
+                    // confirmed bypasses. Idempotent across concurrent
+                    // hits (watch retains "true" once set).
+                    if matches!(cancel_mode, CancelMode::FirstVuln)
+                        && !blocked
+                        && (200..300).contains(&status)
+                    {
+                        let _ = cancel_tx.send(true);
+                    }
+                    (idx, vr)
+                }
+            }
         }));
     }
 
@@ -249,7 +383,57 @@ pub async fn scan_route(
         }
     }
     result.vectors = slots.into_iter().flatten().collect();
+
+    // Identify the cancellation trigger by walking the original-order
+    // slots and picking the first vulnerable finding. Race-free even
+    // if multiple tasks completed with vuln before the watch propagated:
+    // the lowest-indexed one wins, which is deterministic on re-run.
+    if matches!(cancel_mode, CancelMode::FirstVuln) {
+        let skipped = result
+            .vectors
+            .iter()
+            .filter(|v| v.cancelled_kind.is_some())
+            .count();
+        if skipped > 0 {
+            if let Some(trigger) = result.vectors.iter().find(|v| {
+                v.cancelled_kind.is_none() && !v.blocked && (200..300).contains(&v.status)
+            }) {
+                result.cancelled_after = Some(CancelInfo {
+                    category: trigger.category.clone(),
+                    label: trigger.label.clone(),
+                    vectors_skipped: skipped,
+                });
+            }
+        }
+    }
+
     result
+}
+
+/// Build a synthetic `VectorResult` for a cancellation-short-circuited
+/// vector. Status zeroed (no request reached the wire reliably);
+/// `blocked` is `false` because we did NOT confirm the server blocks
+/// this payload — the row is a placeholder that preserves task order
+/// without claiming a fact we never tested.
+fn cancelled_vector_result(
+    category: String,
+    label: String,
+    payload: String,
+    kind: CancelKind,
+) -> VectorResult {
+    let note = match kind {
+        CancelKind::Skipped => "skipped (cancelled)".into(),
+        CancelKind::InFlight => "cancelled in-flight".into(),
+    };
+    VectorResult {
+        category,
+        label,
+        payload,
+        status: 0,
+        blocked: false,
+        note,
+        cancelled_kind: Some(kind),
+    }
 }
 
 #[cfg(test)]
@@ -421,6 +605,7 @@ mod tests {
             categories: None,
             thorough: false,
             auth: None,
+            cancel_on: CancelMode::FirstVuln,
         };
         let rr = scan_route(&format!("http://{addr}"), "POST", "/api/login", &opts).await;
         assert!(!rr.reachable);
@@ -437,6 +622,7 @@ mod tests {
             categories: None,
             thorough: false,
             auth: None,
+            cancel_on: CancelMode::FirstVuln,
         };
         let rr = scan_route(&format!("http://{addr}"), "POST", "/missing", &opts).await;
         assert!(!rr.reachable);
@@ -468,6 +654,7 @@ mod tests {
             categories: Some(&cats),
             thorough: false,
             auth: None,
+            cancel_on: CancelMode::FirstVuln,
         };
         let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
         assert!(rr.reachable);
@@ -504,6 +691,7 @@ mod tests {
             categories: None, // all categories
             thorough: false,
             auth: None,
+            cancel_on: CancelMode::FirstVuln,
         };
         let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
         assert!(rr.reachable);
@@ -581,6 +769,7 @@ mod tests {
             categories: Some(&cats),
             thorough: false,
             auth: Some(&auth),
+            cancel_on: CancelMode::FirstVuln,
         };
         let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
 
@@ -609,6 +798,7 @@ mod tests {
             categories: Some(&cats),
             thorough: false,
             auth: None,
+            cancel_on: CancelMode::FirstVuln,
         };
         let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
 
@@ -644,6 +834,7 @@ mod tests {
             categories: Some(&cats),
             thorough: false,
             auth: Some(&auth),
+            cancel_on: CancelMode::FirstVuln,
         };
         let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
 
@@ -685,6 +876,7 @@ mod tests {
             categories: Some(&cats),
             thorough: false,
             auth: Some(&auth),
+            cancel_on: CancelMode::FirstVuln,
         };
         let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
 
@@ -710,5 +902,307 @@ mod tests {
                 Some("session=abc; csrf=xyz")
             );
         }
+    }
+
+    // -------- speculative-cancellation tests --------
+
+    #[test]
+    fn cancel_kind_as_str_pins_wire_format() {
+        // The `as_str` strings are the JSON wire format. Pinned here so
+        // a refactor that renames a variant doesn't silently break the
+        // documented schema downstream consumers depend on.
+        assert_eq!(CancelKind::Skipped.as_str(), "skipped");
+        assert_eq!(CancelKind::InFlight.as_str(), "in_flight");
+    }
+
+    #[test]
+    fn cancel_mode_default_is_first_vuln() {
+        // Default-on cancellation is the locked policy (item 9). If
+        // someone flips this default, every existing call site that
+        // omits the field changes behaviour silently — pin it.
+        assert_eq!(CancelMode::default(), CancelMode::FirstVuln);
+    }
+
+    /// Mock that reflects the request body verbatim in its response so
+    /// the classifier sees the payload and rules `reflected (200)` —
+    /// the only classifier outcome that triggers cancellation. Adds a
+    /// configurable per-request delay to model slow vector probes.
+    async fn spawn_reflecting_mock(delay: Duration) -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 16_384];
+                    let n = match sock.read(&mut buf).await {
+                        Ok(n) => n,
+                        Err(_) => return,
+                    };
+                    let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                    // Echo the request back as the response body so any
+                    // payload contained in the request is "reflected".
+                    let body = req;
+                    tokio::time::sleep(delay).await;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn cancel_fires_on_first_vuln_in_thorough_mode_with_wall_clock_budget() {
+        // Reflecting server with an 800ms per-request delay — so a scan
+        // that fires every vector serially would take many seconds.
+        // With cancellation on, the first reflected vuln (~800ms,
+        // limited by the slowest in the first concurrency batch) fires
+        // cancel, and the remaining vectors short-circuit. Budget is
+        // a loose 2.0s ceiling that cleanly separates "cancelled"
+        // (~800ms) from "all 27 ran" (~3 batches × 800ms ≈ 2.4s+).
+        // Loose enough to survive Windows-under-load jitter.
+        let addr = spawn_reflecting_mock(Duration::from_millis(800)).await;
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(5),
+            categories: None,
+            thorough: true,
+            auth: None,
+            cancel_on: CancelMode::FirstVuln,
+        };
+
+        let start = std::time::Instant::now();
+        let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
+        let elapsed = start.elapsed();
+
+        assert!(rr.reachable);
+        assert!(rr.error.is_none());
+        // Cancellation must have fired — the reflecting server makes
+        // every payload classify as vulnerable.
+        let info = rr.cancelled_after.expect("cancel should have triggered");
+        assert!(info.vectors_skipped > 0, "expected non-zero skipped count");
+        // Wall-clock: well under "all 27 vectors ran" budget.
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "cancellation did not save wall-clock time: elapsed={elapsed:?}"
+        );
+
+        // At least one vector must carry a cancellation marker so JSON
+        // consumers can see what was short-circuited.
+        let cancelled_count = rr
+            .vectors
+            .iter()
+            .filter(|v| v.cancelled_kind.is_some())
+            .count();
+        assert!(cancelled_count > 0, "no vectors were marked cancelled");
+        assert_eq!(cancelled_count, info.vectors_skipped);
+    }
+
+    #[tokio::test]
+    async fn cancel_disabled_runs_all_vectors_even_when_vulnerable() {
+        // Same reflecting server but with --cancel-on never. Every
+        // vector must run to completion — full coverage path.
+        let addr = spawn_reflecting_mock(Duration::from_millis(20)).await;
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(5),
+            categories: None,
+            thorough: true,
+            auth: None,
+            cancel_on: CancelMode::Never,
+        };
+
+        let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
+        assert!(rr.reachable);
+        assert!(
+            rr.cancelled_after.is_none(),
+            "Never mode must not produce cancelled_after; got: {:?}",
+            rr.cancelled_after
+        );
+        // No vector may carry a cancellation marker.
+        let cancelled = rr
+            .vectors
+            .iter()
+            .filter(|v| v.cancelled_kind.is_some())
+            .count();
+        assert_eq!(cancelled, 0, "Never mode left {cancelled} cancelled rows");
+        // Thorough = 27 vectors total (4+4+3+4+4+4+2+2). All must be
+        // present, in original task order.
+        assert_eq!(rr.vectors.len(), 27);
+    }
+
+    #[tokio::test]
+    async fn cancelled_vectors_emit_synthetic_rows_in_original_task_order() {
+        // Run thorough mode against a reflecting server with a longish
+        // delay (so the concurrency window leaves clear skipped rows).
+        // Then assert: every result slot is filled (no flatten loss),
+        // categories appear in the original order, and every cancelled
+        // row keeps its category/label/payload from the task descriptor.
+        let addr = spawn_reflecting_mock(Duration::from_millis(400)).await;
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(5),
+            categories: None,
+            thorough: true,
+            auth: None,
+            cancel_on: CancelMode::FirstVuln,
+        };
+        let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
+
+        // Thorough = 27 task descriptors. Every slot must be present —
+        // even cancelled ones. This pins the "skipped emit synthetic"
+        // contract.
+        assert_eq!(rr.vectors.len(), 27);
+
+        // Original-task-order categories — same expected sequence as
+        // `scan_route_preserves_task_order_under_concurrency`. The
+        // synthetic cancelled rows must keep their category from the
+        // task descriptor, not collapse to a placeholder.
+        let first_per_category: Vec<&str> = {
+            let mut seen = std::collections::HashSet::new();
+            let mut out = Vec::new();
+            for v in &rr.vectors {
+                if seen.insert(v.category.clone()) {
+                    out.push(v.category.as_str());
+                }
+            }
+            out
+        };
+        assert_eq!(
+            first_per_category,
+            vec![
+                "XSS",
+                "SQL Injection",
+                "SQL Blind",
+                "NoSQL Injection",
+                "Path Traversal",
+                "Command Injection",
+                "Prototype Pollution",
+                "LDAP Injection",
+            ]
+        );
+
+        // Cancelled rows: status 0, blocked false, note matches one of
+        // the two locked strings, payload non-empty.
+        for v in &rr.vectors {
+            if let Some(kind) = v.cancelled_kind {
+                assert_eq!(v.status, 0);
+                assert!(!v.blocked);
+                assert!(!v.payload.is_empty());
+                match kind {
+                    CancelKind::Skipped => assert_eq!(v.note, "skipped (cancelled)"),
+                    CancelKind::InFlight => assert_eq!(v.note, "cancelled in-flight"),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_does_not_fire_when_all_vectors_blocked() {
+        // 400 to every payload — nothing classifies as vulnerable, no
+        // cancel fires. Pin the happy-path no-cancel contract.
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c = counter.clone();
+        let addr = spawn_mock(move |_req: &str| {
+            let n = c.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                (200, "ok".into())
+            } else {
+                (400, "blocked".into())
+            }
+        })
+        .await;
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: None,
+            thorough: false,
+            auth: None,
+            cancel_on: CancelMode::FirstVuln,
+        };
+        let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
+        assert!(rr.reachable);
+        assert!(rr.cancelled_after.is_none());
+        let cancelled = rr
+            .vectors
+            .iter()
+            .filter(|v| v.cancelled_kind.is_some())
+            .count();
+        assert_eq!(cancelled, 0);
+    }
+
+    #[tokio::test]
+    async fn cancel_does_not_fire_on_404_or_500_responses() {
+        // 200/empty for the probe so the route is reachable, then 500
+        // for every payload. 5xx is `!blocked` per classifier (note:
+        // "status 500") but is NOT a confirmed bypass — the cancel
+        // trigger is restricted to the 2xx-reflection case to avoid
+        // firing on infrastructure noise.
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c = counter.clone();
+        let addr = spawn_mock(move |_req: &str| {
+            let n = c.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                (200, String::new())
+            } else {
+                (500, "boom".into())
+            }
+        })
+        .await;
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: None,
+            thorough: false,
+            auth: None,
+            cancel_on: CancelMode::FirstVuln,
+        };
+        let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
+        assert!(rr.reachable);
+        assert!(
+            rr.cancelled_after.is_none(),
+            "5xx must not trigger cancel; got: {:?}",
+            rr.cancelled_after
+        );
+        // Every vector ran to completion with the 500 classification.
+        for v in &rr.vectors {
+            assert!(v.cancelled_kind.is_none());
+            assert_eq!(v.status, 500);
+            assert!(!v.blocked);
+            assert_eq!(v.note, "status 500");
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_info_identifies_first_vulnerable_finding_by_original_order() {
+        // The `cancelled_after` trigger is the LOWEST-indexed
+        // vulnerable finding, regardless of which task fired the
+        // watch first. With original task order = [XSS, SQL, ...],
+        // XSS is index 0. Reflecting server makes XSS vulnerable
+        // (and every other vector too, but the trigger reports the
+        // first by index). Pins the deterministic-rerun contract.
+        let addr = spawn_reflecting_mock(Duration::from_millis(50)).await;
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(5),
+            categories: None,
+            thorough: false,
+            auth: None,
+            cancel_on: CancelMode::FirstVuln,
+        };
+        let rr = scan_route(&format!("http://{addr}"), "POST", "/api/x", &opts).await;
+        let info = rr.cancelled_after.expect("cancel should have fired");
+        // First task descriptor in the table is XSS primary vector;
+        // its label is "script tag" (see payloads.rs).
+        assert_eq!(info.category, "XSS");
+        assert_eq!(info.label, "script tag");
+        assert!(info.vectors_skipped > 0);
     }
 }

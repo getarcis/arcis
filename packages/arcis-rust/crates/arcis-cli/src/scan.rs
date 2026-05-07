@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use arcis_engine::scan::{
     attack_categories, discover_routes, execute_login, format_curl, payloads::slug, scan_route,
-    AuthConfig, DiscoveredRoute, LoginConfig, RouteResult, ScanOptions, DEFAULT_FIELDS,
+    AuthConfig, CancelMode, DiscoveredRoute, LoginConfig, RouteResult, ScanOptions, DEFAULT_FIELDS,
 };
 
 const RESET: &str = "\x1b[0m";
@@ -43,6 +43,7 @@ struct Args {
     login_url: Option<String>,
     login_form: Vec<(String, String)>,
     login_json: bool,
+    cancel_on: CancelMode,
 }
 
 #[derive(Debug)]
@@ -72,6 +73,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         login_url: None,
         login_form: Vec::new(),
         login_json: false,
+        cancel_on: CancelMode::default(),
     };
 
     let mut i = 0;
@@ -209,6 +211,23 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                 }
             }
             "--login-json" => args.login_json = true,
+            "--cancel-on" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --cancel-on needs a value".into());
+                };
+                match parse_cancel_on(v) {
+                    Ok(m) => args.cancel_on = m,
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--cancel-on=") => {
+                let v = &arg["--cancel-on=".len()..];
+                match parse_cancel_on(v) {
+                    Ok(m) => args.cancel_on = m,
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
                 return ParseOutcome::Err(format!("arcis scan: unknown flag: {other}"));
             }
@@ -270,6 +289,19 @@ fn validate_login_url(value: &str) -> Result<String, String> {
         ));
     }
     Ok(value.to_string())
+}
+
+/// Parse the `--cancel-on` value. Two valid values, locked in help text
+/// and pinned by tests. Empty / unknown / cased-differently are rejected
+/// with a message that lists both literal options.
+fn parse_cancel_on(value: &str) -> Result<CancelMode, String> {
+    match value {
+        "first-vuln" => Ok(CancelMode::FirstVuln),
+        "never" => Ok(CancelMode::Never),
+        other => Err(format!(
+            "arcis scan: invalid --cancel-on value: {other}\n  Valid values: first-vuln, never"
+        )),
+    }
 }
 
 fn parse_login_form_pair(value: &str) -> Result<(String, String), String> {
@@ -463,6 +495,22 @@ fn print_help(out: &mut dyn Write) -> io::Result<()> {
     )?;
     writeln!(
         out,
+        "      --cancel-on MODE         Cancel remaining vector probes after the first vulnerable"
+    )?;
+    writeln!(
+        out,
+        "                               finding lands. MODE = first-vuln (default) | never."
+    )?;
+    writeln!(
+        out,
+        "                               first-vuln cuts wall-clock on slow targets; never runs"
+    )?;
+    writeln!(
+        out,
+        "                               every vector to completion for full coverage."
+    )?;
+    writeln!(
+        out,
         "  -h, --help                   Show this help and exit."
     )?;
     writeln!(out)?;
@@ -505,8 +553,18 @@ fn summarize(results: &[RouteResult], duration: Duration) -> ScanSummary {
         if rr.reachable {
             s.routes_reachable += 1;
         }
-        s.total_vectors += rr.vectors.len();
+        // Cancelled vectors were never tested — they neither block nor
+        // expose a vuln. Excluding them from ALL THREE counters
+        // (`total_vectors`, `total_blocked`, `total_vulnerable`) keeps
+        // the summary an honest accounting of probed vectors AND
+        // preserves the invariant `total_vectors == total_blocked +
+        // total_vulnerable`. Day-over-day diffs of the summary stay
+        // self-consistent regardless of where cancellation lands.
         for v in &rr.vectors {
+            if v.cancelled_kind.is_some() {
+                continue;
+            }
+            s.total_vectors += 1;
             if v.blocked {
                 s.total_blocked += 1;
             } else {
@@ -551,8 +609,24 @@ fn print_human_report(
             "  {bold}{} {}{reset}  {blocked}/{total} blocked",
             rr.method, rr.path
         )?;
+        // Honest UI: when cancellation fired, surface a one-line dim
+        // notice naming the trigger + skipped count so the user does
+        // not mistake the route for incomplete.
+        if let Some(info) = &rr.cancelled_after {
+            writeln!(
+                out,
+                "    {dim}cancelled after [{}] {} \u{2014} {} vector(s) skipped to save time{reset}",
+                info.category, info.label, info.vectors_skipped
+            )?;
+        }
         for v in &rr.vectors {
-            let mark = if v.blocked { "ok" } else { "!!" };
+            let mark = if v.cancelled_kind.is_some() {
+                "--"
+            } else if v.blocked {
+                "ok"
+            } else {
+                "!!"
+            };
             writeln!(
                 out,
                 "    {dim}{mark}{reset} [{}] {} {dim}{}{reset}",
@@ -561,8 +635,10 @@ fn print_human_report(
             // Emit a copyable curl reproducer for each vulnerable finding
             // so the user can reproduce the probe + verify their fix
             // without re-running the full scan. Blocked findings are
-            // intentionally skipped to keep the report scannable.
-            if !v.blocked {
+            // intentionally skipped to keep the report scannable, and
+            // cancelled findings are skipped because the row is a slot
+            // placeholder — no probe was confirmed against the server.
+            if !v.blocked && v.cancelled_kind.is_none() {
                 let curl = format_curl(target_url, &rr.method, &rr.path, &rr.field, &v.payload);
                 writeln!(out, "       {dim}{curl}{reset}")?;
             }
@@ -614,6 +690,13 @@ fn print_json_report(
                             target_url, &rr.method, &rr.path, &rr.field, &v.payload,
                         )),
                     );
+                    // Cancellation marker. Key is OMITTED entirely when
+                    // the vector ran normally so prior JSON output stays
+                    // byte-equal for non-cancel runs. Wire format pinned
+                    // by `CancelKind::as_str` — see VectorResult doc.
+                    if let Some(kind) = v.cancelled_kind {
+                        m.insert("cancelled_kind".into(), Value::String(kind.as_str().into()));
+                    }
                     Value::Object(m)
                 })
                 .collect();
@@ -627,6 +710,17 @@ fn print_json_report(
             );
             m.insert("field".into(), Value::String(rr.field.clone()));
             m.insert("vectors".into(), Value::Array(vectors));
+            // Cancellation summary. Key is OMITTED when no cancel
+            // fired, so prior JSON output stays byte-equal for routes
+            // that completed without short-circuit. See
+            // RouteResult::cancelled_after for the locked schema.
+            if let Some(info) = &rr.cancelled_after {
+                let mut ci = Map::new();
+                ci.insert("category".into(), Value::String(info.category.clone()));
+                ci.insert("label".into(), Value::String(info.label.clone()));
+                ci.insert("vectors_skipped".into(), json!(info.vectors_skipped));
+                m.insert("cancelled_after".into(), Value::Object(ci));
+            }
             Value::Object(m)
         })
         .collect();
@@ -817,6 +911,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                 categories: categories.as_deref(),
                 thorough: args.thorough,
                 auth: auth_config.as_ref(),
+                cancel_on: args.cancel_on,
             };
             out.push(scan_route(&target_url, method, path, &opts).await);
         }
@@ -1517,6 +1612,7 @@ mod tests {
                     status: 200,
                     blocked: false,
                     note: "reflected in response (200)".into(),
+                    cancelled_kind: None,
                 },
                 VectorResult {
                     category: "SQL Injection".into(),
@@ -1525,8 +1621,10 @@ mod tests {
                     status: 400,
                     blocked: true,
                     note: "rejected (400)".into(),
+                    cancelled_kind: None,
                 },
             ],
+            cancelled_after: None,
         }
     }
 
@@ -1574,5 +1672,321 @@ mod tests {
         let xss_curl = vectors[0]["curl"].as_str().unwrap();
         assert!(xss_curl.contains("-X POST"), "got: {xss_curl}");
         assert!(xss_curl.contains("/api/login"), "got: {xss_curl}");
+    }
+
+    // -------- --cancel-on flag tests --------
+
+    #[test]
+    fn parses_cancel_on_first_vuln_space_separated() {
+        let a = args(&["--cancel-on", "first-vuln"]);
+        assert_eq!(a.cancel_on, CancelMode::FirstVuln);
+    }
+
+    #[test]
+    fn parses_cancel_on_never_space_separated() {
+        let a = args(&["--cancel-on", "never"]);
+        assert_eq!(a.cancel_on, CancelMode::Never);
+    }
+
+    #[test]
+    fn parses_cancel_on_inline_equals() {
+        let a = args(&["--cancel-on=never"]);
+        assert_eq!(a.cancel_on, CancelMode::Never);
+    }
+
+    #[test]
+    fn cancel_on_default_is_first_vuln() {
+        // Locked default: cancellation is on by default. This pins the
+        // CLI surface alongside `CancelMode::default` in the engine
+        // — both must agree, both are tested.
+        let a = args(&[]);
+        assert_eq!(a.cancel_on, CancelMode::FirstVuln);
+    }
+
+    #[test]
+    fn cancel_on_unknown_value_rejected() {
+        let argv: Vec<String> = ["--cancel-on", "always"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("invalid --cancel-on value"), "got: {e}");
+                // Error message MUST list both valid values so the user
+                // can self-correct without re-reading help.
+                assert!(e.contains("first-vuln"), "got: {e}");
+                assert!(e.contains("never"), "got: {e}");
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cancel_on_case_sensitive_uppercase_rejected() {
+        // Locked: `--cancel-on Never` is rejected. Same policy as the
+        // value-is-an-identifier convention used elsewhere — the user
+        // gets a clear error rather than a silently-different mode.
+        let argv: Vec<String> = ["--cancel-on", "Never"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn cancel_on_empty_value_rejected() {
+        let argv: Vec<String> = ["--cancel-on", ""].iter().map(|s| s.to_string()).collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn help_text_documents_cancel_modes() {
+        // Pin both literal mode strings + the explanatory line in the
+        // help block. If a future help-text refactor drops a mode or
+        // muddies the description, this test fails loudly. Same shape
+        // as `help_text_documents_login_capture_priority`.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--cancel-on MODE"), "missing flag entry: {s}");
+        // Both literal mode names — pinning prevents silent rename.
+        assert!(s.contains("first-vuln"), "missing first-vuln mode: {s}");
+        assert!(s.contains("never"), "missing never mode: {s}");
+        // Default annotation — users skimming help should see which
+        // mode is active without setting the flag.
+        assert!(
+            s.contains("first-vuln (default)"),
+            "missing default annotation: {s}"
+        );
+        // Behaviour summary (load-bearing for users deciding when to
+        // opt out for full coverage).
+        assert!(
+            s.contains("Cancel remaining vector probes"),
+            "missing cancel description: {s}"
+        );
+    }
+
+    fn fixture_route_with_cancel() -> RouteResult {
+        use arcis_engine::scan::{CancelInfo, CancelKind, VectorResult};
+        RouteResult {
+            method: "POST".into(),
+            path: "/api/login".into(),
+            reachable: true,
+            error: None,
+            field: "username".into(),
+            vectors: vec![
+                // The trigger: vulnerable reflection finding.
+                VectorResult {
+                    category: "XSS".into(),
+                    label: "script tag".into(),
+                    payload: "<script>alert(1)</script>".into(),
+                    status: 200,
+                    blocked: false,
+                    note: "reflected in response (200)".into(),
+                    cancelled_kind: None,
+                },
+                // Skipped (permit-blocked) — never sent.
+                VectorResult {
+                    category: "SQL Injection".into(),
+                    label: "OR bypass".into(),
+                    payload: "' OR '1'='1' --".into(),
+                    status: 0,
+                    blocked: false,
+                    note: "skipped (cancelled)".into(),
+                    cancelled_kind: Some(CancelKind::Skipped),
+                },
+                // In-flight cancelled — request was dropped at await.
+                VectorResult {
+                    category: "Path Traversal".into(),
+                    label: "etc/passwd".into(),
+                    payload: "../../etc/passwd".into(),
+                    status: 0,
+                    blocked: false,
+                    note: "cancelled in-flight".into(),
+                    cancelled_kind: Some(CancelKind::InFlight),
+                },
+            ],
+            cancelled_after: Some(CancelInfo {
+                category: "XSS".into(),
+                label: "script tag".into(),
+                vectors_skipped: 2,
+            }),
+        }
+    }
+
+    #[test]
+    fn json_emits_cancelled_after_block_when_cancel_fires() {
+        // Sentinel-pin contains-checks against the SERIALIZED string
+        // (not just deserialized field access) so a refactor that
+        // renames the key to `cancelledAt` or drops it fails loudly.
+        // Mirrors the auth-redaction sentinel-pin pattern.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[rr], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+
+        // Literal-key pins. Locked schema — these strings must appear
+        // verbatim in any future iteration of the JSON renderer.
+        assert!(
+            s.contains("\"cancelled_after\""),
+            "missing cancelled_after key in JSON: {s}"
+        );
+        assert!(
+            s.contains("\"cancelled_kind\""),
+            "missing cancelled_kind key in JSON: {s}"
+        );
+        assert!(
+            s.contains("\"vectors_skipped\""),
+            "missing vectors_skipped key in JSON: {s}"
+        );
+        // Wire-format pins for the two CancelKind variants — must
+        // serialize as snake_case literal strings.
+        assert!(
+            s.contains("\"skipped\""),
+            "missing skipped wire literal: {s}"
+        );
+        assert!(
+            s.contains("\"in_flight\""),
+            "missing in_flight wire literal: {s}"
+        );
+
+        // Structural assertions on the parsed JSON for shape.
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let route0 = &v["routes"][0];
+        let info = &route0["cancelled_after"];
+        assert_eq!(info["category"], "XSS");
+        assert_eq!(info["label"], "script tag");
+        assert_eq!(info["vectors_skipped"], 2);
+
+        // Per-vector cancelled_kind — present only on skipped/in-flight
+        // rows, OMITTED on the trigger vector that ran normally.
+        let vectors = route0["vectors"].as_array().unwrap();
+        assert!(vectors[0].get("cancelled_kind").is_none());
+        assert_eq!(vectors[1]["cancelled_kind"], "skipped");
+        assert_eq!(vectors[2]["cancelled_kind"], "in_flight");
+    }
+
+    #[test]
+    fn json_omits_cancelled_after_when_no_cancellation() {
+        // Byte-equal-prior-output guarantee: a route that did not
+        // cancel must NOT carry the `cancelled_after` key. Same shape
+        // as the `auth` field omission for unauthenticated runs.
+        let rr = fixture_route(); // No cancellation in this fixture.
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[rr], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(
+            !s.contains("\"cancelled_after\""),
+            "cancelled_after must not appear when no cancel fired: {s}"
+        );
+        assert!(
+            !s.contains("\"cancelled_kind\""),
+            "cancelled_kind must not appear when no vectors were cancelled: {s}"
+        );
+    }
+
+    #[test]
+    fn human_report_shows_cancelled_after_line_dim() {
+        // Honest UI: the user must see the cancellation notice in the
+        // human report so they don't mistake a cancel for an
+        // incomplete scan. Pin the trigger label + skip count.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // The dim notice. Em-dash is the visual separator between the
+        // trigger and the skip count.
+        assert!(
+            s.contains("cancelled after [XSS] script tag"),
+            "missing cancellation notice: {s}"
+        );
+        assert!(s.contains("2 vector(s) skipped"), "missing skip count: {s}");
+    }
+
+    #[test]
+    fn human_report_marks_cancelled_vectors_with_dashes_not_blocks() {
+        // Cancelled rows must use a distinct mark (`--`) — not `ok`
+        // or `!!` — so users skimming the report can see at a glance
+        // which vectors actually ran.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // The two cancelled rows should each carry the `--` marker.
+        assert!(
+            s.contains("-- [SQL Injection] OR bypass"),
+            "skipped row missing -- mark: {s}"
+        );
+        assert!(
+            s.contains("-- [Path Traversal] etc/passwd"),
+            "in-flight row missing -- mark: {s}"
+        );
+    }
+
+    #[test]
+    fn human_report_does_not_emit_curl_for_cancelled_vectors() {
+        // The curl reproducer is a "go reproduce this finding" tool;
+        // emitting it for a vector that was never tested would mislead.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // The XSS payload (which DID land as vulnerable) should have
+        // its curl emitted; the OR-bypass and path-traversal payloads
+        // (cancelled) must NOT show in any curl line.
+        assert!(
+            s.contains("curl -fsSL"),
+            "expected at least one curl line: {s}"
+        );
+        assert!(
+            !s.contains("OR '1'='1'"),
+            "blocked OR-bypass payload leaked into curl: {s}"
+        );
+        assert!(
+            !s.contains("/etc/passwd"),
+            "cancelled path-traversal payload leaked into curl: {s}"
+        );
+    }
+
+    #[test]
+    fn summary_excludes_cancelled_vectors_from_all_counters() {
+        // Cancelled vectors didn't run; counting them anywhere in the
+        // summary is a lie. Pin the honest accounting AND the
+        // self-consistency invariant `total_vectors == total_blocked +
+        // total_vulnerable` — so day-over-day summary diffs stay
+        // internally consistent regardless of where cancel landed.
+        // Fixture has 3 slots: 1 vulnerable XSS trigger + 2 cancelled.
+        // Probed count = 1.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        assert_eq!(summary.total_vectors, 1, "should count probed only");
+        assert_eq!(summary.total_blocked, 0);
+        assert_eq!(summary.total_vulnerable, 1);
+        // Self-consistency invariant.
+        assert_eq!(
+            summary.total_vectors,
+            summary.total_blocked + summary.total_vulnerable
+        );
+    }
+
+    #[test]
+    fn summary_invariant_holds_when_no_cancellation() {
+        // Self-consistency invariant must hold regardless of cancel
+        // policy. Pin the no-cancel case so the regression bar covers
+        // both paths.
+        let rr = fixture_route(); // 1 vuln XSS, 1 blocked SQL, no cancel.
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        assert_eq!(summary.total_vectors, 2);
+        assert_eq!(summary.total_blocked, 1);
+        assert_eq!(summary.total_vulnerable, 1);
+        assert_eq!(
+            summary.total_vectors,
+            summary.total_blocked + summary.total_vulnerable
+        );
     }
 }
