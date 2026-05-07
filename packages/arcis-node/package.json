@@ -65,6 +65,11 @@
       "types": "./dist/astro/index.d.ts",
       "import": "./dist/astro/index.mjs",
       "require": "./dist/astro/index.js"
+    },
+    "./nuxt": {
+      "types": "./dist/nuxt/index.d.ts",
+      "import": "./dist/nuxt/index.mjs",
+      "require": "./dist/nuxt/index.js"
     }
   },
   "files": [
