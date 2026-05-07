@@ -619,6 +619,95 @@ mod tests {
                 !req.headers.contains_key("authorization"),
                 "no-auth runs must NOT send an Authorization header; got: {req:?}"
             );
+            assert!(
+                !req.headers.contains_key("cookie"),
+                "no-auth runs must NOT send a Cookie header; got: {req:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn scan_route_with_cookie_sends_cookie_header_verbatim() {
+        use crate::scan::test_server::{MockResponse, MockServer};
+
+        let server = MockServer::start().await;
+        server.on("POST", "/api/test", |_req| MockResponse::ok("{}"));
+
+        // Multi-cookie semicolon form must round-trip on the wire
+        // exactly as the user pasted it — no parsing, no reordering.
+        let cookie = "session=abc; csrf=xyz; flavor=chocolate";
+        let auth = AuthConfig::with_cookie(cookie).unwrap();
+        let cats = vec!["xss".to_string()];
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: Some(&cats),
+            thorough: false,
+            auth: Some(&auth),
+        };
+        let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
+
+        let captured = server.requests();
+        assert!(!captured.is_empty(), "expected at least one request");
+        for req in &captured {
+            assert_eq!(
+                req.headers.get("cookie").map(String::as_str),
+                Some(cookie),
+                "every probe + vector request must carry the cookie verbatim; got: {req:?}"
+            );
+            assert!(
+                !req.headers.contains_key("authorization"),
+                "cookie-only run must NOT carry Authorization; got: {req:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn scan_route_with_bearer_and_cookie_sends_both_headers() {
+        // Composition test: per session direction, assert presence and
+        // per-header value equality independently. HTTP treats headers
+        // as orderless, HeaderMap iteration order is not stable —
+        // never compare full sequences.
+        use crate::scan::test_server::{MockResponse, MockServer};
+
+        let server = MockServer::start().await;
+        server.on("POST", "/api/test", |_req| MockResponse::ok("{}"));
+
+        let auth = AuthConfig {
+            bearer: Some("test-bearer-token-xyz".into()),
+            cookie: Some("session=abc; csrf=xyz".into()),
+        };
+        let cats = vec!["xss".to_string()];
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: Some(&cats),
+            thorough: false,
+            auth: Some(&auth),
+        };
+        let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
+
+        let captured = server.requests();
+        assert!(!captured.is_empty(), "expected at least one request");
+        for req in &captured {
+            // Presence — independent checks per header.
+            assert!(
+                req.headers.contains_key("authorization"),
+                "missing authorization header; got: {req:?}"
+            );
+            assert!(
+                req.headers.contains_key("cookie"),
+                "missing cookie header; got: {req:?}"
+            );
+            // Value equality — per-header, no order assumptions.
+            assert_eq!(
+                req.headers.get("authorization").map(String::as_str),
+                Some("Bearer test-bearer-token-xyz")
+            );
+            assert_eq!(
+                req.headers.get("cookie").map(String::as_str),
+                Some("session=abc; csrf=xyz")
+            );
         }
     }
 }

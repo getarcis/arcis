@@ -39,6 +39,7 @@ struct Args {
     no_control_plane: bool,
     json_output: bool,
     bearer: Option<String>,
+    cookie: Option<String>,
 }
 
 #[derive(Debug)]
@@ -64,6 +65,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         no_control_plane: false,
         json_output: false,
         bearer: None,
+        cookie: None,
     };
 
     let mut i = 0;
@@ -149,10 +151,27 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                     Err(e) => return ParseOutcome::Err(e),
                 }
             }
+            "--cookie" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --cookie needs a value".into());
+                };
+                match validate_cookie_value(v) {
+                    Ok(t) => args.cookie = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--cookie=") => {
+                let v = &arg["--cookie=".len()..];
+                match validate_cookie_value(v) {
+                    Ok(t) => args.cookie = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
             // note(commit #4 --login): when --login lands, add a mutex
             // check here:
             //   if args.login.is_some() && args.bearer.is_some() { exit 2 }
-            //   if args.login.is_some() && !args.cookies.is_empty() { exit 2 }
+            //   if args.login.is_some() && args.cookie.is_some() { exit 2 }
             // --login generates its own auth artifact, so combining it
             // with manual flags is ambiguous. Reject early.
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
@@ -176,6 +195,14 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
 fn validate_bearer_value(value: &str) -> Result<String, String> {
     if value.trim().is_empty() {
         Err("arcis scan: --bearer cannot be empty or whitespace-only".into())
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+fn validate_cookie_value(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("arcis scan: --cookie cannot be empty or whitespace-only".into())
     } else {
         Ok(value.to_string())
     }
@@ -315,6 +342,18 @@ fn print_help(out: &mut dyn Write) -> io::Result<()> {
     writeln!(
         out,
         "                               Token value never appears in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --cookie <value>         Send Cookie: <value> on every request. Pasted verbatim;"
+    )?;
+    writeln!(
+        out,
+        "                               join multi-cookie with `; `. Composes with --bearer."
+    )?;
+    writeln!(
+        out,
+        "                               Cookie value never appears in --json output."
     )?;
     writeln!(
         out,
@@ -603,18 +642,33 @@ pub fn run(argv: &[String]) -> ExitCode {
     let timeout = Duration::from_secs(args.timeout);
 
     // Build the auth config once. Parser already rejected empty/
-    // whitespace-only tokens, so the engine validator should not fire
-    // here — but keep the belt-and-braces error path for the case where
-    // a future direct caller bypasses the parser.
-    let auth_config: Option<AuthConfig> = match args.bearer.as_deref() {
-        Some(token) => match AuthConfig::with_bearer(token) {
-            Ok(c) => Some(c),
-            Err(e) => {
-                let _ = writeln!(err, "arcis scan: {e}");
-                return ExitCode::from(2);
+    // whitespace-only inputs; the engine validator below is belt-and-
+    // braces for any future direct API caller that bypasses the parser.
+    // `--bearer` and `--cookie` compose: distinct header names, no
+    // collision logic needed.
+    let auth_config: Option<AuthConfig> = if args.bearer.is_some() || args.cookie.is_some() {
+        let mut cfg = AuthConfig::default();
+        if let Some(token) = args.bearer.as_deref() {
+            match AuthConfig::with_bearer(token) {
+                Ok(c) => cfg.bearer = c.bearer,
+                Err(e) => {
+                    let _ = writeln!(err, "arcis scan: {e}");
+                    return ExitCode::from(2);
+                }
             }
-        },
-        None => None,
+        }
+        if let Some(value) = args.cookie.as_deref() {
+            match AuthConfig::with_cookie(value) {
+                Ok(c) => cfg.cookie = c.cookie,
+                Err(e) => {
+                    let _ = writeln!(err, "arcis scan: {e}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        Some(cfg)
+    } else {
+        None
     };
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -827,10 +881,11 @@ mod tests {
         assert_eq!(r, vec![("POST".into(), "http://example.com/x".into())]);
     }
 
-    /// Deliberately unique sentinel for the JSON-redaction tests below.
+    /// Deliberately unique sentinels for the JSON-redaction tests below.
     /// Pinned so a substring match against the emitted JSON cannot
     /// false-positive on a hash digest, route URL, or vector label.
     const TEST_BEARER_TOKEN: &str = "arcis-test-bearer-DEADBEEF-9f3a2c";
+    const TEST_COOKIE_VALUE: &str = "session=arcis-test-cookie-CAFEBABE-7e1f4d; csrf=feedface";
 
     #[test]
     fn parses_bearer_space_separated() {
@@ -878,7 +933,7 @@ mod tests {
     }
 
     #[test]
-    fn json_report_includes_auth_method_bearer_and_redacts_token() {
+    fn json_report_includes_auth_methods_array_for_bearer_and_redacts_token() {
         let auth = AuthConfig::with_bearer(TEST_BEARER_TOKEN).unwrap();
         let summary = ScanSummary::default();
         let mut buf: Vec<u8> = Vec::new();
@@ -892,7 +947,9 @@ mod tests {
         .unwrap();
         let s = String::from_utf8(buf).unwrap();
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
-        assert_eq!(v["auth"]["method"], "bearer");
+        // Schema: `methods` is always an array (even for one entry).
+        assert_eq!(v["auth"]["methods"][0], "bearer");
+        assert_eq!(v["auth"]["methods"].as_array().unwrap().len(), 1);
         // Sentinel: the literal token string must NEVER appear anywhere
         // in the emitted JSON. This pins the redaction contract — users
         // pipe `--json` output to logs and CI artifacts; secrets must
@@ -900,6 +957,66 @@ mod tests {
         assert!(
             !s.contains(TEST_BEARER_TOKEN),
             "token leaked to JSON output: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_includes_auth_methods_array_for_cookie_and_redacts_value() {
+        let auth = AuthConfig::with_cookie(TEST_COOKIE_VALUE).unwrap();
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["auth"]["methods"][0], "cookie");
+        assert_eq!(v["auth"]["methods"].as_array().unwrap().len(), 1);
+        // Cookie value sentinel must NOT appear anywhere in JSON. The
+        // verbatim no-parse policy means we never extract names either.
+        assert!(!s.contains(TEST_COOKIE_VALUE), "cookie value leaked: {s}");
+        assert!(
+            !s.contains("session="),
+            "cookie name should not leak under no-parse policy: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_with_bearer_and_cookie_lists_both_methods_and_redacts_both() {
+        // Composite path: alphabetical order pinned, both sentinels
+        // checked absent.
+        let auth = AuthConfig {
+            bearer: Some(TEST_BEARER_TOKEN.into()),
+            cookie: Some(TEST_COOKIE_VALUE.into()),
+        };
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let methods = v["auth"]["methods"].as_array().unwrap();
+        assert_eq!(methods.len(), 2);
+        assert_eq!(methods[0], "bearer");
+        assert_eq!(methods[1], "cookie");
+        assert!(
+            !s.contains(TEST_BEARER_TOKEN),
+            "bearer leaked in composite: {s}"
+        );
+        assert!(
+            !s.contains(TEST_COOKIE_VALUE),
+            "cookie leaked in composite: {s}"
         );
     }
 
@@ -930,9 +1047,81 @@ mod tests {
             "missing header description: {s}"
         );
         assert!(
-            s.contains("never appears in --json"),
-            "missing redaction note: {s}"
+            s.contains("Token value never appears in --json"),
+            "missing bearer redaction note: {s}"
         );
+    }
+
+    #[test]
+    fn help_text_documents_cookie_redaction() {
+        // Parallel to the bearer pin: the redaction promise is also
+        // load-bearing for --cookie. Future help-text refactors must
+        // not drop either line.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--cookie <value>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("Send Cookie:"),
+            "missing header description: {s}"
+        );
+        assert!(
+            s.contains("Cookie value never appears in --json"),
+            "missing cookie redaction note: {s}"
+        );
+    }
+
+    #[test]
+    fn parses_cookie_space_separated() {
+        let a = args(&["--cookie", "session=abc; csrf=xyz"]);
+        assert_eq!(a.cookie.as_deref(), Some("session=abc; csrf=xyz"));
+    }
+
+    #[test]
+    fn parses_cookie_equals_inline() {
+        let a = args(&["--cookie=session=abc"]);
+        // Verbatim including the inner `=` — no further parsing.
+        assert_eq!(a.cookie.as_deref(), Some("session=abc"));
+    }
+
+    #[test]
+    fn cookie_empty_value_rejected() {
+        let argv: Vec<String> = ["--cookie", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cookie_whitespace_only_rejected() {
+        let argv: Vec<String> = ["--cookie", "   "].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cookie_inline_equals_empty_rejected() {
+        let argv: Vec<String> = ["--cookie="].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bearer_and_cookie_compose() {
+        let a = args(&["--bearer", "tok", "--cookie", "session=abc"]);
+        assert_eq!(a.bearer.as_deref(), Some("tok"));
+        assert_eq!(a.cookie.as_deref(), Some("session=abc"));
     }
 
     #[test]
