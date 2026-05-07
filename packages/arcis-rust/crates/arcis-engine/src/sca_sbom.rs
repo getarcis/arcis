@@ -1,18 +1,25 @@
-//! SBOM emitter for `arcis sca --sbom <format>`.
+//! SBOM emitters for `arcis sca --sbom <format>`.
 //!
-//! Today: CycloneDX 1.5 JSON — `bomFormat: "CycloneDX"`, `specVersion:
-//! "1.5"`. Components carry purl + bom-ref; vulnerabilities live at
-//! root level with `affects[].ref` pointing back to component bom-refs.
-//! SPDX 2.3 lands in a follow-up commit on this same branch.
+//! Two formats:
+//! * CycloneDX 1.5 JSON — `bomFormat: "CycloneDX"`, `specVersion: "1.5"`.
+//!   Components carry purl + bom-ref; vulnerabilities live at root level
+//!   with `affects[].ref` pointing back to component bom-refs.
+//! * SPDX 2.3 JSON — `spdxVersion: "SPDX-2.3"`, `dataLicense: "CC0-1.0"`.
+//!   Each vulnerability becomes a Package element of its own and is
+//!   linked to affected packages via a `relationships` entry with
+//!   `relationshipType: "AFFECTS"`. This is the SPDX 2.3 idiom; SPDX has
+//!   no first-class vulnerability primitive, so shoehorning the
+//!   CycloneDX `vulnerabilities` shape here would be off-spec.
 //!
 //! License fields are `NOASSERTION` everywhere — Arcis does not track
-//! license metadata today. The metadata.licenses block reflects this
-//! honestly rather than guessing or omitting.
+//! license metadata today. The metadata.licenses block (CycloneDX) and
+//! the per-package `licenseConcluded` / `licenseDeclared` fields (SPDX)
+//! both reflect this honestly rather than guessing or omitting.
 //!
 //! Determinism: components sort by purl, vulnerabilities sort by id
 //! before emit. The (timestamp, document-id) provider is injectable via
-//! `emit_cyclonedx_with` so tests can pin a fixed clock + UUID for
-//! byte-stable comparisons. Production callers use [`DefaultProvider`].
+//! `emit_*_with` so tests can pin a fixed clock + UUID for byte-stable
+//! comparisons. Production callers use [`DefaultProvider`].
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Write};
@@ -36,9 +43,9 @@ const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Inputs that vary per run: a wall-clock timestamp and a 16-byte
 /// document identifier. CycloneDX shapes the bytes as
-/// `urn:uuid:<uuid-v4>`. (When SPDX lands, it'll shape the same bytes
-/// as a URI under arcis.dev — provider is shared so a test override
-/// pins both formats with one fixture.)
+/// `urn:uuid:<uuid-v4>`; SPDX shapes them as a URI under arcis.dev. Both
+/// emitters consume the same provider so a test override pins both
+/// formats with one fixture.
 pub trait SbomProvider {
     /// ISO 8601 UTC timestamp, e.g. `2026-05-07T12:34:56Z`.
     fn timestamp(&self) -> String;
@@ -117,6 +124,17 @@ fn format_uuid_urn(raw: [u8; 16]) -> String {
     )
 }
 
+/// Format raw 16 bytes as a 32-character lowercase hex string. SPDX
+/// `documentNamespace` is a URI; the convention is a domain we control
+/// followed by a unique-per-document segment.
+fn format_hex32(raw: [u8; 16]) -> String {
+    let mut s = String::with_capacity(32);
+    for b in raw {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
 /// `pkg:<eco>/<name>@<version>` per the package-url spec. Ecosystem
 /// strings are lower-cased to match purl convention (purl uses `pypi`,
 /// not OSV's `PyPI`).
@@ -127,6 +145,24 @@ pub fn purl(ecosystem: &str, name: &str, version: &str) -> String {
         name,
         version
     )
+}
+
+/// Convert a key into a SPDXID-safe identifier. SPDXID may only contain
+/// `[A-Za-z0-9.\-+]`; everything else is replaced with `-`. Result is
+/// prefixed with `SPDXRef-` per spec.
+fn spdxid_for(prefix: &str, key: &str) -> String {
+    let mut out = String::with_capacity(prefix.len() + key.len() + 8);
+    out.push_str("SPDXRef-");
+    out.push_str(prefix);
+    out.push('-');
+    for c in key.chars() {
+        if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+' {
+            out.push(c);
+        } else {
+            out.push('-');
+        }
+    }
+    out
 }
 
 /// Extract a stable vulnerability id from a `Finding`. Walk references
@@ -291,6 +327,162 @@ fn vuln_source_name(id: &str) -> &'static str {
     }
 }
 
+// ── SPDX 2.3 ─────────────────────────────────────────────────────────────
+
+/// Emit an SPDX 2.3 JSON document for the given packages and findings.
+/// Output is pretty-printed (2-space indent) with a trailing newline.
+pub fn emit_spdx<W: Write>(
+    w: &mut W,
+    packages: &[PackageRef],
+    findings: &[Finding],
+) -> io::Result<()> {
+    emit_spdx_with(w, packages, findings, &DefaultProvider)
+}
+
+/// Test-friendly form: the caller injects an `SbomProvider` so the
+/// timestamp + document namespace can be pinned for byte-stable
+/// assertions.
+pub fn emit_spdx_with<W: Write, P: SbomProvider + ?Sized>(
+    w: &mut W,
+    packages: &[PackageRef],
+    findings: &[Finding],
+    provider: &P,
+) -> io::Result<()> {
+    let unique = unique_packages(packages);
+    let by_purl = findings_by_purl(findings);
+
+    let mut packages_json: Vec<Value> = Vec::with_capacity(unique.len() + 1);
+    let mut relationships: Vec<Value> = Vec::new();
+
+    // Root document → DESCRIBES every component package. SPDX requires
+    // the document to declare what it describes; without this the file
+    // fails most validators.
+    let root_id = "SPDXRef-DOCUMENT";
+
+    for p in &unique {
+        let pu = purl(&p.ecosystem, &p.name, &p.version);
+        let spdx_id = spdxid_for("Package", &pu);
+        packages_json.push(json!({
+            "name": p.name,
+            "SPDXID": spdx_id,
+            "versionInfo": p.version,
+            "downloadLocation": "NOASSERTION",
+            "filesAnalyzed": false,
+            "licenseConcluded": "NOASSERTION",
+            "licenseDeclared": "NOASSERTION",
+            "copyrightText": "NOASSERTION",
+            "externalRefs": [{
+                "referenceCategory": "PACKAGE-MANAGER",
+                "referenceType": "purl",
+                "referenceLocator": pu,
+            }],
+        }));
+        relationships.push(json!({
+            "spdxElementId": root_id,
+            "relationshipType": "DESCRIBES",
+            "relatedSpdxElement": spdx_id,
+        }));
+    }
+
+    // Vulnerabilities — emit each as its own Package per SPDX 2.3
+    // convention (no first-class vuln primitive) and link via
+    // relationships. Severity + summary go into `comment` because SPDX
+    // doesn't have a structured rating field.
+    let mut emitted_vulns: HashSet<String> = HashSet::new();
+    let mut vuln_packages: Vec<Value> = Vec::new();
+    for (pu, group) in &by_purl {
+        let pkg_spdxid = spdxid_for("Package", pu);
+        for f in group {
+            let id = vuln_id(f);
+            let vuln_spdxid = spdxid_for("Vulnerability", &id);
+            if emitted_vulns.insert(id.clone()) {
+                let mut external_refs = vec![json!({
+                    "referenceCategory": "SECURITY",
+                    "referenceType": "advisory",
+                    "referenceLocator": advisory_url_for(&id, &f.references),
+                })];
+                if id.starts_with("CVE-") {
+                    external_refs.push(json!({
+                        "referenceCategory": "SECURITY",
+                        "referenceType": "cve",
+                        "referenceLocator": id,
+                    }));
+                }
+                vuln_packages.push(json!({
+                    "name": id,
+                    "SPDXID": vuln_spdxid,
+                    "versionInfo": "advisory",
+                    "downloadLocation": "NOASSERTION",
+                    "filesAnalyzed": false,
+                    "licenseConcluded": "NOASSERTION",
+                    "licenseDeclared": "NOASSERTION",
+                    "copyrightText": "NOASSERTION",
+                    "comment": format!("Severity: {}\nSummary: {}", f.severity, f.attack_vector),
+                    "externalRefs": external_refs,
+                }));
+            }
+            relationships.push(json!({
+                "spdxElementId": vuln_spdxid,
+                "relationshipType": "AFFECTS",
+                "relatedSpdxElement": pkg_spdxid,
+            }));
+        }
+    }
+
+    // Stable order: vulnerability packages sort by id (BTreeMap iteration
+    // above is by purl, not by id; resort defensively for byte-stable
+    // output regardless of the per-purl insertion path).
+    vuln_packages.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    packages_json.extend(vuln_packages);
+
+    let doc = json!({
+        "spdxVersion": "SPDX-2.3",
+        "dataLicense": "CC0-1.0",
+        "SPDXID": root_id,
+        "name": "arcis-sbom",
+        "documentNamespace": format!(
+            "https://arcis.dev/sbom/spdx/{}",
+            format_hex32(provider.raw_id())
+        ),
+        "creationInfo": {
+            "created": provider.timestamp(),
+            "creators": [format!("Tool: {TOOL_NAME}-{TOOL_VERSION}")],
+            "comment": "Arcis does not track package license metadata; all license fields in this SBOM are NOASSERTION.",
+        },
+        "packages": packages_json,
+        "relationships": relationships,
+    });
+
+    serde_json::to_writer_pretty(&mut *w, &doc).map_err(io::Error::other)?;
+    writeln!(w)?;
+    Ok(())
+}
+
+/// Pick a sensible advisory URL for the SPDX `referenceLocator`. Prefer
+/// a URL from the finding's reference list that already contains the
+/// id; fall back to the canonical github-advisories URL when the id is
+/// GHSA-shaped or NVD URL when CVE-shaped; final fallback is
+/// `NOASSERTION`.
+fn advisory_url_for(id: &str, references: &[String]) -> String {
+    for r in references {
+        if r.contains(id) {
+            return r.clone();
+        }
+    }
+    if id.starts_with("GHSA-") {
+        format!("https://github.com/advisories/{id}")
+    } else if id.starts_with("CVE-") {
+        format!("https://nvd.nist.gov/vuln/detail/{id}")
+    } else {
+        "NOASSERTION".to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,6 +591,12 @@ mod tests {
     fn render_cyclonedx(packages: &[PackageRef], findings: &[Finding]) -> String {
         let mut buf: Vec<u8> = Vec::new();
         emit_cyclonedx_with(&mut buf, packages, findings, &fixed()).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    fn render_spdx(packages: &[PackageRef], findings: &[Finding]) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        emit_spdx_with(&mut buf, packages, findings, &fixed()).unwrap();
         String::from_utf8(buf).unwrap()
     }
 
@@ -531,6 +729,110 @@ mod tests {
     }
 
     #[test]
+    fn spdx_shape() {
+        let (packages, findings) = sbom_fixture();
+        let out = render_spdx(&packages, &findings);
+        let v = parse(&out);
+
+        assert_eq!(v["spdxVersion"], "SPDX-2.3");
+        assert_eq!(v["dataLicense"], "CC0-1.0");
+        assert_eq!(v["SPDXID"], "SPDXRef-DOCUMENT");
+        let ns = v["documentNamespace"].as_str().unwrap();
+        assert!(
+            ns.starts_with("https://arcis.dev/sbom/spdx/"),
+            "documentNamespace must be under arcis.dev, got {ns}"
+        );
+
+        let packages_arr = v["packages"].as_array().unwrap();
+        // 5 components + 3 vulnerability packages = 8.
+        assert_eq!(packages_arr.len(), 5 + 3);
+
+        // Components carry purl in externalRefs and NOASSERTION license fields.
+        let component_pkgs: Vec<&Value> = packages_arr
+            .iter()
+            .filter(|p| p["versionInfo"] != "advisory")
+            .collect();
+        assert_eq!(component_pkgs.len(), 5);
+        for p in &component_pkgs {
+            assert_eq!(p["licenseConcluded"], "NOASSERTION");
+            assert_eq!(p["licenseDeclared"], "NOASSERTION");
+            assert_eq!(p["copyrightText"], "NOASSERTION");
+            let ext = p["externalRefs"][0].clone();
+            assert_eq!(ext["referenceCategory"], "PACKAGE-MANAGER");
+            assert_eq!(ext["referenceType"], "purl");
+            let purl_str = ext["referenceLocator"].as_str().unwrap();
+            assert!(
+                purl_str.starts_with("pkg:npm/") || purl_str.starts_with("pkg:pypi/"),
+                "expected purl, got {purl_str}"
+            );
+        }
+    }
+
+    #[test]
+    fn spdx_vuln_relationships() {
+        let (packages, findings) = sbom_fixture();
+        let out = render_spdx(&packages, &findings);
+        let v = parse(&out);
+
+        let rels = v["relationships"].as_array().unwrap();
+        let affects: Vec<&Value> = rels
+            .iter()
+            .filter(|r| r["relationshipType"] == "AFFECTS")
+            .collect();
+        assert_eq!(affects.len(), 3, "3 findings → 3 AFFECTS relationships");
+
+        // Each AFFECTS links a Vulnerability SPDXID to a Package SPDXID.
+        for r in &affects {
+            let v_id = r["spdxElementId"].as_str().unwrap();
+            let p_id = r["relatedSpdxElement"].as_str().unwrap();
+            assert!(
+                v_id.starts_with("SPDXRef-Vulnerability-"),
+                "spdxElementId must be a Vulnerability ref, got {v_id}"
+            );
+            assert!(
+                p_id.starts_with("SPDXRef-Package-"),
+                "relatedSpdxElement must be a Package ref, got {p_id}"
+            );
+        }
+
+        // DESCRIBES links cover every component.
+        let describes: Vec<&Value> = rels
+            .iter()
+            .filter(|r| r["relationshipType"] == "DESCRIBES")
+            .collect();
+        assert_eq!(describes.len(), 5, "root document DESCRIBES every component");
+    }
+
+    #[test]
+    fn spdx_creation_info_includes_tool() {
+        let (packages, findings) = sbom_fixture();
+        let out = render_spdx(&packages, &findings);
+        let v = parse(&out);
+
+        let creators = v["creationInfo"]["creators"].as_array().unwrap();
+        assert!(!creators.is_empty(), "creators array required by SPDX 2.3");
+        let entry = creators[0].as_str().unwrap();
+        let expected = format!("Tool: {TOOL_NAME}-{TOOL_VERSION}");
+        assert_eq!(entry, expected);
+    }
+
+    #[test]
+    fn spdx_determinism() {
+        let (packages, findings) = sbom_fixture();
+        let a = render_spdx(&packages, &findings);
+        let b = render_spdx(&packages, &findings);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn json_validity_spdx() {
+        let (packages, findings) = sbom_fixture();
+        let out = render_spdx(&packages, &findings);
+        let _ = parse(&out);
+        assert!(out.ends_with('\n'));
+    }
+
+    #[test]
     fn empty_project_emits_valid_sbom() {
         // No findings, but components present (clean project case).
         let packages = vec![
@@ -543,6 +845,17 @@ mod tests {
         let v = parse(&cyclo);
         assert_eq!(v["components"].as_array().unwrap().len(), 2);
         assert_eq!(v["vulnerabilities"].as_array().unwrap().len(), 0);
+
+        let spdx = render_spdx(&packages, &findings);
+        let v = parse(&spdx);
+        // 2 components + 0 vuln packages.
+        assert_eq!(v["packages"].as_array().unwrap().len(), 2);
+        // 2 DESCRIBES relationships, no AFFECTS.
+        let rels = v["relationships"].as_array().unwrap();
+        assert_eq!(rels.len(), 2);
+        for r in rels {
+            assert_eq!(r["relationshipType"], "DESCRIBES");
+        }
     }
 
     #[test]
@@ -561,6 +874,17 @@ mod tests {
         // here too — license posture is load-bearing for compliance).
         for c in v["components"].as_array().unwrap() {
             assert_eq!(c["licenses"][0]["license"]["id"], "NOASSERTION");
+        }
+
+        let spdx = render_spdx(&packages, &findings);
+        let v = parse(&spdx);
+        assert!(v["creationInfo"]["comment"]
+            .as_str()
+            .unwrap()
+            .contains("NOASSERTION"));
+        for p in v["packages"].as_array().unwrap() {
+            assert_eq!(p["licenseConcluded"], "NOASSERTION");
+            assert_eq!(p["licenseDeclared"], "NOASSERTION");
         }
     }
 

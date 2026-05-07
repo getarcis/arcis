@@ -16,7 +16,7 @@ use arcis_engine::sca::{
     discover_manifests, enumerate_packages, scan_project, scan_project_with_osv, Finding,
     FindingType, OsvOptions,
 };
-use arcis_engine::sca_sbom::emit_cyclonedx;
+use arcis_engine::sca_sbom::{emit_cyclonedx, emit_spdx};
 use arcis_engine::threat_db::Threat;
 
 const WIDTH: usize = 64;
@@ -94,24 +94,25 @@ impl FailOn {
 
 const FAIL_ON_VALUES: &str = "critical|high|medium|any|none";
 
-/// SBOM format selector. Today: CycloneDX 1.5 only. SPDX 2.3 lands in
-/// a follow-up commit on this same branch — the enum is kept rather
-/// than a bool so the second variant is a one-line addition.
+/// SBOM format selector. CycloneDX 1.5 and SPDX 2.3 both emit JSON; the
+/// engine picks the right shape per spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Sbom {
     Cyclonedx,
+    Spdx,
 }
 
 impl Sbom {
     fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "cyclonedx" => Some(Self::Cyclonedx),
+            "spdx" => Some(Self::Spdx),
             _ => None,
         }
     }
 }
 
-const SBOM_VALUES: &str = "cyclonedx";
+const SBOM_VALUES: &str = "cyclonedx|spdx";
 
 /// Decide whether `findings` should produce a non-zero exit under the
 /// given threshold. The severity ladder is `critical > high > medium`
@@ -724,7 +725,7 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     )?;
     writeln!(
         w,
-        "                      Values: cyclonedx (CycloneDX 1.5)."
+        "                      Values: cyclonedx (CycloneDX 1.5), spdx (SPDX 2.3)."
     )?;
     writeln!(
         w,
@@ -816,6 +817,7 @@ pub fn run(argv: &[String]) -> ExitCode {
         let emit_result: io::Result<()> = match args.output.as_ref() {
             None => match format {
                 Sbom::Cyclonedx => emit_cyclonedx(&mut out, &packages, &findings),
+                Sbom::Spdx => emit_spdx(&mut out, &packages, &findings),
             },
             Some(path) => {
                 let file = match File::create(path) {
@@ -828,6 +830,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                 let mut bw = BufWriter::new(file);
                 let r = match format {
                     Sbom::Cyclonedx => emit_cyclonedx(&mut bw, &packages, &findings),
+                    Sbom::Spdx => emit_spdx(&mut bw, &packages, &findings),
                 };
                 r.and_then(|_| bw.flush())
             }
@@ -1200,13 +1203,12 @@ mod tests {
 
     #[test]
     fn parse_args_sbom_separate_value() {
-        let argv: Vec<String> = ["--sbom", "cyclonedx"]
-            .into_iter()
-            .map(String::from)
-            .collect();
-        match parse_args(&argv) {
-            ParseOutcome::Args(a) => assert_eq!(a.sbom, Some(Sbom::Cyclonedx)),
-            other => panic!("expected Args, got {other:?}"),
+        for (input, want) in [("cyclonedx", Sbom::Cyclonedx), ("spdx", Sbom::Spdx)] {
+            let argv: Vec<String> = ["--sbom", input].into_iter().map(String::from).collect();
+            match parse_args(&argv) {
+                ParseOutcome::Args(a) => assert_eq!(a.sbom, Some(want), "for {input:?}"),
+                other => panic!("expected Args for {input:?}, got {other:?}"),
+            }
         }
     }
 
@@ -1220,19 +1222,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_args_sbom_rejects_unknown_value() {
-        // `spdx` lands in a follow-up commit; until then it falls through
-        // to the standard invalid-value error. `swid` covers the truly
-        // unknown case alongside.
-        for input in ["spdx", "swid"] {
-            let argv: Vec<String> = ["--sbom", input].into_iter().map(String::from).collect();
-            match parse_args(&argv) {
-                ParseOutcome::Err(msg) => {
-                    assert!(msg.contains(input), "msg should mention {input}: {msg}");
-                    assert!(msg.contains("cyclonedx"), "msg should list valid values: {msg}");
-                }
-                other => panic!("expected Err for {input}, got {other:?}"),
+    fn parse_args_sbom_invalid_value_errors() {
+        let argv: Vec<String> = ["--sbom", "swid"].into_iter().map(String::from).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(msg.contains("swid"), "msg: {msg}");
+                assert!(msg.contains("cyclonedx"), "msg: {msg}");
+                assert!(msg.contains("spdx"), "msg: {msg}");
             }
+            other => panic!("expected Err, got {other:?}"),
         }
     }
 
@@ -1261,13 +1259,13 @@ mod tests {
 
     #[test]
     fn parse_args_sbom_with_output_file() {
-        let argv: Vec<String> = ["--sbom", "cyclonedx", "-o", "/tmp/sbom.json"]
+        let argv: Vec<String> = ["--sbom", "spdx", "-o", "/tmp/sbom.json"]
             .into_iter()
             .map(String::from)
             .collect();
         match parse_args(&argv) {
             ParseOutcome::Args(a) => {
-                assert_eq!(a.sbom, Some(Sbom::Cyclonedx));
+                assert_eq!(a.sbom, Some(Sbom::Spdx));
                 assert_eq!(a.output, Some(PathBuf::from("/tmp/sbom.json")));
             }
             other => panic!("expected Args, got {other:?}"),
@@ -1307,6 +1305,7 @@ mod tests {
             out.contains("cyclonedx (CycloneDX 1.5)"),
             "help should list cyclonedx"
         );
+        assert!(out.contains("spdx (SPDX 2.3)"), "help should list spdx");
         assert!(
             out.contains("-o, --output <file>"),
             "help missing -o/--output"
