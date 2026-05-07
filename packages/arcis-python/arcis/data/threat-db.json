@@ -571,6 +571,27 @@
     },
     {
       "ecosystem": "npm",
+      "name": "jsonwebtoken",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<=8.5.1"
+      ],
+      "attack_vector": "Key confusion / signature bypass: when verify() is called without explicit algorithms, an HMAC-signed token can be accepted by an RSA-keyed verifier (or vice versa) by changing the alg header. Reaches RCE in some misconfigured handlers, full auth bypass in most. Three companion CVEs in the same advisory cycle.",
+      "severity": "critical",
+      "cve": "CVE-2022-23529",
+      "disclosure_date": "2022-12-22",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-27h2-hvpr-p74q",
+        "https://github.com/advisories/GHSA-qwph-4952-7xr6",
+        "https://github.com/advisories/GHSA-hjrf-2m68-5959"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Upgrade jsonwebtoken to >=9.0.0.\n2. Always pass an explicit `algorithms` array to verify(). Never call verify() without it.\n3. Audit any auth code path that accepts external tokens for the JWT-NO-ALG family of bypasses."
+    },
+    {
+      "ecosystem": "npm",
       "name": "kodiak2k",
       "malicious_versions": [
         "*"
@@ -1041,6 +1062,26 @@
     },
     {
       "ecosystem": "npm",
+      "name": "socket.io",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.5.1",
+        ">=3.0.0 <4.6.2"
+      ],
+      "attack_vector": "DoS via crafted Engine.IO header. A malformed `EIO` parameter triggers an unhandled exception in the handshake path, crashing the worker. Exploitable on any service that exposes a Socket.IO endpoint to untrusted clients.",
+      "severity": "high",
+      "cve": "CVE-2024-38355",
+      "disclosure_date": "2024-06-19",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-25hc-qcg6-38wj"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade socket.io to >=2.5.1 (v2 branch) or >=4.6.2 (v3+ branches)."
+    },
+    {
+      "ecosystem": "npm",
       "name": "tar",
       "malicious_versions": [],
       "vulnerable_ranges": [
@@ -1357,6 +1398,25 @@
       "trojanized_deps": [],
       "persistence_artifacts": [],
       "remediation": "Upgrade FastAPI to >=0.109.1."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "flask-cors",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.0.1"
+      ],
+      "attack_vector": "Case-sensitive origin matching flaw: `Access-Control-Allow-Origin` header validation compared against the configured allow-list with case sensitivity, while browsers normalize the request Origin to lowercase. An attacker controlling an origin like `EXAMPLE.com` (uppercase) could bypass policies set for `example.com`, enabling cross-origin reads against authenticated APIs.",
+      "severity": "high",
+      "cve": "CVE-2024-1681",
+      "disclosure_date": "2024-02-19",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-9889-ghwc-c6xv"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade flask-cors to >=4.0.1. Ensure your CORS allow-list compares origins case-insensitively if you can't upgrade immediately."
     },
     {
       "ecosystem": "pypi",
