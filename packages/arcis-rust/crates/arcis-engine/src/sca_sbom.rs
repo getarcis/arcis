@@ -779,11 +779,7 @@ mod tests {
             .iter()
             .filter(|r| r["relationshipType"] == "AFFECTS")
             .collect();
-        assert_eq!(
-            affects.len(),
-            3,
-            "3 findings → 3 AFFECTS relationships"
-        );
+        assert_eq!(affects.len(), 3, "3 findings → 3 AFFECTS relationships");
 
         // Each AFFECTS links a Vulnerability SPDXID to a Package SPDXID.
         for r in &affects {
