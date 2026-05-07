@@ -14,9 +14,10 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use arcis_engine::audit::{
-    assign_ids, collect_files_with_options, detect_language, render_json, render_sarif,
-    rules as compiled_rules, scan_file_with_suppression, Finding, IgnoreOptions, JsonReport,
-    Language, SarifReport, Severity,
+    assign_ids, classify_baseline, collect_files_with_options, detect_language, render_json,
+    render_sarif, rules as compiled_rules, scan_file_with_suppression, Baseline, BaselineEntry,
+    BaselineError, BaselineSummary, Finding, IgnoreOptions, JsonReport, Language, SarifReport,
+    Severity,
 };
 
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -39,6 +40,17 @@ struct Args {
     /// stays active. Useful in monorepos with broad gitignore lines
     /// over vendored dirs you do want to scan. Mirrors ripgrep.
     no_gitignore: bool,
+    /// `--baseline <path>`: read mode. Read a baseline JSON file,
+    /// classify current findings against it, suppress unchanged from
+    /// output. Exit code reflects added findings only. Mutually
+    /// exclusive with [`Self::baseline_write`] — see cli-audit.md
+    /// item 9.
+    baseline: Option<PathBuf>,
+    /// `--baseline-write <path>`: write mode. Run a normal scan, then
+    /// write a baseline JSON snapshot to `path` (atomic via deterministic
+    /// `<path>.tmp` rename). Always exits 0 — recording IS success by
+    /// definition. Mutually exclusive with [`Self::baseline`].
+    baseline_write: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -61,6 +73,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut sarif_output = false;
     let mut no_ignore = false;
     let mut no_gitignore = false;
+    let mut baseline: Option<PathBuf> = None;
+    let mut baseline_write: Option<PathBuf> = None;
 
     let mut iter = argv.iter().enumerate();
     while let Some((_, arg)) = iter.next() {
@@ -73,6 +87,46 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--sarif" => sarif_output = true,
             "--no-ignore" => no_ignore = true,
             "--no-gitignore" => no_gitignore = true,
+            // cli-audit.md item 9: baseline mode (read). Mutex with
+            // `--baseline-write` is enforced HERE at parse time, not
+            // post-parse, so the error message can name the second
+            // (offending) flag — easier to find when editing a config
+            // or a long argv. The first-given flag always "wins" the
+            // semantic slot; the second one is the one we point at.
+            "--baseline" => match iter.next() {
+                Some((_, v)) => {
+                    if baseline_write.is_some() {
+                        return ParseOutcome::Err(
+                            "arcis audit: --baseline conflicts with --baseline-write \
+                             (already given) — pick one: read OR write a baseline, not both"
+                                .into(),
+                        );
+                    }
+                    baseline = Some(PathBuf::from(v));
+                }
+                None => {
+                    return ParseOutcome::Err(
+                        "arcis audit: --baseline requires a path argument".into(),
+                    );
+                }
+            },
+            "--baseline-write" => match iter.next() {
+                Some((_, v)) => {
+                    if baseline.is_some() {
+                        return ParseOutcome::Err(
+                            "arcis audit: --baseline-write conflicts with --baseline \
+                             (already given) — pick one: read OR write a baseline, not both"
+                                .into(),
+                        );
+                    }
+                    baseline_write = Some(PathBuf::from(v));
+                }
+                None => {
+                    return ParseOutcome::Err(
+                        "arcis audit: --baseline-write requires a path argument".into(),
+                    );
+                }
+            },
             "--language" | "-l" => match iter.next() {
                 Some((_, v)) => match Language::parse(v) {
                     Some(l) => language = Some(l),
@@ -128,6 +182,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         sarif_output,
         no_ignore,
         no_gitignore,
+        baseline,
+        baseline_write,
     })
 }
 
@@ -196,6 +252,39 @@ fn print_help<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(
         out,
         "      --no-gitignore   Disable .gitignore only; keep .arcisignore active."
+    )?;
+    writeln!(
+        out,
+        "      --baseline PATH  Read mode: classify findings against PATH; suppress unchanged,"
+    )?;
+    writeln!(
+        out,
+        "                       fail only on new ones. Resolved findings reported as a positive"
+    )?;
+    writeln!(
+        out,
+        "                       signal. Mutually exclusive with --baseline-write."
+    )?;
+    writeln!(out, "      --baseline-write PATH")?;
+    writeln!(
+        out,
+        "                       Write mode: record current findings to PATH as a baseline JSON"
+    )?;
+    writeln!(
+        out,
+        "                       file (atomic write). Always exits 0. Mutually exclusive with"
+    )?;
+    writeln!(
+        out,
+        "                       --baseline. Note: --severity applies BEFORE diff classification —"
+    )?;
+    writeln!(
+        out,
+        "                       writing a baseline at one severity then reading at a stricter one"
+    )?;
+    writeln!(
+        out,
+        "                       will surface the lower-severity entries as resolved."
     )?;
     writeln!(out, "  -h, --help           Show this message and exit.")?;
     Ok(())
@@ -314,6 +403,9 @@ pub fn run(argv: &[String]) -> ExitCode {
             let by_lang: BTreeMap<String, usize> = BTreeMap::new();
             let by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
             let out = if args.json_output {
+                // No-files-found path: baseline mode is moot — there's
+                // nothing to diff. Emit the empty document with no
+                // baseline block regardless of `--baseline*` flags.
                 render_json(&JsonReport {
                     tool_version: TOOL_VERSION,
                     target: &target_str,
@@ -326,6 +418,8 @@ pub fn run(argv: &[String]) -> ExitCode {
                     severity_filter: args.severity,
                     suppressed: 0,
                     ignored: ignored_count,
+                    baseline: None,
+                    resolved_findings: &[],
                 })
             } else {
                 render_sarif(&SarifReport {
@@ -401,16 +495,122 @@ pub fn run(argv: &[String]) -> ExitCode {
     // Deterministic finding ids — `<RULE_ID>-<16hex>` over
     // `(rule_id, relpath, line, snippet)`. Pinned to the user's input
     // path so `arcis audit .` and `arcis audit /abs/repo` produce the
-    // same id for the same source line. cli-audit.md item 10.
+    // same id for the same source line. cli-audit.md item 10. MUST
+    // run before baseline classification — the diff is keyed on `id`.
     assign_ids(&mut findings, &path);
 
-    // Per-severity counts. Sorted by Severity Ord so the JSON
-    // `bySeverity` map keys come out in [critical, high, medium, low]
-    // order — matches Python's audit.py once the sort tweak lands.
+    // ── cli-audit.md item 9: --baseline-write (terminal branch in
+    // human mode; falls through with forced exit 0 in machine mode so
+    // the user gets BOTH the recorded baseline AND the JSON/SARIF
+    // output a CI pipeline expects). Mutex with --baseline is
+    // enforced parse-side; can't both be set here.
+    let baseline_write_succeeded = if let Some(write_path) = args.baseline_write.as_ref() {
+        let new_baseline = Baseline::from_findings(&findings, TOOL_VERSION);
+        if let Err(e) = new_baseline.write(write_path) {
+            let _ = writeln!(stderr_lock, "arcis audit: {e}");
+            return ExitCode::from(2);
+        }
+        if !args.quiet && !machine_mode {
+            let _ = writeln!(
+                stderr_lock,
+                "wrote baseline to {} ({} finding(s))",
+                write_path.display(),
+                new_baseline.findings.len(),
+            );
+        }
+        if !machine_mode {
+            // Pure write run with human stdout: nothing more to print.
+            // Recording is success — exit 0 even if findings exist.
+            return ExitCode::from(0);
+        }
+        true
+    } else {
+        false
+    };
+
+    // ── cli-audit.md item 9: --baseline (read mode). Reads the
+    // baseline file, classifies current findings against it, replaces
+    // `findings` with diff.added so the rest of the render path
+    // naturally surfaces NEW findings only. Resolved + unchanged are
+    // surfaced via the BaselineSummary block, not the findings array.
+    //
+    // Backing String storage lives at this scope so the `&str` refs
+    // in the borrowed BaselineSummary outlive the JsonReport build.
+    let mut baseline_path_owned: Option<String> = None;
+    let mut baseline_created_owned: Option<String> = None;
+    let mut baseline_added_count: usize = 0;
+    let mut baseline_resolved_count: usize = 0;
+    let mut baseline_unchanged_count: usize = 0;
+    let mut baseline_stale_count: usize = 0;
+    let mut resolved_entries: Vec<BaselineEntry> = Vec::new();
+
+    if let Some(read_path) = args.baseline.as_ref() {
+        let baseline_doc = match Baseline::read(read_path) {
+            Ok(b) => b,
+            Err(BaselineError::NotFound(p)) => {
+                let _ = writeln!(stderr_lock, "arcis audit: baseline file not found: {p}");
+                return ExitCode::from(2);
+            }
+            Err(e) => {
+                let _ = writeln!(stderr_lock, "arcis audit: {e}");
+                return ExitCode::from(2);
+            }
+        };
+        let diff = classify_baseline(&findings, &baseline_doc);
+
+        // Stale-rule warning is informational — doesn't fail the run,
+        // just surfaces orphaned baseline rows (rule deleted/renamed
+        // since the baseline was written). Quiet/machine modes get a
+        // count via summary.baseline.staleCount, not a stderr line.
+        if !args.quiet && !machine_mode && diff.stale_count > 0 {
+            let _ = writeln!(
+                stderr_lock,
+                "warning: baseline has {} stale {} (rule no longer in registry: {})",
+                diff.stale_count,
+                if diff.stale_count == 1 {
+                    "entry"
+                } else {
+                    "entries"
+                },
+                diff.stale_rule_ids.join(", "),
+            );
+        }
+
+        baseline_path_owned = Some(read_path.display().to_string());
+        baseline_created_owned = Some(baseline_doc.created_at);
+        baseline_added_count = diff.added.len();
+        baseline_resolved_count = diff.resolved.len();
+        baseline_unchanged_count = diff.unchanged_count;
+        baseline_stale_count = diff.stale_count;
+        findings = diff.added;
+        resolved_entries = diff.resolved;
+    }
+
+    // Per-severity counts over the (possibly diffed) findings vec.
+    // Sorted by Severity Ord so the JSON `bySeverity` map keys come
+    // out in [critical, high, medium, low] order — matches Python's
+    // audit.py once the sort tweak lands.
     let mut by_severity: BTreeMap<Severity, usize> = BTreeMap::new();
     for f in &findings {
         *by_severity.entry(f.severity).or_insert(0) += 1;
     }
+
+    // Borrow-bridge: BaselineSummary's `&str`s point into the owned
+    // strings declared above. Same scope, same lifetime — safe.
+    let baseline_summary = match (
+        baseline_path_owned.as_ref(),
+        baseline_created_owned.as_ref(),
+    ) {
+        (Some(p), Some(c)) => Some(BaselineSummary {
+            path: p.as_str(),
+            created_at: c.as_str(),
+            added: baseline_added_count,
+            resolved_count: baseline_resolved_count,
+            unchanged_count: baseline_unchanged_count,
+            stale_count: baseline_stale_count,
+        }),
+        _ => None,
+    };
 
     if machine_mode {
         let out = if args.json_output {
@@ -426,8 +626,14 @@ pub fn run(argv: &[String]) -> ExitCode {
                 severity_filter: args.severity,
                 suppressed: suppressed_total,
                 ignored: ignored_count,
+                baseline: baseline_summary.as_ref(),
+                resolved_findings: &resolved_entries,
             })
         } else {
+            // SARIF schema has no baseline block; the diffed findings
+            // slice naturally surfaces "new" results only when in
+            // baseline mode, which is what GitHub Code Scanning wants
+            // anyway (it computes the rest from partialFingerprints).
             render_sarif(&SarifReport {
                 tool_version: TOOL_VERSION,
                 target_abspath: &target_str,
@@ -435,7 +641,11 @@ pub fn run(argv: &[String]) -> ExitCode {
             })
         };
         let _ = writeln!(stdout_lock, "{out}");
-        return if findings.is_empty() {
+        // --baseline-write owns the exit code: always 0 (recording IS
+        // success). Otherwise, classic "exit 1 on findings, 0 on
+        // clean" — and in baseline read mode `findings` IS diff.added
+        // so the same expression already gates on new only.
+        return if baseline_write_succeeded || findings.is_empty() {
             ExitCode::from(0)
         } else {
             ExitCode::from(1)
@@ -457,6 +667,8 @@ pub fn run(argv: &[String]) -> ExitCode {
         duration_ms,
         suppressed_total,
         ignored_count,
+        baseline_summary.as_ref(),
+        &resolved_entries,
     );
 
     if findings.is_empty() {
@@ -479,6 +691,8 @@ fn print_human_report<W: Write>(
     duration_ms: u64,
     suppressed: usize,
     ignored: usize,
+    baseline_summary: Option<&BaselineSummary<'_>>,
+    resolved_entries: &[BaselineEntry],
 ) -> io::Result<()> {
     writeln!(out)?;
     writeln!(out, "  Arcis Audit")?;
@@ -501,6 +715,16 @@ fn print_human_report<W: Write>(
     writeln!(out, "  Files:    {} scanned ({})", files.len(), breakdown)?;
     if let Some(s) = severity_filter {
         writeln!(out, "  Filter:   severity >= {}", s.as_str())?;
+    }
+    // cli-audit.md item 9: header gains a baseline line in baseline
+    // mode so users see at-a-glance which file was diffed against and
+    // a punch-card of the result.
+    if let Some(bs) = baseline_summary {
+        writeln!(
+            out,
+            "  Baseline: {} ({} new, {} resolved, {} unchanged)",
+            bs.path, bs.added, bs.resolved_count, bs.unchanged_count
+        )?;
     }
     writeln!(
         out,
@@ -585,6 +809,30 @@ fn print_human_report<W: Write>(
         writeln!(out, "    Files ignored   {ignored}")?;
     }
     writeln!(out, "    Time            {duration_ms}ms")?;
+
+    // cli-audit.md item 9: Summary block gains baseline lines in
+    // baseline mode — resolved is shown even at 0 (positive signal is
+    // the point), stale gated on > 0 (warning, not the common case).
+    if let Some(bs) = baseline_summary {
+        writeln!(out)?;
+        writeln!(out, "    Baseline        {}", bs.path)?;
+        writeln!(out, "    New             {}", bs.added)?;
+        writeln!(out, "    Unchanged       {}", bs.unchanged_count)?;
+        writeln!(out, "    Resolved        {}", bs.resolved_count)?;
+        if bs.stale_count > 0 {
+            writeln!(out, "    Stale entries   {}", bs.stale_count)?;
+        }
+        // Per-line resolved list (each up to 80-ish chars). Helpful for
+        // a human auditor; machine consumers get the structured data
+        // via the top-level `resolvedFindings` array.
+        if !resolved_entries.is_empty() {
+            writeln!(out)?;
+            writeln!(out, "  Resolved findings")?;
+            for e in resolved_entries {
+                writeln!(out, "    {} {}:{}", e.rule_id, e.file, e.line)?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -726,6 +974,8 @@ mod tests {
             42,
             7,
             0,
+            None,
+            &[],
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -755,6 +1005,8 @@ mod tests {
             42,
             0,
             0,
+            None,
+            &[],
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -847,6 +1099,8 @@ mod tests {
             42,
             0,
             5,
+            None,
+            &[],
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -873,12 +1127,151 @@ mod tests {
             42,
             0,
             0,
+            None,
+            &[],
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(
             !out.contains("Files ignored"),
             "Files ignored line should not appear when count is 0, got:\n{out}"
+        );
+    }
+
+    // ── baseline mode (cli-audit.md item 9) ───────────────────────────
+
+    #[test]
+    fn parse_args_baseline_flag() {
+        match parse_args(&[
+            ".".to_string(),
+            "--baseline".to_string(),
+            "b.json".to_string(),
+        ]) {
+            ParseOutcome::Args(a) => {
+                assert_eq!(a.baseline, Some(PathBuf::from("b.json")));
+                assert!(a.baseline_write.is_none());
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_baseline_write_flag() {
+        match parse_args(&[
+            ".".to_string(),
+            "--baseline-write".to_string(),
+            "out.json".to_string(),
+        ]) {
+            ParseOutcome::Args(a) => {
+                assert_eq!(a.baseline_write, Some(PathBuf::from("out.json")));
+                assert!(a.baseline.is_none());
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_baseline_then_write_errors_pointing_to_second_flag() {
+        // User asked for --baseline first, then --baseline-write — the
+        // second flag is the offender. The error message MUST name it
+        // by its long form so a user editing a config file or a long
+        // argv can spot the offending line at a glance.
+        let r = parse_args(&[
+            ".".to_string(),
+            "--baseline".to_string(),
+            "b.json".to_string(),
+            "--baseline-write".to_string(),
+            "w.json".to_string(),
+        ]);
+        match r {
+            ParseOutcome::Err(msg) => {
+                assert!(
+                    msg.contains("--baseline-write"),
+                    "second flag --baseline-write must appear in error: {msg}"
+                );
+                assert!(
+                    msg.contains("conflicts with --baseline"),
+                    "error must point at the prior flag for context: {msg}"
+                );
+                assert!(
+                    msg.contains("read OR write"),
+                    "error should explain WHY the mutex exists: {msg}"
+                );
+            }
+            other => panic!("expected mutex error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_write_then_baseline_errors_pointing_to_second_flag() {
+        // Inverse order — `--baseline-write` first, then `--baseline`.
+        // Now `--baseline` is the second/offending flag.
+        let r = parse_args(&[
+            ".".to_string(),
+            "--baseline-write".to_string(),
+            "w.json".to_string(),
+            "--baseline".to_string(),
+            "b.json".to_string(),
+        ]);
+        match r {
+            ParseOutcome::Err(msg) => {
+                assert!(
+                    msg.contains("--baseline"),
+                    "second flag --baseline must appear in error: {msg}"
+                );
+                assert!(
+                    msg.contains("conflicts with --baseline-write"),
+                    "error must point at the prior flag for context: {msg}"
+                );
+            }
+            other => panic!("expected mutex error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_baseline_without_path_errors() {
+        let r = parse_args(&[".".to_string(), "--baseline".to_string()]);
+        assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("requires a path")));
+    }
+
+    #[test]
+    fn parse_args_baseline_write_without_path_errors() {
+        let r = parse_args(&[".".to_string(), "--baseline-write".to_string()]);
+        assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("requires a path")));
+    }
+
+    #[test]
+    fn help_text_documents_baseline_flags() {
+        // Refinement #3: help-text pin. Future help-text refactors that
+        // drop these fail loudly. Asserts BOTH flags appear, the mutex
+        // note is surfaced, AND a one-liner explaining diff
+        // classification (the "fail only on new" semantic) is present.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("--baseline "),
+            "help must mention --baseline (with trailing space, not as a prefix match for --baseline-write)"
+        );
+        assert!(
+            out.contains("--baseline-write"),
+            "help must mention --baseline-write"
+        );
+        assert!(
+            out.to_lowercase().contains("mutually exclusive"),
+            "help must surface the --baseline / --baseline-write mutex: {out}"
+        );
+        // "Fail only on new" semantic — the user-visible reason to use
+        // baseline mode at all. Keep the assertion permissive so a
+        // wording polish doesn't trip it.
+        assert!(
+            out.to_lowercase().contains("new")
+                && (out.to_lowercase().contains("fail") || out.to_lowercase().contains("exit")),
+            "help must explain the diff classification (fail/exit on NEW only): {out}"
+        );
+        assert!(
+            out.to_lowercase().contains("resolved"),
+            "help must surface the resolved-as-positive-signal contract: {out}"
         );
     }
 }

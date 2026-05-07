@@ -15,6 +15,7 @@
 //! Output formatting (human / `--json` / `--sarif`) lives in `arcis-cli`
 //! next to the clap glue.
 
+pub mod baseline;
 pub mod engine;
 pub mod finding_id;
 pub mod render;
@@ -22,6 +23,10 @@ pub mod rules;
 pub mod suppress;
 pub mod walker;
 
+pub use baseline::{
+    classify as classify_baseline, Baseline, BaselineEntry, BaselineError, BaselineSummary, Diff,
+    BASELINE_SCHEMA_VERSION,
+};
 pub use engine::{
     scan_directory, scan_directory_with_suppression, scan_file, scan_file_with_suppression,
     FileResult, Finding,
