@@ -52,6 +52,12 @@ pub struct JsonReport<'a> {
     pub by_severity: &'a BTreeMap<Severity, usize>,
     pub duration_ms: u64,
     pub severity_filter: Option<Severity>,
+    /// Findings that fired but were silenced by a suppress-comment
+    /// directive (cli-audit.md item 6). Surfaces as
+    /// `summary.suppressed` in the JSON output. Suppressed findings
+    /// are NOT included in the `findings` array — only the count
+    /// surfaces, by design.
+    pub suppressed: usize,
 }
 
 /// Render the audit result as a JSON document. Schema:
@@ -106,6 +112,11 @@ pub fn render_json(report: &JsonReport<'_>) -> String {
     summary.insert("bySeverity".into(), Value::Object(by_sev));
 
     summary.insert("totalFindings".into(), Value::from(report.findings.len()));
+    // cli-audit.md item 6: count of suppress-comment-silenced findings.
+    // Always emitted (zero is informative — confirms the field exists
+    // even on a clean run). Suppressed findings themselves are NOT
+    // listed; only the count.
+    summary.insert("suppressed".into(), Value::from(report.suppressed));
     doc.insert("summary".into(), Value::Object(summary));
 
     let mut findings_arr = Vec::with_capacity(report.findings.len());
@@ -385,6 +396,7 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 500,
             severity_filter: None,
+            suppressed: 0,
         };
         let out = render_json(&report);
         let doc = parse(&out);
@@ -395,6 +407,9 @@ mod tests {
         assert_eq!(doc["summary"]["filesScanned"], Json::from(3u64));
         assert_eq!(doc["summary"]["rulesApplied"], Json::from(14u64));
         assert_eq!(doc["summary"]["totalFindings"], Json::from(0u64));
+        // cli-audit.md item 6: suppressed key always present, defaults
+        // to 0 even on a clean run.
+        assert_eq!(doc["summary"]["suppressed"], Json::from(0u64));
         assert!(doc["findings"].is_array());
         assert_eq!(doc["findings"].as_array().unwrap().len(), 0);
     }
@@ -413,6 +428,7 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: Some(Severity::High),
+            suppressed: 0,
         };
         let doc = parse(&render_json(&report));
         assert_eq!(doc["severityFilter"], Json::from("high"));
@@ -433,6 +449,7 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 100,
             severity_filter: None,
+            suppressed: 0,
         };
         let out = render_json(&report);
         let doc = parse(&out);
@@ -466,6 +483,7 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: None,
+            suppressed: 0,
         });
         // String-position sniff: ruleId opens the finding object, id
         // follows immediately, severity comes after.
@@ -496,6 +514,7 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: None,
+            suppressed: 0,
         });
         let positions: Vec<usize> = [
             "\"tool\"",
@@ -531,6 +550,7 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: None,
+            suppressed: 0,
         });
         assert!(
             out.contains("\\u2014"),
@@ -540,6 +560,31 @@ mod tests {
             !out.contains('\u{2014}'),
             "em dash should not appear literally — Python's default escapes it"
         );
+    }
+
+    #[test]
+    fn json_suppressed_count_emitted_in_summary() {
+        // cli-audit.md item 6: when the scan suppressed N findings,
+        // `summary.suppressed` reports the count. Suppressed findings
+        // do NOT appear in the `findings` array.
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 1,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 12,
+        });
+        let doc = parse(&out);
+        assert_eq!(doc["summary"]["suppressed"], Json::from(12u64));
+        assert_eq!(doc["summary"]["totalFindings"], Json::from(0u64));
+        assert_eq!(doc["findings"].as_array().unwrap().len(), 0);
     }
 
     #[test]
@@ -556,6 +601,7 @@ mod tests {
             by_severity: &by_sev,
             duration_ms: 0,
             severity_filter: None,
+            suppressed: 0,
         });
         // Python `json.dumps(..., indent=2)` uses 2-space indent. Our
         // serde_json::to_string_pretty default is also 2 spaces. Pin

@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use arcis_engine::audit::{
     assign_ids, collect_files, detect_language, render_json, render_sarif, rules as compiled_rules,
-    scan_file, Finding, JsonReport, Language, SarifReport, Severity,
+    scan_file_with_suppression, Finding, JsonReport, Language, SarifReport, Severity,
 };
 
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -289,6 +289,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                     by_severity: &by_sev,
                     duration_ms: 0,
                     severity_filter: args.severity,
+                    suppressed: 0,
                 })
             } else {
                 render_sarif(&SarifReport {
@@ -339,7 +340,13 @@ pub fn run(argv: &[String]) -> ExitCode {
 
     // Run scan. Time only the scan phase, like Python.
     let start = Instant::now();
-    let mut findings: Vec<Finding> = files.iter().flat_map(|f| scan_file(f)).collect();
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut suppressed_total: usize = 0;
+    for f in &files {
+        let r = scan_file_with_suppression(f);
+        findings.extend(r.findings);
+        suppressed_total += r.suppressed;
+    }
     let duration_ms = start.elapsed().as_millis() as u64;
 
     // Severity filter — keep findings whose severity rank <= threshold.
@@ -381,6 +388,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                 by_severity: &by_severity,
                 duration_ms,
                 severity_filter: args.severity,
+                suppressed: suppressed_total,
             })
         } else {
             render_sarif(&SarifReport {
@@ -410,6 +418,7 @@ pub fn run(argv: &[String]) -> ExitCode {
         &findings,
         &by_severity,
         duration_ms,
+        suppressed_total,
     );
 
     if findings.is_empty() {
@@ -430,6 +439,7 @@ fn print_human_report<W: Write>(
     findings: &[Finding],
     by_severity: &BTreeMap<Severity, usize>,
     duration_ms: u64,
+    suppressed: usize,
 ) -> io::Result<()> {
     writeln!(out)?;
     writeln!(out, "  Arcis Audit")?;
@@ -521,6 +531,13 @@ fn print_human_report<W: Write>(
         })
         .collect();
         writeln!(out, "    Findings        {} ({})", total, parts.join(", "))?;
+    }
+    // cli-audit.md item 6: surface suppress-comment count only when
+    // non-zero. Zero is the common case and would just be visual noise
+    // in the summary; the count exists in JSON output for tooling that
+    // wants the unconditional view.
+    if suppressed > 0 {
+        writeln!(out, "    Suppressed      {suppressed}")?;
     }
     writeln!(out, "    Time            {duration_ms}ms")?;
     Ok(())
@@ -642,5 +659,61 @@ mod tests {
     fn abspath_handles_dotdot() {
         let p = abspath(Path::new("a/b/../c"));
         assert!(!p.to_string_lossy().contains("..")); // collapsed
+    }
+
+    #[test]
+    fn human_summary_emits_suppressed_line_when_count_positive() {
+        // cli-audit.md item 6: Summary block must include
+        // "Suppressed N" when at least one finding was silenced by a
+        // suppress-comment directive.
+        let mut buf: Vec<u8> = Vec::new();
+        let by_lang: BTreeMap<String, usize> = [("python".to_string(), 1)].into_iter().collect();
+        let by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
+        print_human_report(
+            &mut buf,
+            Path::new("/tmp"),
+            &[PathBuf::from("/tmp/a.py")],
+            &by_lang,
+            14,
+            None,
+            &[],
+            &by_sev,
+            42,
+            7,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("Suppressed      7"),
+            "expected Suppressed line in summary, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn human_summary_omits_suppressed_line_when_count_zero() {
+        // Zero is the common case; printing "Suppressed 0" every time
+        // is just noise. Tooling can read the JSON output for the
+        // unconditional value.
+        let mut buf: Vec<u8> = Vec::new();
+        let by_lang: BTreeMap<String, usize> = [("python".to_string(), 1)].into_iter().collect();
+        let by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
+        print_human_report(
+            &mut buf,
+            Path::new("/tmp"),
+            &[PathBuf::from("/tmp/a.py")],
+            &by_lang,
+            14,
+            None,
+            &[],
+            &by_sev,
+            42,
+            0,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            !out.contains("Suppressed"),
+            "Suppressed line should not appear when count is 0, got:\n{out}"
+        );
     }
 }

@@ -19,9 +19,13 @@ pub mod engine;
 pub mod finding_id;
 pub mod render;
 pub mod rules;
+pub mod suppress;
 pub mod walker;
 
-pub use engine::{scan_directory, scan_file, Finding};
+pub use engine::{
+    scan_directory, scan_directory_with_suppression, scan_file, scan_file_with_suppression,
+    FileResult, Finding,
+};
 pub use finding_id::{assign_ids, compute as compute_finding_id, normalize_relpath};
 pub use render::{render_json, render_sarif, JsonReport, SarifReport};
 pub use rules::{rules, Language, Rule, Severity};
