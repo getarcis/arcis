@@ -140,12 +140,10 @@ impl DepGraph {
                         preds[v].push(u);
                         queue.push_back(v);
                     }
-                    Some(dv) if dv == du + 1 => {
-                        // Equal-distance alternate predecessor: record so
-                        // `all_paths_to` can enumerate every shortest path.
-                        if !preds[v].contains(&u) {
-                            preds[v].push(u);
-                        }
+                    // Equal-distance alternate predecessor: record so
+                    // `all_paths_to` can enumerate every shortest path.
+                    Some(dv) if dv == du + 1 && !preds[v].contains(&u) => {
+                        preds[v].push(u);
                     }
                     _ => {}
                 }
