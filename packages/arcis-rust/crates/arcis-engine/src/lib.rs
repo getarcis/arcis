@@ -18,6 +18,7 @@ pub mod audit;
 pub mod osv;
 pub mod osv_cache;
 pub mod sca;
+pub mod sca_sbom;
 pub mod scan;
 pub mod threat_db;
 pub mod version;

@@ -685,9 +685,7 @@ pub fn enumerate_packages(path: &Path) -> Vec<PackageRef> {
     enumerate_pipfile_lock(path, &mut out);
 
     let mut seen: HashSet<(String, String, String)> = HashSet::new();
-    out.retain(|p| {
-        seen.insert((p.ecosystem.clone(), p.name.clone(), p.version.clone()))
-    });
+    out.retain(|p| seen.insert((p.ecosystem.clone(), p.name.clone(), p.version.clone())));
     out
 }
 
@@ -804,10 +802,9 @@ fn enumerate_poetry_lock(path: &Path, out: &mut Vec<PackageRef>) {
         Err(_) => return,
     };
     let location = lockfile.display().to_string();
-    let block_re = Regex::new(
-        r#"\[\[package\]\][\s\S]*?name\s*=\s*"([^"]+)"[\s\S]*?version\s*=\s*"([^"]+)""#,
-    )
-    .expect("poetry block regex must compile");
+    let block_re =
+        Regex::new(r#"\[\[package\]\][\s\S]*?name\s*=\s*"([^"]+)"[\s\S]*?version\s*=\s*"([^"]+)""#)
+            .expect("poetry block regex must compile");
     for caps in block_re.captures_iter(&content) {
         out.push(PackageRef {
             ecosystem: "pypi".into(),
@@ -1015,8 +1012,7 @@ pub fn augment_with_osv(packages: &[PackageRef], opts: &OsvOptions) -> Vec<Findi
             }
 
             let vulns: Vec<OsvVuln> =
-                match osv::query(&client, &pkg.ecosystem, &pkg.name, &pkg.version, timeout).await
-                {
+                match osv::query(&client, &pkg.ecosystem, &pkg.name, &pkg.version, timeout).await {
                     Ok(v) => v,
                     Err(_) => continue,
                 };
@@ -1194,7 +1190,7 @@ mod tests {
     // ── OSV layer tests ───────────────────────────────────────────────────
 
     use crate::osv::{OsvReference, OsvSeverity, OsvVuln};
-    use crate::osv_cache::{cache_key, CacheEntry, OsvCache, DEFAULT_TTL_SECS};
+    use crate::osv_cache::{cache_key, CacheEntry, OsvCache};
 
     fn osv_vuln(id: &str, summary: &str, score: Option<&str>) -> OsvVuln {
         OsvVuln {
@@ -1455,7 +1451,11 @@ mod tests {
             cache_key("npm", "safe-pkg", "1.0.0"),
             CacheEntry {
                 fetched_at: crate::osv_cache::unix_now(),
-                vulns: vec![osv_vuln("GHSA-only-osv", "advisory only on osv", Some("7.5"))],
+                vulns: vec![osv_vuln(
+                    "GHSA-only-osv",
+                    "advisory only on osv",
+                    Some("7.5"),
+                )],
             },
         );
         cache.save(&cache_path).unwrap();

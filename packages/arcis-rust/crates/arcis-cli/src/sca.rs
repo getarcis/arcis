@@ -6,14 +6,17 @@
 //! the parity harness strips before byte-comparing.
 
 use std::env;
-use std::io::{self, Write};
+use std::fs::File;
+use std::io::{self, BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use arcis_engine::sca::{
-    discover_manifests, scan_project, scan_project_with_osv, Finding, FindingType, OsvOptions,
+    discover_manifests, enumerate_packages, scan_project, scan_project_with_osv, Finding,
+    FindingType, OsvOptions,
 };
+use arcis_engine::sca_sbom::{emit_cyclonedx, emit_spdx};
 use arcis_engine::threat_db::Threat;
 
 const WIDTH: usize = 64;
@@ -45,6 +48,88 @@ struct Args {
     /// progress, which the Rust port doesn't render yet. Kept so users
     /// can pass `-q` without a parse error.
     _quiet: bool,
+    /// Severity ladder that gates the non-zero exit. `Any` (default)
+    /// preserves legacy behaviour: any finding → exit 1.
+    fail_on: FailOn,
+    /// SBOM emit format. `None` keeps the human report; `Some` swaps in
+    /// the matching emitter and (when `output` is also `None`) suppresses
+    /// the human report on stdout.
+    sbom: Option<Sbom>,
+    /// Destination file for the SBOM. `None` writes to stdout.
+    /// Validation requires `sbom.is_some()` whenever this is set —
+    /// `-o` redirecting the human report is a separate feature, not on
+    /// this commit.
+    output: Option<PathBuf>,
+}
+
+/// Severity threshold for `arcis sca --fail-on <level>`. The CLI compares
+/// each finding's severity string against this enum: `Critical` only
+/// trips on critical, `High` on critical+high, `Medium` on
+/// critical+high+medium, `Any` on any finding (current default), `None`
+/// always exits 0 even with findings (report-only mode for CI logs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum FailOn {
+    Critical,
+    High,
+    Medium,
+    #[default]
+    Any,
+    None,
+}
+
+impl FailOn {
+    /// Case-insensitive parse. Returns `None` for unknown values; the
+    /// caller turns that into a `ParseOutcome::Err` with the value list.
+    fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "critical" => Some(Self::Critical),
+            "high" => Some(Self::High),
+            "medium" => Some(Self::Medium),
+            "any" => Some(Self::Any),
+            "none" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
+const FAIL_ON_VALUES: &str = "critical|high|medium|any|none";
+
+/// SBOM format selector. CycloneDX 1.5 and SPDX 2.3 both emit JSON; the
+/// engine picks the right shape per spec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sbom {
+    Cyclonedx,
+    Spdx,
+}
+
+impl Sbom {
+    fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "cyclonedx" => Some(Self::Cyclonedx),
+            "spdx" => Some(Self::Spdx),
+            _ => None,
+        }
+    }
+}
+
+const SBOM_VALUES: &str = "cyclonedx|spdx";
+
+/// Decide whether `findings` should produce a non-zero exit under the
+/// given threshold. The severity ladder is `critical > high > medium`
+/// matching what the embedded threat DB emits today; `Any` and `None`
+/// short-circuit the ladder.
+fn should_fail(findings: &[Finding], fail_on: FailOn) -> bool {
+    match fail_on {
+        FailOn::None => false,
+        FailOn::Any => !findings.is_empty(),
+        FailOn::Critical => findings.iter().any(|f| f.severity == "critical"),
+        FailOn::High => findings
+            .iter()
+            .any(|f| matches!(f.severity.as_str(), "critical" | "high")),
+        FailOn::Medium => findings
+            .iter()
+            .any(|f| matches!(f.severity.as_str(), "critical" | "high" | "medium")),
+    }
 }
 
 #[derive(Debug)]
@@ -64,9 +149,14 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut osv = false;
     let mut no_cache = false;
     let mut quiet = false;
+    let mut fail_on = FailOn::default();
+    let mut sbom: Option<Sbom> = None;
+    let mut output: Option<PathBuf> = None;
 
-    for arg in argv {
-        match arg.as_str() {
+    let mut i = 0;
+    while i < argv.len() {
+        let arg = argv[i].as_str();
+        match arg {
             "--system" => system = true,
             "--list-threats" | "--list" | "-l" => list_threats = true,
             "--no-color" => no_color = true,
@@ -74,6 +164,77 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--no-cache" => no_cache = true,
             "--quiet" | "-q" => quiet = true,
             "-h" | "--help" => return ParseOutcome::Help,
+            "--fail-on" => {
+                i += 1;
+                let Some(val) = argv.get(i) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: --fail-on requires a value ({FAIL_ON_VALUES})"
+                    ));
+                };
+                let Some(parsed) = FailOn::parse(val) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: invalid --fail-on value: {val} (expected {FAIL_ON_VALUES})"
+                    ));
+                };
+                fail_on = parsed;
+            }
+            other if other.starts_with("--fail-on=") => {
+                let val = &other["--fail-on=".len()..];
+                let Some(parsed) = FailOn::parse(val) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: invalid --fail-on value: {val} (expected {FAIL_ON_VALUES})"
+                    ));
+                };
+                fail_on = parsed;
+            }
+            "--sbom" => {
+                i += 1;
+                let Some(val) = argv.get(i) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: --sbom requires a value ({SBOM_VALUES})"
+                    ));
+                };
+                let Some(parsed) = Sbom::parse(val) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: invalid --sbom value: {val} (expected {SBOM_VALUES})"
+                    ));
+                };
+                sbom = Some(parsed);
+            }
+            other if other.starts_with("--sbom=") => {
+                let val = &other["--sbom=".len()..];
+                let Some(parsed) = Sbom::parse(val) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: invalid --sbom value: {val} (expected {SBOM_VALUES})"
+                    ));
+                };
+                sbom = Some(parsed);
+            }
+            "-o" | "--output" => {
+                i += 1;
+                let Some(val) = argv.get(i) else {
+                    return ParseOutcome::Err(
+                        "arcis sca: -o/--output requires a file path".to_string(),
+                    );
+                };
+                output = Some(PathBuf::from(val));
+            }
+            other if other.starts_with("--output=") => {
+                let val = &other["--output=".len()..];
+                if val.is_empty() {
+                    return ParseOutcome::Err(
+                        "arcis sca: --output= requires a file path".to_string(),
+                    );
+                }
+                output = Some(PathBuf::from(val));
+            }
+            other if other.starts_with("-o=") => {
+                let val = &other["-o=".len()..];
+                if val.is_empty() {
+                    return ParseOutcome::Err("arcis sca: -o= requires a file path".to_string());
+                }
+                output = Some(PathBuf::from(val));
+            }
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
                 return ParseOutcome::Err(format!("arcis sca: unknown flag: {other}"));
             }
@@ -86,7 +247,18 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                 path = Some(PathBuf::from(other));
             }
         }
+        i += 1;
     }
+
+    if output.is_some() && sbom.is_none() {
+        return ParseOutcome::Err(
+            "arcis sca: -o/--output requires --sbom (the human report cannot be redirected)"
+                .to_string(),
+        );
+    }
+
+    // note: when `arcis sca --json` lands, error here if both `--sbom`
+    // and `--json` are supplied (different machine output modes).
 
     ParseOutcome::Args(Args {
         path: path.unwrap_or_else(|| PathBuf::from(".")),
@@ -96,6 +268,9 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         osv,
         no_cache,
         _quiet: quiet,
+        fail_on,
+        sbom,
+        output,
     })
 }
 
@@ -186,6 +361,10 @@ fn manifest_relname(m: &Path) -> String {
         .unwrap_or_default()
 }
 
+// Eight scalar args (one per report-row datum); a wrapper struct doesn't
+// add clarity for a single-use renderer with three callsites. Revisit if
+// this grows past ~10 args or gains another caller.
+#[allow(clippy::too_many_arguments)]
 fn print_sca_report<W: Write>(
     w: &mut W,
     path: &Path,
@@ -492,14 +671,17 @@ fn print_threat_list<W: Write>(w: &mut W, threats: &[Threat], no_color: bool) ->
 fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
-        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--no-color] [-q]"
+        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--sbom <format> [-o <file>]] [--no-color] [-q]"
     )?;
     writeln!(w)?;
     writeln!(
         w,
         "Supply Chain Attack Scanner \u{2014} detect compromised packages from"
     )?;
-    writeln!(w, "known supply chain attacks. Runs offline by default; pass")?;
+    writeln!(
+        w,
+        "known supply chain attacks. Runs offline by default; pass"
+    )?;
     writeln!(w, "--osv to augment with live data from api.osv.dev.")?;
     writeln!(w)?;
     writeln!(w, "positional arguments:")?;
@@ -525,6 +707,44 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
         w,
         "  --no-cache          Skip the on-disk OSV cache (~/.arcis/osv-cache.json)"
     )?;
+    writeln!(
+        w,
+        "  --fail-on <level>   Minimum severity that triggers a non-zero exit."
+    )?;
+    writeln!(
+        w,
+        "                      Values: critical, high, medium, any, none."
+    )?;
+    writeln!(
+        w,
+        "                      Default: any (exit 1 on any finding)."
+    )?;
+    writeln!(
+        w,
+        "  --sbom <format>     Emit a Software Bill of Materials."
+    )?;
+    writeln!(
+        w,
+        "                      Values: cyclonedx (CycloneDX 1.5), spdx (SPDX 2.3)."
+    )?;
+    writeln!(
+        w,
+        "                      License fields are NOASSERTION (Arcis does not"
+    )?;
+    writeln!(w, "                      track package license metadata).")?;
+    writeln!(
+        w,
+        "  -o, --output <file> Write the SBOM to <file> (requires --sbom)."
+    )?;
+    writeln!(
+        w,
+        "                      Without -o the SBOM goes to stdout and the"
+    )?;
+    writeln!(
+        w,
+        "                      human report is suppressed; with -o the human"
+    )?;
+    writeln!(w, "                      report still prints to stdout.")?;
     writeln!(w, "  --no-color          Disable colored output")?;
     writeln!(w, "  --quiet, -q         Suppress progress output")?;
     Ok(())
@@ -591,6 +811,55 @@ pub fn run(argv: &[String]) -> ExitCode {
     };
     let duration = start.elapsed().as_secs_f64();
 
+    if let Some(format) = args.sbom {
+        let packages = enumerate_packages(&abs);
+        let emit_to_stdout = args.output.is_none();
+        let emit_result: io::Result<()> = match args.output.as_ref() {
+            None => match format {
+                Sbom::Cyclonedx => emit_cyclonedx(&mut out, &packages, &findings),
+                Sbom::Spdx => emit_spdx(&mut out, &packages, &findings),
+            },
+            Some(path) => {
+                let file = match File::create(path) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!("arcis sca: cannot write SBOM to {}: {e}", path.display());
+                        return ExitCode::from(2);
+                    }
+                };
+                let mut bw = BufWriter::new(file);
+                let r = match format {
+                    Sbom::Cyclonedx => emit_cyclonedx(&mut bw, &packages, &findings),
+                    Sbom::Spdx => emit_spdx(&mut bw, &packages, &findings),
+                };
+                r.and_then(|_| bw.flush())
+            }
+        };
+        if let Err(e) = emit_result {
+            eprintln!("arcis sca: SBOM emit failed: {e}");
+            return ExitCode::from(2);
+        }
+        // -o present → human report still goes to stdout. -o absent →
+        // SBOM owns stdout, no human report.
+        if !emit_to_stdout {
+            let _ = print_sca_report(
+                &mut out,
+                &abs,
+                &findings,
+                duration,
+                args.no_color,
+                &manifests,
+                threats.len(),
+                args.osv,
+            );
+        }
+        return if should_fail(&findings, args.fail_on) {
+            ExitCode::from(1)
+        } else {
+            ExitCode::from(0)
+        };
+    }
+
     let _ = print_sca_report(
         &mut out,
         &abs,
@@ -602,10 +871,10 @@ pub fn run(argv: &[String]) -> ExitCode {
         args.osv,
     );
 
-    if findings.is_empty() {
-        ExitCode::from(0)
-    } else {
+    if should_fail(&findings, args.fail_on) {
         ExitCode::from(1)
+    } else {
+        ExitCode::from(0)
     }
 }
 
@@ -622,6 +891,7 @@ mod tests {
                 assert!(!a.system);
                 assert!(!a.list_threats);
                 assert!(!a.no_color);
+                assert_eq!(a.fail_on, FailOn::Any, "default fail_on must be Any");
             }
             other => panic!("expected Args, got {other:?}"),
         }
@@ -740,6 +1010,318 @@ mod tests {
         assert!(out.contains("Time            12ms"));
     }
 
+    // ── --fail-on parsing + should_fail truth table ───────────────────────
+
+    fn finding_with_severity(sev: &str) -> Finding {
+        Finding {
+            package: "p".into(),
+            ecosystem: "npm".into(),
+            version: "1.0.0".into(),
+            severity: sev.into(),
+            location: "/tmp/lock".into(),
+            attack_vector: String::new(),
+            remediation: String::new(),
+            source: String::new(),
+            references: Vec::new(),
+            finding_type: FindingType::CompromisedVersion,
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_separate_value() {
+        for (input, want) in [
+            ("critical", FailOn::Critical),
+            ("high", FailOn::High),
+            ("medium", FailOn::Medium),
+            ("any", FailOn::Any),
+            ("none", FailOn::None),
+        ] {
+            let argv: Vec<String> = ["--fail-on", input].into_iter().map(String::from).collect();
+            match parse_args(&argv) {
+                ParseOutcome::Args(a) => assert_eq!(a.fail_on, want, "for {input:?}"),
+                other => panic!("expected Args for {input:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_equals_form() {
+        let argv = vec!["--fail-on=high".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::High),
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_case_insensitive() {
+        for input in ["HIGH", "High", "hIgH", " high "] {
+            let argv: Vec<String> = ["--fail-on", input].into_iter().map(String::from).collect();
+            match parse_args(&argv) {
+                ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::High, "for {input:?}"),
+                other => panic!("expected Args for {input:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_missing_value_errors() {
+        let argv = vec!["--fail-on".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => assert!(msg.contains("requires a value"), "msg: {msg}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_invalid_value_errors() {
+        let argv: Vec<String> = ["--fail-on", "banana"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(msg.contains("banana"), "msg: {msg}");
+                assert!(msg.contains("expected"), "msg: {msg}");
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_rejects_low_value() {
+        // `low` is intentionally not in the value set today: the embedded
+        // threat DB only emits critical/high/medium, so `--fail-on low`
+        // would be a footgun (selects nothing additional vs `any`). If a
+        // low-severity finding ever lands, add `low` here AND in the enum.
+        let argv: Vec<String> = ["--fail-on", "low"].into_iter().map(String::from).collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn should_fail_truth_table() {
+        let crit = vec![finding_with_severity("critical")];
+        let high = vec![finding_with_severity("high")];
+        let med = vec![finding_with_severity("medium")];
+        let none: Vec<Finding> = vec![];
+
+        // Critical: only critical trips
+        assert!(should_fail(&crit, FailOn::Critical));
+        assert!(!should_fail(&high, FailOn::Critical));
+        assert!(!should_fail(&med, FailOn::Critical));
+        assert!(!should_fail(&none, FailOn::Critical));
+
+        // High: critical + high
+        assert!(should_fail(&crit, FailOn::High));
+        assert!(should_fail(&high, FailOn::High));
+        assert!(!should_fail(&med, FailOn::High));
+        assert!(!should_fail(&none, FailOn::High));
+
+        // Medium: critical + high + medium
+        assert!(should_fail(&crit, FailOn::Medium));
+        assert!(should_fail(&high, FailOn::Medium));
+        assert!(should_fail(&med, FailOn::Medium));
+        assert!(!should_fail(&none, FailOn::Medium));
+
+        // Any: any non-empty list
+        assert!(should_fail(&crit, FailOn::Any));
+        assert!(should_fail(&high, FailOn::Any));
+        assert!(should_fail(&med, FailOn::Any));
+        assert!(!should_fail(&none, FailOn::Any));
+
+        // None: never trips, even with critical findings
+        assert!(!should_fail(&crit, FailOn::None));
+        assert!(!should_fail(&high, FailOn::None));
+        assert!(!should_fail(&med, FailOn::None));
+        assert!(!should_fail(&none, FailOn::None));
+    }
+
+    #[test]
+    fn should_fail_any_matches_legacy_default_behaviour() {
+        // Future-proof against drift: --fail-on any must produce the
+        // same exit decision as the pre-flag predicate (`!findings.is_empty()`)
+        // for every fixture below. If the default ever changes silently,
+        // this test catches it.
+        let fixtures: Vec<Vec<Finding>> = vec![
+            vec![],
+            vec![finding_with_severity("critical")],
+            vec![finding_with_severity("high")],
+            vec![finding_with_severity("medium")],
+            vec![
+                finding_with_severity("critical"),
+                finding_with_severity("medium"),
+            ],
+            vec![
+                finding_with_severity("medium"),
+                finding_with_severity("high"),
+            ],
+        ];
+        for f in &fixtures {
+            let legacy = !f.is_empty();
+            let any_mode = should_fail(f, FailOn::Any);
+            let default_mode = should_fail(f, FailOn::default());
+            assert_eq!(any_mode, legacy, "Any drifted from legacy for {f:?}");
+            assert_eq!(
+                default_mode, legacy,
+                "Default drifted from legacy for {f:?}"
+            );
+            assert_eq!(any_mode, default_mode, "Default != Any for {f:?}");
+        }
+    }
+
+    #[test]
+    fn should_fail_critical_with_high_only_findings_returns_false() {
+        // End-to-end-flavored: simulates the documented "--fail-on critical
+        // with only high findings → exit 0" amendment from the design call.
+        let findings = vec![
+            finding_with_severity("high"),
+            finding_with_severity("high"),
+            finding_with_severity("medium"),
+        ];
+        assert!(!should_fail(&findings, FailOn::Critical));
+    }
+
+    #[test]
+    fn print_help_documents_fail_on() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--fail-on"), "help missing --fail-on");
+        assert!(
+            out.contains("critical, high, medium, any, none"),
+            "help missing the value list"
+        );
+        assert!(
+            out.contains("Default: any"),
+            "help should document the default"
+        );
+        // Usage line should advertise the flag too.
+        assert!(out.contains("--fail-on <level>"), "usage missing --fail-on");
+    }
+
+    // ── --sbom + -o parsing ───────────────────────────────────────────────
+
+    #[test]
+    fn parse_args_sbom_separate_value() {
+        for (input, want) in [("cyclonedx", Sbom::Cyclonedx), ("spdx", Sbom::Spdx)] {
+            let argv: Vec<String> = ["--sbom", input].into_iter().map(String::from).collect();
+            match parse_args(&argv) {
+                ParseOutcome::Args(a) => assert_eq!(a.sbom, Some(want), "for {input:?}"),
+                other => panic!("expected Args for {input:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_equals_form_and_case_insensitive() {
+        let argv = vec!["--sbom=CycloneDX".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => assert_eq!(a.sbom, Some(Sbom::Cyclonedx)),
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_invalid_value_errors() {
+        let argv: Vec<String> = ["--sbom", "swid"].into_iter().map(String::from).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(msg.contains("swid"), "msg: {msg}");
+                assert!(msg.contains("cyclonedx"), "msg: {msg}");
+                assert!(msg.contains("spdx"), "msg: {msg}");
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_missing_value_errors() {
+        let argv = vec!["--sbom".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => assert!(msg.contains("requires a value"), "msg: {msg}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_o_requires_sbom_errors() {
+        // -o without --sbom is rejected: today there's no sca --json mode
+        // and -o redirecting the human report is a separate feature.
+        let argv: Vec<String> = ["-o", "out.json"].into_iter().map(String::from).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => assert!(
+                msg.contains("requires --sbom"),
+                "msg should explain the dependency: {msg}"
+            ),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_with_output_file() {
+        let argv: Vec<String> = ["--sbom", "spdx", "-o", "/tmp/sbom.json"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => {
+                assert_eq!(a.sbom, Some(Sbom::Spdx));
+                assert_eq!(a.output, Some(PathBuf::from("/tmp/sbom.json")));
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+        let argv: Vec<String> = ["--sbom=cyclonedx", "--output=/tmp/sbom.json"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => {
+                assert_eq!(a.sbom, Some(Sbom::Cyclonedx));
+                assert_eq!(a.output, Some(PathBuf::from("/tmp/sbom.json")));
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_default_off() {
+        // Regression guard: bare `arcis sca` does not emit an SBOM.
+        match parse_args(&[]) {
+            ParseOutcome::Args(a) => {
+                assert!(a.sbom.is_none(), "SBOM must default to off");
+                assert!(a.output.is_none(), "output must default to None");
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn print_help_documents_sbom() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--sbom <format>"), "help missing --sbom");
+        assert!(
+            out.contains("cyclonedx (CycloneDX 1.5)"),
+            "help should list cyclonedx"
+        );
+        assert!(out.contains("spdx (SPDX 2.3)"), "help should list spdx");
+        assert!(
+            out.contains("-o, --output <file>"),
+            "help missing -o/--output"
+        );
+        assert!(
+            out.contains("requires --sbom"),
+            "help should document the dependency"
+        );
+        assert!(
+            out.contains("NOASSERTION"),
+            "help should disclose the license posture"
+        );
+        // Usage line should advertise --sbom too.
+        assert!(out.contains("--sbom <format>"), "usage missing --sbom");
+    }
+
     #[test]
     fn report_finding_path_groups_by_ecosystem() {
         let mut buf: Vec<u8> = Vec::new();
@@ -757,7 +1339,10 @@ mod tests {
             references: vec!["https://example.com/a".into()],
             finding_type: FindingType::CompromisedVersion,
         }];
-        print_sca_report(&mut buf, &path, &findings, 0.020, true, &manifests, 47, false).unwrap();
+        print_sca_report(
+            &mut buf, &path, &findings, 0.020, true, &manifests, 47, false,
+        )
+        .unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(out.contains("npm\n"));
         assert!(out.contains("[CRITICAL] COMPROMISED VERSION"));
