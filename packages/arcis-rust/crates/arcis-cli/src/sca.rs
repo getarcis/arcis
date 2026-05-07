@@ -55,19 +55,14 @@ struct Args {
 /// trips on critical, `High` on critical+high, `Medium` on
 /// critical+high+medium, `Any` on any finding (current default), `None`
 /// always exits 0 even with findings (report-only mode for CI logs).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum FailOn {
     Critical,
     High,
     Medium,
+    #[default]
     Any,
     None,
-}
-
-impl Default for FailOn {
-    fn default() -> Self {
-        FailOn::Any
-    }
 }
 
 impl FailOn {
@@ -272,6 +267,10 @@ fn manifest_relname(m: &Path) -> String {
         .unwrap_or_default()
 }
 
+// Eight scalar args (one per report-row datum); a wrapper struct doesn't
+// add clarity for a single-use renderer with three callsites. Revisit if
+// this grows past ~10 args or gains another caller.
+#[allow(clippy::too_many_arguments)]
 fn print_sca_report<W: Write>(
     w: &mut W,
     path: &Path,

@@ -1190,7 +1190,7 @@ mod tests {
     // ── OSV layer tests ───────────────────────────────────────────────────
 
     use crate::osv::{OsvReference, OsvSeverity, OsvVuln};
-    use crate::osv_cache::{cache_key, CacheEntry, OsvCache, DEFAULT_TTL_SECS};
+    use crate::osv_cache::{cache_key, CacheEntry, OsvCache};
 
     fn osv_vuln(id: &str, summary: &str, score: Option<&str>) -> OsvVuln {
         OsvVuln {
