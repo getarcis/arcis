@@ -48,6 +48,7 @@ import (
 	"strconv"
 
 	"github.com/GagancM/arcis/core"
+	"github.com/GagancM/arcis/guards"
 	"github.com/GagancM/arcis/logging"
 	"github.com/GagancM/arcis/middleware"
 	"github.com/GagancM/arcis/sanitizers"
@@ -127,6 +128,25 @@ type TokenBudgetOptions = middleware.TokenBudgetOptions
 type TokenBudget = middleware.TokenBudget
 
 var NewTokenBudget = middleware.NewTokenBudget
+
+// Guards API: extend Arcis decisions to non-HTTP contexts (jobs, queues,
+// agent tool handlers, gRPC). See packages/arcis-go/guards.
+//
+//	g := arcis.NewGuards(arcis.GuardsConfig{...})
+//	defer g.Close()
+//	d := g.Run(arcis.GuardsInput{Key: jobUserID, Text: prompt, Tokens: cost})
+//	if !d.OK { ... }
+type GuardsConfig = guards.Config
+type GuardsInput = guards.Input
+type GuardsDecision = guards.Decision
+type GuardsVector = guards.Vector
+type GuardsSeverity = guards.Severity
+type GuardsRateLimitOptions = guards.RateLimitOptions
+type GuardsTokenBudgetOptions = guards.TokenBudgetOptions
+type GuardsPromptInjectionOptions = guards.PromptInjectionOptions
+type GuardsBotOptions = guards.BotOptions
+
+var NewGuards = guards.New
 
 // Email validation types
 type EmailValidationResult = validation.EmailValidationResult
