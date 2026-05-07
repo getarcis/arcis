@@ -182,6 +182,12 @@ pub fn vuln_id(finding: &Finding) -> String {
         }
     }
     if let Some(rest) = finding.source.strip_prefix("osv:") {
+        // GHSA / CVE ids canonicalize to uppercase across both extraction
+        // paths so the same vuln gets the same id regardless of which
+        // finding source surfaced it.
+        if rest.starts_with("GHSA-") || rest.starts_with("ghsa-") || rest.starts_with("CVE-") {
+            return rest.to_ascii_uppercase();
+        }
         return rest.to_string();
     }
     format!("arcis-{}-{}", finding.package, finding.version)
@@ -900,8 +906,11 @@ mod tests {
 
     #[test]
     fn vuln_id_falls_back_to_osv_source() {
+        // Lowercase GHSA from osv: source canonicalises to uppercase, same as
+        // the references-extraction path. Vuln ids are case-insensitive but
+        // canonically uppercase per GHSA convention.
         let f = finding("npm", "x", "1.0", "high", None, "osv:GHSA-zzzz-yyyy-xxxx");
-        assert_eq!(vuln_id(&f), "GHSA-zzzz-yyyy-xxxx");
+        assert_eq!(vuln_id(&f), "GHSA-ZZZZ-YYYY-XXXX");
     }
 
     #[test]
