@@ -596,6 +596,24 @@ mod tests {
         assert_eq!(r.suppressed, 1);
     }
 
+    // ── ignore-file machinery (cli-audit.md item 7) ────────────────────
+
+    #[test]
+    fn scan_directory_respects_gitignore_via_back_compat_wrapper() {
+        // Regression guard: existing callers of `scan_directory`
+        // (which routes through the back-compat `collect_files`
+        // wrapper) must transparently inherit `.gitignore` semantics
+        // once item 7 lands. A finding inside a gitignored file must
+        // not appear in results.
+        let td = TempDir::new().unwrap();
+        write(&td, "src/main.py", "yaml.load(f)\n");
+        write(&td, "generated/auto.py", "yaml.load(f)\n");
+        write(&td, ".gitignore", "generated/\n");
+        let findings = scan_directory(td.path(), None, None);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].file.contains("main.py"));
+    }
+
     #[test]
     fn suppress_two_runs_byte_equal_with_directive() {
         // Determinism: directives must not change run-to-run output.

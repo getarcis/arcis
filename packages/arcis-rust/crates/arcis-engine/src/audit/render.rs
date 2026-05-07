@@ -58,6 +58,12 @@ pub struct JsonReport<'a> {
     /// are NOT included in the `findings` array — only the count
     /// surfaces, by design.
     pub suppressed: usize,
+    /// Files excluded by an `.arcisignore` / `.gitignore` /
+    /// `.git/info/exclude` rule (cli-audit.md item 7). Surfaces as
+    /// `summary.ignored` in the JSON output. Always emitted (zero is
+    /// informative — confirms the field exists even on a clean run).
+    /// Ignored files do NOT appear in `filesScanned` or `byLanguage`.
+    pub ignored: usize,
 }
 
 /// Render the audit result as a JSON document. Schema:
@@ -117,6 +123,10 @@ pub fn render_json(report: &JsonReport<'_>) -> String {
     // even on a clean run). Suppressed findings themselves are NOT
     // listed; only the count.
     summary.insert("suppressed".into(), Value::from(report.suppressed));
+    // cli-audit.md item 7: count of files excluded by `.arcisignore` /
+    // `.gitignore` / `.git/info/exclude`. Always emitted (same noise
+    // tradeoff as `suppressed`); the human report hides the line at 0.
+    summary.insert("ignored".into(), Value::from(report.ignored));
     doc.insert("summary".into(), Value::Object(summary));
 
     let mut findings_arr = Vec::with_capacity(report.findings.len());
@@ -397,6 +407,7 @@ mod tests {
             duration_ms: 500,
             severity_filter: None,
             suppressed: 0,
+            ignored: 0,
         };
         let out = render_json(&report);
         let doc = parse(&out);
@@ -429,6 +440,7 @@ mod tests {
             duration_ms: 0,
             severity_filter: Some(Severity::High),
             suppressed: 0,
+            ignored: 0,
         };
         let doc = parse(&render_json(&report));
         assert_eq!(doc["severityFilter"], Json::from("high"));
@@ -450,6 +462,7 @@ mod tests {
             duration_ms: 100,
             severity_filter: None,
             suppressed: 0,
+            ignored: 0,
         };
         let out = render_json(&report);
         let doc = parse(&out);
@@ -484,6 +497,7 @@ mod tests {
             duration_ms: 0,
             severity_filter: None,
             suppressed: 0,
+            ignored: 0,
         });
         // String-position sniff: ruleId opens the finding object, id
         // follows immediately, severity comes after.
@@ -515,6 +529,7 @@ mod tests {
             duration_ms: 0,
             severity_filter: None,
             suppressed: 0,
+            ignored: 0,
         });
         let positions: Vec<usize> = [
             "\"tool\"",
@@ -551,6 +566,7 @@ mod tests {
             duration_ms: 0,
             severity_filter: None,
             suppressed: 0,
+            ignored: 0,
         });
         assert!(
             out.contains("\\u2014"),
@@ -580,11 +596,62 @@ mod tests {
             duration_ms: 0,
             severity_filter: None,
             suppressed: 12,
+            ignored: 0,
         });
         let doc = parse(&out);
         assert_eq!(doc["summary"]["suppressed"], Json::from(12u64));
         assert_eq!(doc["summary"]["totalFindings"], Json::from(0u64));
         assert_eq!(doc["findings"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn json_ignored_count_emitted_in_summary() {
+        // cli-audit.md item 7: when the walker excluded N files via
+        // `.arcisignore` / `.gitignore`, `summary.ignored` reports the
+        // count. Ignored files do NOT appear in `filesScanned` (the
+        // walker drops them before scanning).
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 7,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 4,
+        });
+        let doc = parse(&out);
+        assert_eq!(doc["summary"]["ignored"], Json::from(4u64));
+        assert_eq!(doc["summary"]["filesScanned"], Json::from(7u64));
+    }
+
+    #[test]
+    fn json_ignored_key_always_present_even_at_zero() {
+        // Same noise tradeoff as `suppressed`: zero is informative —
+        // confirms the field exists on a clean run, so consumers don't
+        // have to handle "missing" vs "zero".
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 0,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
+        });
+        let doc = parse(&out);
+        assert_eq!(doc["summary"]["ignored"], Json::from(0u64));
     }
 
     #[test]
@@ -602,6 +669,7 @@ mod tests {
             duration_ms: 0,
             severity_filter: None,
             suppressed: 0,
+            ignored: 0,
         });
         // Python `json.dumps(..., indent=2)` uses 2-space indent. Our
         // serde_json::to_string_pretty default is also 2 spaces. Pin

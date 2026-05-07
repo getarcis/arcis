@@ -51,6 +51,13 @@ dirs = "5.0"
 # `(rule_id, relpath, line, snippet)`; first 8 bytes (16 hex chars) form
 # the fingerprint. cli-audit.md Phase B item 10.
 sha2 = "0.10"
+# `.arcisignore` + `.gitignore` path exclusion for `arcis audit`
+# (cli-audit.md Phase B item 7). BurntSushi's crate, the same one
+# ripgrep uses; gives us native gitignore stacking semantics including
+# `**`, negation (`!important.js`), nested per-directory files, and
+# `.git/info/exclude`. `walkdir` stays in the manifest unused for now
+# per the cross-track ADD-ONLY rule; will be GC'd when all tracks merge.
+ignore = "0.4"
 
 [profile.release]
 # Smaller, faster binary. The tradeoffs (longer compile, no incremental in

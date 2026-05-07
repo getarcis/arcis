@@ -14,8 +14,9 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use arcis_engine::audit::{
-    assign_ids, collect_files, detect_language, render_json, render_sarif, rules as compiled_rules,
-    scan_file_with_suppression, Finding, JsonReport, Language, SarifReport, Severity,
+    assign_ids, collect_files_with_options, detect_language, render_json, render_sarif,
+    rules as compiled_rules, scan_file_with_suppression, Finding, IgnoreOptions, JsonReport,
+    Language, SarifReport, Severity,
 };
 
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -30,6 +31,14 @@ struct Args {
     quiet: bool,
     json_output: bool,
     sarif_output: bool,
+    /// `--no-ignore`: disable BOTH `.arcisignore` AND `.gitignore`
+    /// (and `.git/info/exclude`, and global git ignore). Mirrors
+    /// ripgrep's flag of the same name.
+    no_ignore: bool,
+    /// `--no-gitignore`: disable `.gitignore` only — `.arcisignore`
+    /// stays active. Useful in monorepos with broad gitignore lines
+    /// over vendored dirs you do want to scan. Mirrors ripgrep.
+    no_gitignore: bool,
 }
 
 #[derive(Debug)]
@@ -50,6 +59,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut quiet = false;
     let mut json_output = false;
     let mut sarif_output = false;
+    let mut no_ignore = false;
+    let mut no_gitignore = false;
 
     let mut iter = argv.iter().enumerate();
     while let Some((_, arg)) = iter.next() {
@@ -60,6 +71,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--quiet" | "-q" => quiet = true,
             "--json" => json_output = true,
             "--sarif" => sarif_output = true,
+            "--no-ignore" => no_ignore = true,
+            "--no-gitignore" => no_gitignore = true,
             "--language" | "-l" => match iter.next() {
                 Some((_, v)) => match Language::parse(v) {
                     Some(l) => language = Some(l),
@@ -113,6 +126,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         quiet,
         json_output,
         sarif_output,
+        no_ignore,
+        no_gitignore,
     })
 }
 
@@ -173,6 +188,14 @@ fn print_help<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(
         out,
         "      --sarif          Emit results as SARIF 2.1.0 for GitHub Code Scanning."
+    )?;
+    writeln!(
+        out,
+        "      --no-ignore      Disable both .arcisignore and .gitignore (gitignore-style glob syntax)."
+    )?;
+    writeln!(
+        out,
+        "      --no-gitignore   Disable .gitignore only; keep .arcisignore active."
     )?;
     writeln!(out, "  -h, --help           Show this message and exit.")?;
     Ok(())
@@ -269,7 +292,19 @@ pub fn run(argv: &[String]) -> ExitCode {
     let target_abs = abspath(&path);
     let target_str = target_abs.to_string_lossy().into_owned();
 
-    let files = collect_files(&path, args.language);
+    // cli-audit.md item 7: build ignore options from CLI flags.
+    // `--no-ignore` is a superset of `--no-gitignore` — when set it
+    // disables both files. Asymmetry is intentional: there's no
+    // `--no-arcisignore` because arcisignore-only-off has no use case
+    // (just delete the file).
+    let ignore_opts = IgnoreOptions {
+        use_arcisignore: !args.no_ignore,
+        use_gitignore: !(args.no_ignore || args.no_gitignore),
+    };
+
+    let walk = collect_files_with_options(&path, args.language, &ignore_opts);
+    let files = walk.files;
+    let ignored_count = walk.ignored;
 
     // No scannable files: machine modes still emit a valid empty
     // document so CI parsers don't choke; non-machine prints a hint.
@@ -290,6 +325,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                     duration_ms: 0,
                     severity_filter: args.severity,
                     suppressed: 0,
+                    ignored: ignored_count,
                 })
             } else {
                 render_sarif(&SarifReport {
@@ -389,6 +425,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                 duration_ms,
                 severity_filter: args.severity,
                 suppressed: suppressed_total,
+                ignored: ignored_count,
             })
         } else {
             render_sarif(&SarifReport {
@@ -419,6 +456,7 @@ pub fn run(argv: &[String]) -> ExitCode {
         &by_severity,
         duration_ms,
         suppressed_total,
+        ignored_count,
     );
 
     if findings.is_empty() {
@@ -440,6 +478,7 @@ fn print_human_report<W: Write>(
     by_severity: &BTreeMap<Severity, usize>,
     duration_ms: u64,
     suppressed: usize,
+    ignored: usize,
 ) -> io::Result<()> {
     writeln!(out)?;
     writeln!(out, "  Arcis Audit")?;
@@ -538,6 +577,12 @@ fn print_human_report<W: Write>(
     // wants the unconditional view.
     if suppressed > 0 {
         writeln!(out, "    Suppressed      {suppressed}")?;
+    }
+    // cli-audit.md item 7: surface .arcisignore / .gitignore exclusion
+    // count only when non-zero. Same noise rationale as Suppressed
+    // above — JSON always carries the field for machine consumers.
+    if ignored > 0 {
+        writeln!(out, "    Files ignored   {ignored}")?;
     }
     writeln!(out, "    Time            {duration_ms}ms")?;
     Ok(())
@@ -680,6 +725,7 @@ mod tests {
             &by_sev,
             42,
             7,
+            0,
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -708,12 +754,131 @@ mod tests {
             &by_sev,
             42,
             0,
+            0,
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(
             !out.contains("Suppressed"),
             "Suppressed line should not appear when count is 0, got:\n{out}"
+        );
+    }
+
+    // ── ignore-file machinery (cli-audit.md item 7) ────────────────────
+
+    #[test]
+    fn parse_args_no_ignore_flag() {
+        match parse_args(&[".".to_string(), "--no-ignore".to_string()]) {
+            ParseOutcome::Args(a) => {
+                assert!(a.no_ignore);
+                assert!(!a.no_gitignore);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_no_gitignore_flag() {
+        match parse_args(&[".".to_string(), "--no-gitignore".to_string()]) {
+            ParseOutcome::Args(a) => {
+                assert!(!a.no_ignore);
+                assert!(a.no_gitignore);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_no_ignore_and_no_gitignore_both_set() {
+        // Redundant but legal — `--no-ignore` already implies
+        // `--no-gitignore`. Both flags being set is fine, no error.
+        match parse_args(&[
+            ".".to_string(),
+            "--no-ignore".to_string(),
+            "--no-gitignore".to_string(),
+        ]) {
+            ParseOutcome::Args(a) => {
+                assert!(a.no_ignore);
+                assert!(a.no_gitignore);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn help_documents_no_ignore_flags() {
+        // cli-audit.md item 7 spec: help text must surface both flags
+        // and explain `.arcisignore` uses gitignore-style syntax so
+        // users don't have to dig through crate docs.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--no-ignore"), "help must mention --no-ignore");
+        assert!(
+            out.contains("--no-gitignore"),
+            "help must mention --no-gitignore"
+        );
+        assert!(
+            out.contains(".arcisignore"),
+            "help must mention .arcisignore"
+        );
+        assert!(
+            out.to_lowercase().contains("gitignore-style")
+                || out.to_lowercase().contains("gitignore syntax")
+                || out.to_lowercase().contains("gitignore-style glob"),
+            "help must mention that patterns follow gitignore-style syntax, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn human_summary_emits_files_ignored_line_when_count_positive() {
+        let mut buf: Vec<u8> = Vec::new();
+        let by_lang: BTreeMap<String, usize> = [("python".to_string(), 1)].into_iter().collect();
+        let by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
+        print_human_report(
+            &mut buf,
+            Path::new("/tmp"),
+            &[PathBuf::from("/tmp/a.py")],
+            &by_lang,
+            14,
+            None,
+            &[],
+            &by_sev,
+            42,
+            0,
+            5,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("Files ignored   5"),
+            "expected Files ignored line in summary, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn human_summary_omits_files_ignored_line_when_count_zero() {
+        let mut buf: Vec<u8> = Vec::new();
+        let by_lang: BTreeMap<String, usize> = [("python".to_string(), 1)].into_iter().collect();
+        let by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
+        print_human_report(
+            &mut buf,
+            Path::new("/tmp"),
+            &[PathBuf::from("/tmp/a.py")],
+            &by_lang,
+            14,
+            None,
+            &[],
+            &by_sev,
+            42,
+            0,
+            0,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            !out.contains("Files ignored"),
+            "Files ignored line should not appear when count is 0, got:\n{out}"
         );
     }
 }
