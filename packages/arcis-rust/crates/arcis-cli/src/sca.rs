@@ -45,6 +45,64 @@ struct Args {
     /// progress, which the Rust port doesn't render yet. Kept so users
     /// can pass `-q` without a parse error.
     _quiet: bool,
+    /// Severity ladder that gates the non-zero exit. `Any` (default)
+    /// preserves legacy behaviour: any finding → exit 1.
+    fail_on: FailOn,
+}
+
+/// Severity threshold for `arcis sca --fail-on <level>`. The CLI compares
+/// each finding's severity string against this enum: `Critical` only
+/// trips on critical, `High` on critical+high, `Medium` on
+/// critical+high+medium, `Any` on any finding (current default), `None`
+/// always exits 0 even with findings (report-only mode for CI logs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailOn {
+    Critical,
+    High,
+    Medium,
+    Any,
+    None,
+}
+
+impl Default for FailOn {
+    fn default() -> Self {
+        FailOn::Any
+    }
+}
+
+impl FailOn {
+    /// Case-insensitive parse. Returns `None` for unknown values; the
+    /// caller turns that into a `ParseOutcome::Err` with the value list.
+    fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "critical" => Some(Self::Critical),
+            "high" => Some(Self::High),
+            "medium" => Some(Self::Medium),
+            "any" => Some(Self::Any),
+            "none" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
+const FAIL_ON_VALUES: &str = "critical|high|medium|any|none";
+
+/// Decide whether `findings` should produce a non-zero exit under the
+/// given threshold. The severity ladder is `critical > high > medium`
+/// matching what the embedded threat DB emits today; `Any` and `None`
+/// short-circuit the ladder.
+fn should_fail(findings: &[Finding], fail_on: FailOn) -> bool {
+    match fail_on {
+        FailOn::None => false,
+        FailOn::Any => !findings.is_empty(),
+        FailOn::Critical => findings.iter().any(|f| f.severity == "critical"),
+        FailOn::High => findings
+            .iter()
+            .any(|f| matches!(f.severity.as_str(), "critical" | "high")),
+        FailOn::Medium => findings
+            .iter()
+            .any(|f| matches!(f.severity.as_str(), "critical" | "high" | "medium")),
+    }
 }
 
 #[derive(Debug)]
@@ -64,9 +122,12 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut osv = false;
     let mut no_cache = false;
     let mut quiet = false;
+    let mut fail_on = FailOn::default();
 
-    for arg in argv {
-        match arg.as_str() {
+    let mut i = 0;
+    while i < argv.len() {
+        let arg = argv[i].as_str();
+        match arg {
             "--system" => system = true,
             "--list-threats" | "--list" | "-l" => list_threats = true,
             "--no-color" => no_color = true,
@@ -74,6 +135,29 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--no-cache" => no_cache = true,
             "--quiet" | "-q" => quiet = true,
             "-h" | "--help" => return ParseOutcome::Help,
+            "--fail-on" => {
+                i += 1;
+                let Some(val) = argv.get(i) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: --fail-on requires a value ({FAIL_ON_VALUES})"
+                    ));
+                };
+                let Some(parsed) = FailOn::parse(val) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: invalid --fail-on value: {val} (expected {FAIL_ON_VALUES})"
+                    ));
+                };
+                fail_on = parsed;
+            }
+            other if other.starts_with("--fail-on=") => {
+                let val = &other["--fail-on=".len()..];
+                let Some(parsed) = FailOn::parse(val) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: invalid --fail-on value: {val} (expected {FAIL_ON_VALUES})"
+                    ));
+                };
+                fail_on = parsed;
+            }
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
                 return ParseOutcome::Err(format!("arcis sca: unknown flag: {other}"));
             }
@@ -86,6 +170,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                 path = Some(PathBuf::from(other));
             }
         }
+        i += 1;
     }
 
     ParseOutcome::Args(Args {
@@ -96,6 +181,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         osv,
         no_cache,
         _quiet: quiet,
+        fail_on,
     })
 }
 
@@ -492,7 +578,7 @@ fn print_threat_list<W: Write>(w: &mut W, threats: &[Threat], no_color: bool) ->
 fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
-        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--no-color] [-q]"
+        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--no-color] [-q]"
     )?;
     writeln!(w)?;
     writeln!(
@@ -524,6 +610,18 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
         "  --no-cache          Skip the on-disk OSV cache (~/.arcis/osv-cache.json)"
+    )?;
+    writeln!(
+        w,
+        "  --fail-on <level>   Minimum severity that triggers a non-zero exit."
+    )?;
+    writeln!(
+        w,
+        "                      Values: critical, high, medium, any, none."
+    )?;
+    writeln!(
+        w,
+        "                      Default: any (exit 1 on any finding)."
     )?;
     writeln!(w, "  --no-color          Disable colored output")?;
     writeln!(w, "  --quiet, -q         Suppress progress output")?;
@@ -602,10 +700,10 @@ pub fn run(argv: &[String]) -> ExitCode {
         args.osv,
     );
 
-    if findings.is_empty() {
-        ExitCode::from(0)
-    } else {
+    if should_fail(&findings, args.fail_on) {
         ExitCode::from(1)
+    } else {
+        ExitCode::from(0)
     }
 }
 
@@ -622,6 +720,7 @@ mod tests {
                 assert!(!a.system);
                 assert!(!a.list_threats);
                 assert!(!a.no_color);
+                assert_eq!(a.fail_on, FailOn::Any, "default fail_on must be Any");
             }
             other => panic!("expected Args, got {other:?}"),
         }
@@ -738,6 +837,192 @@ mod tests {
         assert!(out.contains("Clean. No known compromised packages found in 1 manifest."));
         assert!(out.contains("Compromised     0"));
         assert!(out.contains("Time            12ms"));
+    }
+
+    // ── --fail-on parsing + should_fail truth table ───────────────────────
+
+    fn finding_with_severity(sev: &str) -> Finding {
+        Finding {
+            package: "p".into(),
+            ecosystem: "npm".into(),
+            version: "1.0.0".into(),
+            severity: sev.into(),
+            location: "/tmp/lock".into(),
+            attack_vector: String::new(),
+            remediation: String::new(),
+            source: String::new(),
+            references: Vec::new(),
+            finding_type: FindingType::CompromisedVersion,
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_separate_value() {
+        for (input, want) in [
+            ("critical", FailOn::Critical),
+            ("high", FailOn::High),
+            ("medium", FailOn::Medium),
+            ("any", FailOn::Any),
+            ("none", FailOn::None),
+        ] {
+            let argv: Vec<String> = ["--fail-on", input].into_iter().map(String::from).collect();
+            match parse_args(&argv) {
+                ParseOutcome::Args(a) => assert_eq!(a.fail_on, want, "for {input:?}"),
+                other => panic!("expected Args for {input:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_equals_form() {
+        let argv = vec!["--fail-on=high".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::High),
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_case_insensitive() {
+        for input in ["HIGH", "High", "hIgH", " high "] {
+            let argv: Vec<String> = ["--fail-on", input].into_iter().map(String::from).collect();
+            match parse_args(&argv) {
+                ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::High, "for {input:?}"),
+                other => panic!("expected Args for {input:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_missing_value_errors() {
+        let argv = vec!["--fail-on".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => assert!(msg.contains("requires a value"), "msg: {msg}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_invalid_value_errors() {
+        let argv: Vec<String> = ["--fail-on", "banana"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(msg.contains("banana"), "msg: {msg}");
+                assert!(msg.contains("expected"), "msg: {msg}");
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_rejects_low_value() {
+        // `low` is intentionally not in the value set today: the embedded
+        // threat DB only emits critical/high/medium, so `--fail-on low`
+        // would be a footgun (selects nothing additional vs `any`). If a
+        // low-severity finding ever lands, add `low` here AND in the enum.
+        let argv: Vec<String> = ["--fail-on", "low"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn should_fail_truth_table() {
+        let crit = vec![finding_with_severity("critical")];
+        let high = vec![finding_with_severity("high")];
+        let med = vec![finding_with_severity("medium")];
+        let none: Vec<Finding> = vec![];
+
+        // Critical: only critical trips
+        assert!(should_fail(&crit, FailOn::Critical));
+        assert!(!should_fail(&high, FailOn::Critical));
+        assert!(!should_fail(&med, FailOn::Critical));
+        assert!(!should_fail(&none, FailOn::Critical));
+
+        // High: critical + high
+        assert!(should_fail(&crit, FailOn::High));
+        assert!(should_fail(&high, FailOn::High));
+        assert!(!should_fail(&med, FailOn::High));
+        assert!(!should_fail(&none, FailOn::High));
+
+        // Medium: critical + high + medium
+        assert!(should_fail(&crit, FailOn::Medium));
+        assert!(should_fail(&high, FailOn::Medium));
+        assert!(should_fail(&med, FailOn::Medium));
+        assert!(!should_fail(&none, FailOn::Medium));
+
+        // Any: any non-empty list
+        assert!(should_fail(&crit, FailOn::Any));
+        assert!(should_fail(&high, FailOn::Any));
+        assert!(should_fail(&med, FailOn::Any));
+        assert!(!should_fail(&none, FailOn::Any));
+
+        // None: never trips, even with critical findings
+        assert!(!should_fail(&crit, FailOn::None));
+        assert!(!should_fail(&high, FailOn::None));
+        assert!(!should_fail(&med, FailOn::None));
+        assert!(!should_fail(&none, FailOn::None));
+    }
+
+    #[test]
+    fn should_fail_any_matches_legacy_default_behaviour() {
+        // Future-proof against drift: --fail-on any must produce the
+        // same exit decision as the pre-flag predicate (`!findings.is_empty()`)
+        // for every fixture below. If the default ever changes silently,
+        // this test catches it.
+        let fixtures: Vec<Vec<Finding>> = vec![
+            vec![],
+            vec![finding_with_severity("critical")],
+            vec![finding_with_severity("high")],
+            vec![finding_with_severity("medium")],
+            vec![
+                finding_with_severity("critical"),
+                finding_with_severity("medium"),
+            ],
+            vec![finding_with_severity("medium"), finding_with_severity("high")],
+        ];
+        for f in &fixtures {
+            let legacy = !f.is_empty();
+            let any_mode = should_fail(f, FailOn::Any);
+            let default_mode = should_fail(f, FailOn::default());
+            assert_eq!(any_mode, legacy, "Any drifted from legacy for {f:?}");
+            assert_eq!(default_mode, legacy, "Default drifted from legacy for {f:?}");
+            assert_eq!(any_mode, default_mode, "Default != Any for {f:?}");
+        }
+    }
+
+    #[test]
+    fn should_fail_critical_with_high_only_findings_returns_false() {
+        // End-to-end-flavored: simulates the documented "--fail-on critical
+        // with only high findings → exit 0" amendment from the design call.
+        let findings = vec![
+            finding_with_severity("high"),
+            finding_with_severity("high"),
+            finding_with_severity("medium"),
+        ];
+        assert!(!should_fail(&findings, FailOn::Critical));
+    }
+
+    #[test]
+    fn print_help_documents_fail_on() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--fail-on"), "help missing --fail-on");
+        assert!(
+            out.contains("critical, high, medium, any, none"),
+            "help missing the value list"
+        );
+        assert!(
+            out.contains("Default: any"),
+            "help should document the default"
+        );
+        // Usage line should advertise the flag too.
+        assert!(out.contains("--fail-on <level>"), "usage missing --fail-on");
     }
 
     #[test]
