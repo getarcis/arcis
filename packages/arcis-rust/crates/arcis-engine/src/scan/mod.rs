@@ -16,18 +16,29 @@
 //! Output formatting (human / `--json`) lives in `arcis-cli` next to the
 //! clap glue.
 
+pub mod auth;
 pub mod classifier;
 pub mod discover;
+pub mod login;
 pub mod payloads;
 pub mod probe;
+pub mod repro;
 
+// Test-only mock HTTP server. `pub(crate)` so any scan submodule's
+// `#[cfg(test)] mod tests` can reach it (today `probe`, soon `auth`).
+#[cfg(test)]
+pub(crate) mod test_server;
+
+pub use auth::{AuthConfig, AuthError};
 pub use classifier::{classify, Classification};
 pub use discover::{
     detect_project_kind, detect_target, discover_routes, env_target, probe_control_plane,
     probe_dev_ports, read_env_files, sniff_framework, DiscoveredRoute, TargetCandidate,
     CONTROL_PLANE_URL, DEV_PORTS, ENV_TARGET_KEYS,
 };
+pub use login::{execute_login, LoginConfig, LoginError};
 pub use payloads::{
     attack_categories, AttackCategory, AttackVector, BLOCKED_STATUS_CODES, DEFAULT_FIELDS,
 };
 pub use probe::{scan_route, send_one, RouteResult, ScanOptions, VectorResult};
+pub use repro::format_curl;
