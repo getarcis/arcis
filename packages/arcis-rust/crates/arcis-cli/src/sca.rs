@@ -6,14 +6,17 @@
 //! the parity harness strips before byte-comparing.
 
 use std::env;
-use std::io::{self, Write};
+use std::fs::File;
+use std::io::{self, BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use arcis_engine::sca::{
-    discover_manifests, scan_project, scan_project_with_osv, Finding, FindingType, OsvOptions,
+    discover_manifests, enumerate_packages, scan_project, scan_project_with_osv, Finding,
+    FindingType, OsvOptions,
 };
+use arcis_engine::sca_sbom::emit_cyclonedx;
 use arcis_engine::threat_db::Threat;
 
 const WIDTH: usize = 64;
@@ -48,6 +51,15 @@ struct Args {
     /// Severity ladder that gates the non-zero exit. `Any` (default)
     /// preserves legacy behaviour: any finding → exit 1.
     fail_on: FailOn,
+    /// SBOM emit format. `None` keeps the human report; `Some` swaps in
+    /// the matching emitter and (when `output` is also `None`) suppresses
+    /// the human report on stdout.
+    sbom: Option<Sbom>,
+    /// Destination file for the SBOM. `None` writes to stdout.
+    /// Validation requires `sbom.is_some()` whenever this is set —
+    /// `-o` redirecting the human report is a separate feature, not on
+    /// this commit.
+    output: Option<PathBuf>,
 }
 
 /// Severity threshold for `arcis sca --fail-on <level>`. The CLI compares
@@ -81,6 +93,25 @@ impl FailOn {
 }
 
 const FAIL_ON_VALUES: &str = "critical|high|medium|any|none";
+
+/// SBOM format selector. Today: CycloneDX 1.5 only. SPDX 2.3 lands in
+/// a follow-up commit on this same branch — the enum is kept rather
+/// than a bool so the second variant is a one-line addition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sbom {
+    Cyclonedx,
+}
+
+impl Sbom {
+    fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "cyclonedx" => Some(Self::Cyclonedx),
+            _ => None,
+        }
+    }
+}
+
+const SBOM_VALUES: &str = "cyclonedx";
 
 /// Decide whether `findings` should produce a non-zero exit under the
 /// given threshold. The severity ladder is `critical > high > medium`
@@ -118,6 +149,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut no_cache = false;
     let mut quiet = false;
     let mut fail_on = FailOn::default();
+    let mut sbom: Option<Sbom> = None;
+    let mut output: Option<PathBuf> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -153,6 +186,54 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                 };
                 fail_on = parsed;
             }
+            "--sbom" => {
+                i += 1;
+                let Some(val) = argv.get(i) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: --sbom requires a value ({SBOM_VALUES})"
+                    ));
+                };
+                let Some(parsed) = Sbom::parse(val) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: invalid --sbom value: {val} (expected {SBOM_VALUES})"
+                    ));
+                };
+                sbom = Some(parsed);
+            }
+            other if other.starts_with("--sbom=") => {
+                let val = &other["--sbom=".len()..];
+                let Some(parsed) = Sbom::parse(val) else {
+                    return ParseOutcome::Err(format!(
+                        "arcis sca: invalid --sbom value: {val} (expected {SBOM_VALUES})"
+                    ));
+                };
+                sbom = Some(parsed);
+            }
+            "-o" | "--output" => {
+                i += 1;
+                let Some(val) = argv.get(i) else {
+                    return ParseOutcome::Err(
+                        "arcis sca: -o/--output requires a file path".to_string(),
+                    );
+                };
+                output = Some(PathBuf::from(val));
+            }
+            other if other.starts_with("--output=") => {
+                let val = &other["--output=".len()..];
+                if val.is_empty() {
+                    return ParseOutcome::Err(
+                        "arcis sca: --output= requires a file path".to_string(),
+                    );
+                }
+                output = Some(PathBuf::from(val));
+            }
+            other if other.starts_with("-o=") => {
+                let val = &other["-o=".len()..];
+                if val.is_empty() {
+                    return ParseOutcome::Err("arcis sca: -o= requires a file path".to_string());
+                }
+                output = Some(PathBuf::from(val));
+            }
             other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
                 return ParseOutcome::Err(format!("arcis sca: unknown flag: {other}"));
             }
@@ -168,6 +249,16 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         i += 1;
     }
 
+    if output.is_some() && sbom.is_none() {
+        return ParseOutcome::Err(
+            "arcis sca: -o/--output requires --sbom (the human report cannot be redirected)"
+                .to_string(),
+        );
+    }
+
+    // note: when `arcis sca --json` lands, error here if both `--sbom`
+    // and `--json` are supplied (different machine output modes).
+
     ParseOutcome::Args(Args {
         path: path.unwrap_or_else(|| PathBuf::from(".")),
         system,
@@ -177,6 +268,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         no_cache,
         _quiet: quiet,
         fail_on,
+        sbom,
+        output,
     })
 }
 
@@ -577,7 +670,7 @@ fn print_threat_list<W: Write>(w: &mut W, threats: &[Threat], no_color: bool) ->
 fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
-        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--no-color] [-q]"
+        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--sbom <format> [-o <file>]] [--no-color] [-q]"
     )?;
     writeln!(w)?;
     writeln!(
@@ -625,6 +718,32 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
         w,
         "                      Default: any (exit 1 on any finding)."
     )?;
+    writeln!(
+        w,
+        "  --sbom <format>     Emit a Software Bill of Materials."
+    )?;
+    writeln!(
+        w,
+        "                      Values: cyclonedx (CycloneDX 1.5)."
+    )?;
+    writeln!(
+        w,
+        "                      License fields are NOASSERTION (Arcis does not"
+    )?;
+    writeln!(w, "                      track package license metadata).")?;
+    writeln!(
+        w,
+        "  -o, --output <file> Write the SBOM to <file> (requires --sbom)."
+    )?;
+    writeln!(
+        w,
+        "                      Without -o the SBOM goes to stdout and the"
+    )?;
+    writeln!(
+        w,
+        "                      human report is suppressed; with -o the human"
+    )?;
+    writeln!(w, "                      report still prints to stdout.")?;
     writeln!(w, "  --no-color          Disable colored output")?;
     writeln!(w, "  --quiet, -q         Suppress progress output")?;
     Ok(())
@@ -690,6 +809,53 @@ pub fn run(argv: &[String]) -> ExitCode {
         scan_project(&abs, args.system, &threats)
     };
     let duration = start.elapsed().as_secs_f64();
+
+    if let Some(format) = args.sbom {
+        let packages = enumerate_packages(&abs);
+        let emit_to_stdout = args.output.is_none();
+        let emit_result: io::Result<()> = match args.output.as_ref() {
+            None => match format {
+                Sbom::Cyclonedx => emit_cyclonedx(&mut out, &packages, &findings),
+            },
+            Some(path) => {
+                let file = match File::create(path) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!("arcis sca: cannot write SBOM to {}: {e}", path.display());
+                        return ExitCode::from(2);
+                    }
+                };
+                let mut bw = BufWriter::new(file);
+                let r = match format {
+                    Sbom::Cyclonedx => emit_cyclonedx(&mut bw, &packages, &findings),
+                };
+                r.and_then(|_| bw.flush())
+            }
+        };
+        if let Err(e) = emit_result {
+            eprintln!("arcis sca: SBOM emit failed: {e}");
+            return ExitCode::from(2);
+        }
+        // -o present → human report still goes to stdout. -o absent →
+        // SBOM owns stdout, no human report.
+        if !emit_to_stdout {
+            let _ = print_sca_report(
+                &mut out,
+                &abs,
+                &findings,
+                duration,
+                args.no_color,
+                &manifests,
+                threats.len(),
+                args.osv,
+            );
+        }
+        return if should_fail(&findings, args.fail_on) {
+            ExitCode::from(1)
+        } else {
+            ExitCode::from(0)
+        };
+    }
 
     let _ = print_sca_report(
         &mut out,
@@ -1028,6 +1194,133 @@ mod tests {
         );
         // Usage line should advertise the flag too.
         assert!(out.contains("--fail-on <level>"), "usage missing --fail-on");
+    }
+
+    // ── --sbom + -o parsing ───────────────────────────────────────────────
+
+    #[test]
+    fn parse_args_sbom_separate_value() {
+        let argv: Vec<String> = ["--sbom", "cyclonedx"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => assert_eq!(a.sbom, Some(Sbom::Cyclonedx)),
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_equals_form_and_case_insensitive() {
+        let argv = vec!["--sbom=CycloneDX".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => assert_eq!(a.sbom, Some(Sbom::Cyclonedx)),
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_rejects_unknown_value() {
+        // `spdx` lands in a follow-up commit; until then it falls through
+        // to the standard invalid-value error. `swid` covers the truly
+        // unknown case alongside.
+        for input in ["spdx", "swid"] {
+            let argv: Vec<String> = ["--sbom", input].into_iter().map(String::from).collect();
+            match parse_args(&argv) {
+                ParseOutcome::Err(msg) => {
+                    assert!(msg.contains(input), "msg should mention {input}: {msg}");
+                    assert!(msg.contains("cyclonedx"), "msg should list valid values: {msg}");
+                }
+                other => panic!("expected Err for {input}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_missing_value_errors() {
+        let argv = vec!["--sbom".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => assert!(msg.contains("requires a value"), "msg: {msg}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_o_requires_sbom_errors() {
+        // -o without --sbom is rejected: today there's no sca --json mode
+        // and -o redirecting the human report is a separate feature.
+        let argv: Vec<String> = ["-o", "out.json"].into_iter().map(String::from).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => assert!(
+                msg.contains("requires --sbom"),
+                "msg should explain the dependency: {msg}"
+            ),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_with_output_file() {
+        let argv: Vec<String> = ["--sbom", "cyclonedx", "-o", "/tmp/sbom.json"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => {
+                assert_eq!(a.sbom, Some(Sbom::Cyclonedx));
+                assert_eq!(a.output, Some(PathBuf::from("/tmp/sbom.json")));
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+        let argv: Vec<String> = ["--sbom=cyclonedx", "--output=/tmp/sbom.json"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => {
+                assert_eq!(a.sbom, Some(Sbom::Cyclonedx));
+                assert_eq!(a.output, Some(PathBuf::from("/tmp/sbom.json")));
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sbom_default_off() {
+        // Regression guard: bare `arcis sca` does not emit an SBOM.
+        match parse_args(&[]) {
+            ParseOutcome::Args(a) => {
+                assert!(a.sbom.is_none(), "SBOM must default to off");
+                assert!(a.output.is_none(), "output must default to None");
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn print_help_documents_sbom() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--sbom <format>"), "help missing --sbom");
+        assert!(
+            out.contains("cyclonedx (CycloneDX 1.5)"),
+            "help should list cyclonedx"
+        );
+        assert!(
+            out.contains("-o, --output <file>"),
+            "help missing -o/--output"
+        );
+        assert!(
+            out.contains("requires --sbom"),
+            "help should document the dependency"
+        );
+        assert!(
+            out.contains("NOASSERTION"),
+            "help should disclose the license posture"
+        );
+        // Usage line should advertise --sbom too.
+        assert!(out.contains("--sbom <format>"), "usage missing --sbom");
     }
 
     #[test]
