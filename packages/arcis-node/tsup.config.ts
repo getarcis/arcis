@@ -7,6 +7,7 @@ export default defineConfig({
     'sanitizers/index': 'src/sanitizers/index.ts',
     'middleware/index': 'src/middleware/index.ts',
     'fastify/index': 'src/middleware/fastify.ts',
+    'koa/index': 'src/middleware/koa.ts',
     'nestjs/index': 'src/middleware/nestjs.ts',
     'nextjs/index': 'src/middleware/nextjs.ts',
     'sveltekit/index': 'src/middleware/sveltekit.ts',

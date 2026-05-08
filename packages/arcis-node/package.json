@@ -56,6 +56,11 @@
       "import": "./dist/fastify/index.mjs",
       "require": "./dist/fastify/index.js"
     },
+    "./koa": {
+      "types": "./dist/koa/index.d.ts",
+      "import": "./dist/koa/index.mjs",
+      "require": "./dist/koa/index.js"
+    },
     "./nestjs": {
       "types": "./dist/nestjs/index.d.ts",
       "import": "./dist/nestjs/index.mjs",
