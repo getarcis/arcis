@@ -21,3 +21,8 @@ export { signupProtection, checkSignup } from './signup-protection';
 export type { SignupProtectionOptions, SignupCheckResult, SignupBlockReason, SignupProtectionMiddleware } from './signup-protection';
 export { methodAllowlist } from './method-allowlist';
 export type { MethodAllowlistOptions } from './method-allowlist';
+export { eventLoopProtection } from './overload';
+export type {
+  EventLoopProtectionOptions,
+  EventLoopProtectionMiddleware,
+} from './overload';

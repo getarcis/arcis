@@ -48,6 +48,13 @@ export type {
   TokenBudgetOptions,
   TokenBudgetMiddleware,
 } from './middleware/token-budget';
+export { eventLoopProtection } from './middleware/overload';
+export type {
+  EventLoopProtectionOptions,
+  EventLoopProtectionMiddleware,
+} from './middleware/overload';
+export { methodAllowlist } from './middleware/method-allowlist';
+export type { MethodAllowlistOptions } from './middleware/method-allowlist';
 export { Guards } from './guards';
 export type {
   GuardsConfig,
