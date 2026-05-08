@@ -26,3 +26,5 @@ export type {
   EventLoopProtectionOptions,
   EventLoopProtectionMiddleware,
 } from './overload';
+export { massAssign } from './mass-assign';
+export type { MassAssignOptions } from './mass-assign';
