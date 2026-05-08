@@ -63,6 +63,17 @@ export type {
   ProtectSignupOptions,
   ProtectApiOptions,
 } from './middleware/protect';
+export { graphqlGuard } from './middleware/graphql';
+export type { GraphqlGuardMiddlewareOptions } from './middleware/graphql';
+export {
+  inspectGraphqlQuery,
+  detectGraphqlAbuse,
+} from './sanitizers/graphql';
+export type {
+  GraphqlGuardOptions,
+  GraphqlGuardResult,
+  GraphqlViolation,
+} from './sanitizers/graphql';
 export { Guards } from './guards';
 export type {
   GuardsConfig,

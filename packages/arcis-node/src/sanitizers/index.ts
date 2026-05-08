@@ -49,5 +49,16 @@ export { sanitizeLdapFilter, sanitizeLdapDn, detectLdapInjection } from './ldap'
 // XPath injection prevention
 export { sanitizeXpath, detectXpathInjection } from './xpath';
 
+// GraphQL injection / depth-bomb prevention
+export {
+  inspectGraphqlQuery,
+  detectGraphqlAbuse,
+} from './graphql';
+export type {
+  GraphqlGuardOptions,
+  GraphqlGuardResult,
+  GraphqlViolation,
+} from './graphql';
+
 // Utilities
 export { encodeHtmlEntities, isPlainObject } from './utils';

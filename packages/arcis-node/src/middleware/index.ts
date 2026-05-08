@@ -34,3 +34,5 @@ export type {
   ProtectSignupOptions,
   ProtectApiOptions,
 } from './protect';
+export { graphqlGuard } from './graphql';
+export type { GraphqlGuardMiddlewareOptions } from './graphql';
