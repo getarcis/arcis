@@ -28,3 +28,9 @@ export type {
 } from './overload';
 export { massAssign } from './mass-assign';
 export type { MassAssignOptions } from './mass-assign';
+export { protectLogin, protectSignup, protectApi } from './protect';
+export type {
+  ProtectLoginOptions,
+  ProtectSignupOptions,
+  ProtectApiOptions,
+} from './protect';

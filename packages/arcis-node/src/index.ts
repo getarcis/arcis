@@ -57,6 +57,12 @@ export { methodAllowlist } from './middleware/method-allowlist';
 export type { MethodAllowlistOptions } from './middleware/method-allowlist';
 export { massAssign } from './middleware/mass-assign';
 export type { MassAssignOptions } from './middleware/mass-assign';
+export { protectLogin, protectSignup, protectApi } from './middleware/protect';
+export type {
+  ProtectLoginOptions,
+  ProtectSignupOptions,
+  ProtectApiOptions,
+} from './middleware/protect';
 export { Guards } from './guards';
 export type {
   GuardsConfig,
