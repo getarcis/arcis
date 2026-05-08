@@ -56,6 +56,11 @@
       "import": "./dist/nestjs/index.mjs",
       "require": "./dist/nestjs/index.js"
     },
+    "./nextjs": {
+      "types": "./dist/nextjs/index.d.ts",
+      "import": "./dist/nextjs/index.mjs",
+      "require": "./dist/nextjs/index.js"
+    },
     "./sveltekit": {
       "types": "./dist/sveltekit/index.d.ts",
       "import": "./dist/sveltekit/index.mjs",
