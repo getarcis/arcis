@@ -821,25 +821,67 @@ func CsrfProtection(opts arcis.CsrfOptions) func(http.Handler) http.Handler {
 	return csrf.Handler
 }
 
+// secureCookieWriter intercepts WriteHeader so SecureCookies can
+// transform Set-Cookie values BEFORE the response is committed to the
+// wire. Once http.ResponseWriter.WriteHeader has been called the header
+// map is no longer mutable (the bytes are en-route to the client), so a
+// pure post-handler approach silently no-ops on handlers that flush
+// eagerly via http.SetCookie + w.WriteHeader.
+type secureCookieWriter struct {
+	http.ResponseWriter
+	sc          *arcis.SecureCookieDefaults
+	wroteHeader bool
+}
+
+func (s *secureCookieWriter) enforce() {
+	cookies := s.ResponseWriter.Header().Values("Set-Cookie")
+	if len(cookies) == 0 {
+		return
+	}
+	s.ResponseWriter.Header().Del("Set-Cookie")
+	for _, cookie := range cookies {
+		s.ResponseWriter.Header().Add("Set-Cookie", s.sc.Enforce(cookie))
+	}
+}
+
+func (s *secureCookieWriter) WriteHeader(code int) {
+	if !s.wroteHeader {
+		s.wroteHeader = true
+		s.enforce()
+		s.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (s *secureCookieWriter) Write(b []byte) (int, error) {
+	if !s.wroteHeader {
+		// Implicit 200 path: net/http would call WriteHeader(200) for
+		// us; intercept so cookie enforcement still runs.
+		s.WriteHeader(http.StatusOK)
+	}
+	return s.ResponseWriter.Write(b)
+}
+
 // SecureCookies returns a chi-compatible middleware that enforces
 // secure-cookie defaults (Secure, HttpOnly, SameSite) on every
 // Set-Cookie header the handler produces.
 //
-// Same caveat as the headers strip in MiddlewareWithConfig: post-handler
-// header mutations only land on the wire when the handler hasn't
-// flushed yet. Handlers that defer the write benefit; handlers that
-// flush early lose the enforcement.
+// Wraps the response writer so cookies are transformed at WriteHeader
+// time, regardless of whether the handler flushes early or late. Edge
+// case: handlers that return without calling Write or WriteHeader (the
+// implicit-200 path with empty body) still benefit — net/http calls
+// WriteHeader(200) on the wrapped writer when the handler returns.
 func SecureCookies(opts arcis.SecureCookieOptions) func(http.Handler) http.Handler {
 	sc := arcis.NewSecureCookieDefaults(opts)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r)
-			cookies := w.Header().Values("Set-Cookie")
-			if len(cookies) > 0 {
-				w.Header().Del("Set-Cookie")
-				for _, cookie := range cookies {
-					w.Header().Add("Set-Cookie", sc.Enforce(cookie))
-				}
+			sw := &secureCookieWriter{ResponseWriter: w, sc: sc}
+			next.ServeHTTP(sw, r)
+			// Belt-and-braces: handler returned without ever calling
+			// Write or WriteHeader. Header map still mutable; do the
+			// enforcement now so a cookie set + return-without-flush
+			// still gets the secure attributes.
+			if !sw.wroteHeader {
+				sw.enforce()
 			}
 		})
 	}
