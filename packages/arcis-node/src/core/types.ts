@@ -56,7 +56,18 @@ export interface ArcisOptions {
 /** One entry passed to the `onSanitize` callback. */
 export interface SanitizeEvent {
   /** Threat vector — same wire shape as `ThreatHit.vector`. */
-  type: 'xss' | 'sql' | 'nosql' | 'path' | 'command' | 'prototype' | 'ssti' | 'xxe';
+  type:
+    | 'xss'
+    | 'sql'
+    | 'nosql'
+    | 'path'
+    | 'command'
+    | 'prototype'
+    | 'ssti'
+    | 'xxe'
+    | 'ldap'
+    | 'xpath'
+    | 'header';
   /** Where the hit was found, e.g. `body.name`, `query.q`, `params.id`, `path`. */
   field: string;
   /** First 80 chars of the offending value (truncated to keep logs sane). */
