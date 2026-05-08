@@ -69,6 +69,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -628,7 +630,14 @@ func RateLimitWithSkip(max int, window time.Duration, skip func(*http.Request) b
 // collisions with other packages.
 type ctxKey int
 
-const sanitizerCtxKey ctxKey = iota
+const (
+	sanitizerCtxKey ctxKey = iota
+	// validatedBodyCtxKey stashes the validated map produced by the
+	// Validate middleware so handlers can fetch the post-validation
+	// shape via GetValidatedBody(r). Mirrors gin's `validated_body`
+	// context key without colliding with user keys.
+	validatedBodyCtxKey
+)
 
 // GetSanitizer retrieves the Arcis sanitizer stashed in the request
 // context by MiddlewareWithConfig. Returns a default sanitizer when no
@@ -640,4 +649,257 @@ func GetSanitizer(r *http.Request) *arcis.Sanitizer {
 		}
 	}
 	return arcis.NewSanitizer(arcis.DefaultConfig())
+}
+
+// Headers returns a chi-compatible middleware that only sets security
+// headers. Pairs with arcis.NewSecurityHeaders + DefaultConfig.
+func Headers() func(http.Handler) http.Handler {
+	return HeadersWithConfig(DefaultConfig())
+}
+
+// HeadersWithConfig returns a security-headers middleware using the
+// supplied configuration. Mirrors gin/echo HeadersWithConfig.
+func HeadersWithConfig(config Config) func(http.Handler) http.Handler {
+	arcisConfig := arcis.Config{
+		CSP:               config.CSP,
+		FrameOptions:      config.FrameOptions,
+		HSTSMaxAge:        config.HSTSMaxAge,
+		HSTSSubdomains:    config.HSTSSubdomains,
+		ReferrerPolicy:    config.ReferrerPolicy,
+		PermissionsPolicy: config.PermissionsPolicy,
+		CacheControl:      config.CacheControl,
+		CacheControlValue: config.CacheControlValue,
+	}
+
+	headers := arcis.NewSecurityHeaders(arcisConfig)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for key, value := range headers.GetHeaders() {
+				w.Header().Set(key, value)
+			}
+			next.ServeHTTP(w, r)
+			// Strip fingerprinting headers post-handler. Same caveat as
+			// MiddlewareWithConfig: this only mutates the in-memory map,
+			// effective when the handler hasn't flushed yet.
+			w.Header().Del("Server")
+			w.Header().Del("X-Powered-By")
+		})
+	}
+}
+
+// Sanitizer returns a chi-compatible middleware that exposes the Arcis
+// sanitizer to downstream handlers via the request context. Use
+// GetSanitizer(r), SanitizeJSON(r, data), or SanitizeString(r, value)
+// from the handler. Does not modify the request body — opt-in
+// sanitization, not auto-sanitization.
+func Sanitizer() func(http.Handler) http.Handler {
+	return SanitizerWithConfig(DefaultConfig())
+}
+
+// SanitizerWithConfig returns a sanitizer-only middleware using the
+// supplied configuration.
+func SanitizerWithConfig(config Config) func(http.Handler) http.Handler {
+	arcisConfig := arcis.Config{
+		SanitizeXSS:   config.SanitizeXSS,
+		SanitizeSQL:   config.SanitizeSQL,
+		SanitizeNoSQL: config.SanitizeNoSQL,
+		SanitizePath:  config.SanitizePath,
+		SanitizeCmd:   config.SanitizeCmd,
+		MaxInputSize:  config.MaxInputSize,
+	}
+
+	sanitizer := arcis.NewSanitizer(arcisConfig)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), sanitizerCtxKey, sanitizer)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// SanitizeJSON sanitizes JSON data using the sanitizer from request
+// context. Handlers call this after binding the body to a map so the
+// sanitized map is what reaches business logic.
+//
+// Example:
+//
+//	r.Use(arcischi.Sanitizer())
+//	r.Post("/items", func(w http.ResponseWriter, r *http.Request) {
+//	    var data map[string]interface{}
+//	    json.NewDecoder(r.Body).Decode(&data)
+//	    data = arcischi.SanitizeJSON(r, data)
+//	    // …use sanitized data
+//	})
+func SanitizeJSON(r *http.Request, data map[string]interface{}) map[string]interface{} {
+	return GetSanitizer(r).SanitizeMap(data)
+}
+
+// SanitizeString sanitizes a single string value using the sanitizer
+// from request context. Counterpart to SanitizeJSON for handlers that
+// pull individual query / path / header values.
+func SanitizeString(r *http.Request, value string) string {
+	return GetSanitizer(r).SanitizeString(value)
+}
+
+// Validate creates a JSON-body validation middleware. On parse / schema
+// failure responds 400 with a JSON `{"errors": [...]}` body and aborts.
+// On success stashes the validated map on the request context so
+// downstream handlers can fetch it via GetValidatedBody(r).
+//
+// The request body is read once and rebound (`io.NopCloser` over the
+// captured bytes) so a downstream handler that re-parses the body sees
+// the same wire input.
+func Validate(schema arcis.ValidationSchema) func(http.Handler) http.Handler {
+	validator := arcis.NewValidator(schema)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+					"errors": []string{"Failed to read request body"},
+				})
+				return
+			}
+			// Restore body for the next handler regardless of validation
+			// outcome — sanitizer or other downstream middleware may
+			// re-bind from r.Body.
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.ContentLength = int64(len(body))
+
+			var data map[string]interface{}
+			if len(body) > 0 {
+				if err := json.Unmarshal(body, &data); err != nil {
+					writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+						"errors": []string{"Invalid JSON"},
+					})
+					return
+				}
+			}
+
+			validated, validationErr := validator.Validate(data)
+			if validationErr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+					"errors": validationErr.Errors,
+				})
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), validatedBodyCtxKey, validated)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// GetValidatedBody retrieves the validated request body stashed by the
+// Validate middleware. Returns nil when no Validate ran upstream — the
+// nil case mirrors gin's `c.Get("validated_body")` returning false on
+// missing.
+func GetValidatedBody(r *http.Request) map[string]interface{} {
+	if v := r.Context().Value(validatedBodyCtxKey); v != nil {
+		if m, ok := v.(map[string]interface{}); ok {
+			return m
+		}
+	}
+	return nil
+}
+
+// CsrfProtection returns a chi-compatible middleware for CSRF protection
+// using double-submit cookie. Unlike gin/echo, chi IS stdlib so we wrap
+// the underlying arcis.NewCsrfProtection().Handler directly — no
+// response-capture dance required. The native handler:
+//
+//   - validates the token on unsafe methods (POST, PUT, PATCH, DELETE)
+//   - emits a 403 with the same JSON shape as gin/echo on failure
+//   - issues a fresh cookie on safe methods (GET, HEAD, OPTIONS)
+//
+// matching the gin/echo wire format byte-for-byte.
+func CsrfProtection(opts arcis.CsrfOptions) func(http.Handler) http.Handler {
+	csrf := arcis.NewCsrfProtection(opts)
+	return csrf.Handler
+}
+
+// SecureCookies returns a chi-compatible middleware that enforces
+// secure-cookie defaults (Secure, HttpOnly, SameSite) on every
+// Set-Cookie header the handler produces.
+//
+// Same caveat as the headers strip in MiddlewareWithConfig: post-handler
+// header mutations only land on the wire when the handler hasn't
+// flushed yet. Handlers that defer the write benefit; handlers that
+// flush early lose the enforcement.
+func SecureCookies(opts arcis.SecureCookieOptions) func(http.Handler) http.Handler {
+	sc := arcis.NewSecureCookieDefaults(opts)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r)
+			cookies := w.Header().Values("Set-Cookie")
+			if len(cookies) > 0 {
+				w.Header().Del("Set-Cookie")
+				for _, cookie := range cookies {
+					w.Header().Add("Set-Cookie", sc.Enforce(cookie))
+				}
+			}
+		})
+	}
+}
+
+// Cors returns a chi-compatible middleware for safe CORS handling.
+// Sets per-request CORS headers and short-circuits preflight OPTIONS
+// with a 204 when the origin is allowed. Mirrors gin/echo behavior.
+func Cors(opts arcis.CorsOptions) func(http.Handler) http.Handler {
+	cors := arcis.NewSafeCors(opts)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			headers := cors.GetHeaders(origin, r.Method)
+			for key, value := range headers {
+				w.Header().Set(key, value)
+			}
+			// Preflight short-circuit: only when both Origin is set AND
+			// the response includes Access-Control-Allow-Origin (i.e. the
+			// origin was admitted). Disallowed-origin OPTIONS falls
+			// through to the handler so the app can decide.
+			if r.Method == http.MethodOptions && origin != "" {
+				if _, ok := headers["Access-Control-Allow-Origin"]; ok {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ErrorHandler returns a chi-compatible middleware that catches panics
+// from downstream handlers and renders them through Arcis's error
+// shaper. `isDev=true` includes the panic value in the response body;
+// `isDev=false` returns a generic 500.
+//
+// Closer in spirit to chi's middleware.Recoverer than gin's
+// post-handler `c.Errors` consumption — gin has a built-in error
+// channel, stdlib has only panic. Use the panic / recover pattern; it
+// covers both `panic("string")` and `panic(err)` shapes.
+func ErrorHandler(isDev bool) func(http.Handler) http.Handler {
+	handler := arcis.NewErrorHandler(isDev)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					var err error
+					switch x := rec.(type) {
+					case error:
+						err = x
+					case string:
+						err = errors.New(x)
+					default:
+						err = fmt.Errorf("%v", x)
+					}
+					handler.Handle(w, err, http.StatusInternalServerError)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
 }
