@@ -19,3 +19,5 @@ export { botProtection, detectBot } from './bot-detection';
 export { csrfProtection, createCsrf, generateCsrfToken, validateCsrfToken } from './csrf';
 export { signupProtection, checkSignup } from './signup-protection';
 export type { SignupProtectionOptions, SignupCheckResult, SignupBlockReason, SignupProtectionMiddleware } from './signup-protection';
+export { methodAllowlist } from './method-allowlist';
+export type { MethodAllowlistOptions } from './method-allowlist';
