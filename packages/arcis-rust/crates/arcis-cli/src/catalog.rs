@@ -55,7 +55,7 @@ pub fn print<W: Write>(w: &mut W, version: &str, verbose: bool) -> io::Result<()
     writeln!(w, "  Arcis  v{version}")?;
     writeln!(
         w,
-        "  Zero-dep security middleware + scanners for Node, Python, Go."
+        "  Security middleware + scanners for Node, Python, Go."
     )?;
     writeln!(w)?;
     writeln!(w, "  Commands")?;

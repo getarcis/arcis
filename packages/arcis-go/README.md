@@ -1,9 +1,10 @@
 # Arcis — Go SDK
 
-Zero-dependency security middleware for Go web applications. Adapters
-ship for Gin and Echo. Detects + sanitizes XSS, SQL injection, NoSQL
-injection, path traversal, command injection, prototype pollution,
-SSTI, XXE, and more across the same surface as the Node and Python SDKs.
+Security middleware for Go web applications. The core is stdlib-only;
+Gin and Echo adapters import their respective router. Detects +
+sanitizes XSS, SQL injection, NoSQL injection, path traversal, command
+injection, prototype pollution, SSTI, XXE, and more across the same
+surface as the Node and Python SDKs.
 
 ```bash
 go get github.com/GagancM/arcis@latest
