@@ -284,16 +284,18 @@ class AsyncRateLimiter:
         entry = await self.store.get(key)
         
         if not entry or entry.reset_time < now:
-            # New window
+            # New window. Compute reset as the same `reset_time - now`
+            # delta that the subsequent-request branch uses so clients
+            # see a consistent representation across the whole window.
             reset_time = now + self.window_seconds
             await self.store.set(key, 1, reset_time)
             return {
                 "allowed": True,
                 "limit": self.max_requests,
                 "remaining": self.max_requests - 1,
-                "reset": int(self.window_seconds),
+                "reset": int(reset_time - now),
             }
-        
+
         count = await self.store.increment(key)
         remaining = max(0, self.max_requests - count)
         reset = int(entry.reset_time - now)

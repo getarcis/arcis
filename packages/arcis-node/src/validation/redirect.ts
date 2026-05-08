@@ -122,14 +122,20 @@ export function validateRedirect(
     return { safe: false, reason: `disallowed protocol: ${parsed.protocol}` };
   }
 
-  // Check if host is in allowed list
+  // Check if host is in allowed list. Match against host:port form when
+  // a non-default port is present, falling back to hostname only when
+  // the URL uses a default port. parsed.port is "" for default ports
+  // (80 for http, 443 for https), so hostWithPort equals hostname in
+  // those cases. Non-default ports must be explicitly listed: a bare
+  // 'myapp.com' entry does NOT permit redirects to 'myapp.com:9999'.
   const hostname = parsed.hostname.toLowerCase();
+  const hostWithPort = parsed.port ? `${hostname}:${parsed.port}` : hostname;
   if (allowedHosts.length === 0) {
     return { safe: false, reason: 'absolute URL not in allowed hosts' };
   }
 
-  if (!allowedHosts.some(h => hostname === h.toLowerCase())) {
-    return { safe: false, reason: `host not allowed: ${hostname}` };
+  if (!allowedHosts.some(h => h.toLowerCase() === hostWithPort)) {
+    return { safe: false, reason: `host not allowed: ${hostWithPort}` };
   }
 
   return { safe: true };
@@ -147,10 +153,18 @@ export function isRedirectSafe(url: string, options: ValidateRedirectOptions = {
 }
 
 /**
- * Extract hostname from a protocol-relative URL.
+ * Extract host (with optional port) from a protocol-relative URL.
+ * Returns hostname for default ports, "hostname:port" for non-default.
+ * Optional userinfo (user:pass@) is stripped.
  */
 function extractHost(url: string): string | null {
-  // //hostname/path or //hostname:port/path
-  const match = url.match(/^\/\/([^/:?#]+)/);
-  return match ? match[1].toLowerCase() : null;
+  // //user:pass@hostname/path  ->  authority = "user:pass@hostname"
+  // //hostname:port/path       ->  authority = "hostname:port"
+  const match = url.match(/^\/\/([^/?#]+)/);
+  if (!match) return null;
+  // Strip userinfo if present
+  const authority = match[1].includes('@')
+    ? match[1].slice(match[1].indexOf('@') + 1)
+    : match[1];
+  return authority.toLowerCase();
 }
