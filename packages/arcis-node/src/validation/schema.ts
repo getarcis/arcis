@@ -56,8 +56,16 @@ export function validate(
       return;
     }
 
-    // Replace with validated data (prevents mass assignment)
-    req[source] = validated as typeof req[typeof source];
+    // Replace with validated data (prevents mass assignment).
+    // SECURITY: Express 5 makes req.body/query/params read-only. Use
+    // defineProperty so this works on both Express 4 and 5; direct
+    // assignment crashes Express 5 with TypeError.
+    Object.defineProperty(req, source, {
+      value: validated,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
     next();
   };
 }

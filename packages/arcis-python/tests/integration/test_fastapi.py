@@ -430,18 +430,76 @@ class TestAsyncRateLimiter:
         async def async_skip(request):
             await asyncio.sleep(0)  # Simulate async check
             return request.headers.get("x-admin") == "true"
-        
+
         limiter = AsyncRateLimiter(max_requests=1, window_ms=60000, skip_func=async_skip)
-        
+
         admin_request = MagicMock()
         admin_request.client = MagicMock()
         admin_request.client.host = "192.168.1.1"
         admin_request.headers = {"x-admin": "true"}
-        
+
         result = await limiter.check(admin_request)
         assert result["allowed"] is True
-        
+
         await limiter.close()
+
+    @pytest.mark.asyncio
+    async def test_async_key_function_is_awaited(self):
+        """Regression: an async key_func used to leak a coroutine object as the
+        rate-limit key, breaking per-key isolation silently. Now awaited like
+        skip_func.
+        """
+        async def async_key(request):
+            await asyncio.sleep(0)
+            return request.headers.get("x-tenant", "default")
+
+        limiter = AsyncRateLimiter(max_requests=2, window_ms=60000, key_func=async_key)
+
+        req_a = MagicMock()
+        req_a.client = MagicMock()
+        req_a.client.host = "1.1.1.1"
+        req_a.headers = {"x-tenant": "tenant-a"}
+
+        req_b = MagicMock()
+        req_b.client = MagicMock()
+        req_b.client.host = "1.1.1.1"
+        req_b.headers = {"x-tenant": "tenant-b"}
+
+        # Two requests under tenant-a, third must trip; meanwhile tenant-b
+        # has its own counter and stays allowed. If the coroutine were used
+        # as the key, all three would share a key and the test would behave
+        # incorrectly (or raise TypeError on dict lookup).
+        await limiter.check(req_a)
+        await limiter.check(req_a)
+        with pytest.raises(AsyncRateLimitExceeded):
+            await limiter.check(req_a)
+        result = await limiter.check(req_b)
+        assert result["allowed"] is True
+
+        await limiter.close()
+
+    def test_default_key_func_uses_xff_from_right(self):
+        """Regression: _default_key_func used to read X-Forwarded-For from the
+        left, allowing trivial IP spoofing via attacker-prepended values. It
+        now delegates to detect_client_ip which parses XFF from the right
+        (proxy-appended end) and prefers spoofproof platform headers.
+        """
+        from types import SimpleNamespace
+
+        limiter = AsyncRateLimiter(max_requests=10, window_ms=60000)
+
+        # Use SimpleNamespace so hasattr returns False for framework-specific
+        # attrs we did not set (META, remote_addr). MagicMock auto-creates
+        # those, sending detect_client_ip down the wrong branch.
+        request = SimpleNamespace(
+            client=None,  # No socket peer
+            headers={"x-forwarded-for": "spoofed.attacker, 203.0.113.50"},
+        )
+
+        key = limiter._default_key_func(request)
+        # Rightmost trusted IP must win, never the spoofed left value.
+        assert key != "spoofed.attacker"
+        assert "203.0.113.50" in key
     
     @pytest.mark.asyncio
     async def test_close_stops_limiter(self, mock_request):

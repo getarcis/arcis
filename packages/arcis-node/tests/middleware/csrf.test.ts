@@ -110,12 +110,25 @@ describe('validateCsrfToken', () => {
   });
 
   it('should use constant-time comparison (not short-circuit)', () => {
-    // Both should take similar time — we just verify correctness here
+    // Both should take similar time. Correctness check only here.
     const token = 'a'.repeat(64);
     const nearMatch = 'a'.repeat(63) + 'b';
     const farMatch = 'b'.repeat(64);
     expect(validateCsrfToken(token, nearMatch)).toBe(false);
     expect(validateCsrfToken(token, farMatch)).toBe(false);
+  });
+
+  it('should not throw and return false for length-mismatched tokens (regression)', () => {
+    // Regression: previous implementation returned false BEFORE
+    // timingSafeEqual on length mismatch, leaking length via timing.
+    // The current implementation pads both to a common reference length
+    // and ANDs the byte-equal result with a length-equality check.
+    expect(() => validateCsrfToken('a', 'a'.repeat(128))).not.toThrow();
+    expect(validateCsrfToken('a', 'a'.repeat(128))).toBe(false);
+    expect(validateCsrfToken('a'.repeat(128), 'a')).toBe(false);
+    // Padding byte attack: a token that, when padded with zeros, would
+    // accidentally equal a longer real token must still be rejected.
+    expect(validateCsrfToken('abc', 'abc\0\0')).toBe(false);
   });
 });
 
