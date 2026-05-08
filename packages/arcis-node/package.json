@@ -51,6 +51,11 @@
       "import": "./dist/telemetry/index.mjs",
       "require": "./dist/telemetry/index.js"
     },
+    "./fastify": {
+      "types": "./dist/fastify/index.d.ts",
+      "import": "./dist/fastify/index.mjs",
+      "require": "./dist/fastify/index.js"
+    },
     "./nestjs": {
       "types": "./dist/nestjs/index.d.ts",
       "import": "./dist/nestjs/index.mjs",
