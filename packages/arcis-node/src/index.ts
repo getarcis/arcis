@@ -43,6 +43,13 @@ export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from '
 export { botProtection, detectBot } from './middleware/bot-detection';
 export { csrfProtection, createCsrf, generateCsrfToken, validateCsrfToken } from './middleware/csrf';
 export { hpp, createHpp } from './middleware/hpp';
+export {
+  responseSplittingGuard,
+  detectResponseSplitting,
+  sanitizeResponseHeader,
+  ResponseSplittingError,
+} from './middleware/response-splitting';
+export type { ResponseSplittingGuardOptions } from './middleware/response-splitting';
 export { tokenBudget } from './middleware/token-budget';
 export type {
   TokenBudgetOptions,

@@ -36,3 +36,10 @@ export type {
 } from './protect';
 export { graphqlGuard } from './graphql';
 export type { GraphqlGuardMiddlewareOptions } from './graphql';
+export {
+  responseSplittingGuard,
+  detectResponseSplitting,
+  sanitizeResponseHeader,
+  ResponseSplittingError,
+} from './response-splitting';
+export type { ResponseSplittingGuardOptions } from './response-splitting';
