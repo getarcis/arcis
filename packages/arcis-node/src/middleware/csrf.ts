@@ -101,12 +101,20 @@ export function generateCsrfToken(length: number = 32): string {
  */
 export function validateCsrfToken(cookieToken: string, requestToken: string): boolean {
   if (!cookieToken || !requestToken) return false;
-  if (cookieToken.length !== requestToken.length) return false;
 
-  // SECURITY: Use Node.js built-in constant-time comparison to prevent timing attacks
-  const a = Buffer.from(cookieToken);
-  const b = Buffer.from(requestToken);
-  return timingSafeEqual(a, b);
+  // SECURITY: Pad both buffers to a common reference length before
+  // timingSafeEqual so an early length-check does not leak token length
+  // through timing. Compute length-equality with a constant-time integer
+  // compare and AND it AFTER the byte compare so execution time is the
+  // same regardless of length mismatch.
+  const paddedLength = Math.max(64, cookieToken.length, requestToken.length);
+  const a = Buffer.alloc(paddedLength);
+  const b = Buffer.alloc(paddedLength);
+  Buffer.from(cookieToken, 'utf8').copy(a);
+  Buffer.from(requestToken, 'utf8').copy(b);
+  const bytesEqual = timingSafeEqual(a, b);
+  const sameLength = cookieToken.length === requestToken.length;
+  return bytesEqual && sameLength;
 }
 
 /**
