@@ -30,6 +30,39 @@ export interface ArcisOptions {
    * See spec/API_SPEC.md §9.
    */
   telemetry?: TelemetryOptions;
+  /**
+   * Dry-run mode: detection runs as normal but the middleware never blocks,
+   * never strips, and never returns 429. Pair with `onSanitize` to log what
+   * WOULD have been blocked before flipping enforcement on. Issue #47.
+   *
+   * When true, this overrides `block: true` and suppresses rate-limit 429
+   * responses (the X-RateLimit-* headers still surface so dashboards see
+   * what the limiter decided).
+   */
+  dryRun?: boolean;
+  /**
+   * Callback invoked once per detected threat per request. Fires regardless
+   * of `block` / `dryRun` mode — the hook is informational, not control flow.
+   * Errors thrown from the callback are caught and swallowed so a buggy
+   * observer can't break the response.
+   *
+   * Use case: deploy with `dryRun: true` + `onSanitize: (e) => log(e)`,
+   * collect a few days of events, audit for false positives, then flip
+   * `dryRun: false` to enforce.
+   */
+  onSanitize?: (event: SanitizeEvent) => void;
+}
+
+/** One entry passed to the `onSanitize` callback. */
+export interface SanitizeEvent {
+  /** Threat vector — same wire shape as `ThreatHit.vector`. */
+  type: 'xss' | 'sql' | 'nosql' | 'path' | 'command' | 'prototype' | 'ssti' | 'xxe';
+  /** Where the hit was found, e.g. `body.name`, `query.q`, `params.id`, `path`. */
+  field: string;
+  /** First 80 chars of the offending value (truncated to keep logs sane). */
+  original: string;
+  /** Matched pattern excerpt — same string `ThreatHit.matchedPattern` carries. */
+  pattern: string;
 }
 
 // =============================================================================
