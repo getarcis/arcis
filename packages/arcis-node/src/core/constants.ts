@@ -134,8 +134,8 @@ export const XSS_REMOVE_PATTERNS = [
   /** javascript: and vbscript: protocols (allow optional spaces before colon) */
   /javascript\s*:/gi,
   /vbscript\s*:/gi,
-  /** data: URIs with HTML/script content */
-  /data\s*:\s*text\/html[^>\s]*/gi,
+  /** data: URIs with HTML or SVG content (SVG can run JS via inline event handlers) */
+  /data\s*:\s*(?:text\/html|image\/svg)[^>\s]*/gi,
   /** form tag injection — phishing via action= redirection */
   /<form[\s>][^>]*/gi,
   /** meta tag injection — http-equiv refresh or CSP bypass */
@@ -300,10 +300,11 @@ export const VALIDATION = {
   EMAIL: /^[^\s@.][^\s@]*(?:\.[^\s@.][^\s@]*)*@[^\s@]+\.[^\s@]+$/,
   /**
    * URL regex pattern.
-   * Only allows http:// and https:// — explicitly rejects javascript:,
-   * data:, vbscript:, and other dangerous URI schemes.
+   * Only allows http:// and https:// (case-insensitive scheme per
+   * RFC 3986); explicitly rejects javascript:, data:, vbscript:, and
+   * other dangerous URI schemes.
    */
-  URL: /^https?:\/\/[^\s/$.?#][^\s]*$/,
+  URL: /^https?:\/\/[^\s/$.?#][^\s]*$/i,
   /** UUID regex pattern (v4) */
   UUID: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 } as const;
