@@ -14,6 +14,7 @@ export default defineConfig({
     'astro/index': 'src/middleware/astro.ts',
     'nuxt/index': 'src/middleware/nuxt.ts',
     'bun/index': 'src/middleware/bun.ts',
+    'hono/index': 'src/middleware/hono.ts',
     'validation/index': 'src/validation/index.ts',
     'logging/index': 'src/logging/index.ts',
     'stores/index': 'src/stores/index.ts',
