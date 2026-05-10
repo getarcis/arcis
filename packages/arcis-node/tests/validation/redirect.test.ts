@@ -75,6 +75,41 @@ describe('validateRedirect', () => {
       expect(validateRedirect('https://cdn.myapp.com/img.png', opts).safe).toBe(true);
       expect(validateRedirect('https://evil.com', opts).safe).toBe(false);
     });
+
+    // Regression: a bare 'myapp.com' entry used to allow any port. An
+    // attacker could redirect to myapp.com:9999/admin or an internal
+    // service on a non-standard port and bypass the allowlist.
+    it('should reject non-default port when allowedHosts has only the bare hostname', () => {
+      const result = validateRedirect('https://myapp.com:9999/admin', {
+        allowedHosts: ['myapp.com'],
+      });
+      expect(result.safe).toBe(false);
+      expect(result.reason).toContain('host not allowed');
+    });
+
+    it('should accept default ports against bare-hostname allowlist entry', () => {
+      // Default ports omit parsed.port, so hostWithPort equals hostname.
+      expect(
+        validateRedirect('https://myapp.com:443/path', { allowedHosts: ['myapp.com'] }).safe,
+      ).toBe(true);
+      expect(
+        validateRedirect('http://myapp.com:80/path', { allowedHosts: ['myapp.com'] }).safe,
+      ).toBe(true);
+    });
+
+    it('should accept explicit non-default port when allowlist names it', () => {
+      const result = validateRedirect('https://myapp.com:9999/admin', {
+        allowedHosts: ['myapp.com:9999'],
+      });
+      expect(result.safe).toBe(true);
+    });
+
+    it('should reject port mismatch even when hostname is in allowlist', () => {
+      const result = validateRedirect('https://myapp.com:8443/admin', {
+        allowedHosts: ['myapp.com', 'myapp.com:9999'],
+      });
+      expect(result.safe).toBe(false);
+    });
   });
 
   describe('Protocol-Relative URLs', () => {

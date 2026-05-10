@@ -1,7 +1,8 @@
 # Arcis — Go SDK
 
 Security middleware for Go web applications. The core is stdlib-only;
-Gin and Echo adapters import their respective router. Detects +
+Gin, Echo, and chi adapters import their respective router (chi works
+with any router that accepts stdlib `http.Handler` middleware). Detects +
 sanitizes XSS, SQL injection, NoSQL injection, path traversal, command
 injection, prototype pollution, SSTI, XXE, and more across the same
 surface as the Node and Python SDKs.
@@ -27,6 +28,31 @@ func main() {
     r.Run(":8080")
 }
 ```
+
+## Quick start (chi)
+
+```go
+import (
+    "net/http"
+
+    "github.com/go-chi/chi/v5"
+    arcischi "github.com/GagancM/arcis/chi"
+)
+
+func main() {
+    r := chi.NewRouter()
+    cfg := arcischi.DefaultConfig()
+    cfg.Block = true
+    r.Use(arcischi.MiddlewareWithConfig(cfg))
+    r.Get("/", handler)
+    http.ListenAndServe(":8080", r)
+}
+```
+
+The chi adapter is stdlib-only at runtime — `chi/v5` is only required
+in test builds. The adapter's middleware signature is the standard
+`func(next http.Handler) http.Handler`, so it composes with any router
+that accepts stdlib middleware (gorilla/mux, plain `net/http`, etc.).
 
 ## Quick start (Echo)
 
@@ -107,8 +133,8 @@ shipped in Go:
 
 ## Telemetry (v1.5.0+)
 
-Stream allow / deny decisions from the gin or echo middleware to a
-self-hosted Arcis dashboard. Stdlib only; opt-in (nil = zero overhead).
+Stream allow / deny decisions from the gin, echo, or chi middleware to
+a self-hosted Arcis dashboard. Stdlib only; opt-in (nil = zero overhead).
 
 ```go
 import "github.com/GagancM/arcis/telemetry"
@@ -123,9 +149,10 @@ cfg.Telemetry = tc
 r.Use(arcisgin.MiddlewareWithConfig(cfg))
 ```
 
-(Same shape for echo: `arcisecho.MiddlewareWithConfig(cfg)`.) Each
-request emits one `TelemetryEvent` matching `spec/API_SPEC.md` §9 — same
-wire shape Node and Python ship, batched and POSTed in the background.
+(Same shape for echo: `arcisecho.MiddlewareWithConfig(cfg)`, and for
+chi: `arcischi.MiddlewareWithConfig(cfg)`.) Each request emits one
+`TelemetryEvent` matching `spec/API_SPEC.md` §9 — same wire shape Node
+and Python ship, batched and POSTed in the background.
 
 For granular composition, the standalone `RateLimit` /
 `RateLimitWithStore` / `RateLimitWithSkip` helpers accept a
@@ -135,8 +162,10 @@ For granular composition, the standalone `RateLimit` /
 r.Use(arcisgin.RateLimit(100, time.Minute, arcisgin.WithTelemetry(tc)))
 ```
 
-Standalone helpers emit on deny only — composing several of them with
-the same client doesn't multiply per-request events.
+Same option shape on echo (`arcisecho.RateLimit(...)`) and chi
+(`arcischi.RateLimit(...)`). Standalone helpers emit on deny only —
+composing several of them with the same client doesn't multiply
+per-request events.
 
 ### No native SCA scanner
 

@@ -69,6 +69,12 @@ export function createSlidingWindowLimiter(options: SlidingWindowOptions = {}): 
   const currentWindows = Object.create(null) as Record<string, WindowEntry>;
   const previousWindows = Object.create(null) as Record<string, WindowEntry>;
 
+  // Pin cleanup cadence to 30s regardless of windowMs. Scaling cleanup
+  // with windowMs causes churn on short windows (1s window cleans every
+  // second) and stale-entry buildup on long windows (1h window only
+  // cleans hourly). 30s bounds memory growth without burning CPU; the
+  // cutoff stays at `2 * windowMs` so legitimate active windows survive.
+  const CLEANUP_INTERVAL_MS = 30_000;
   const cleanupInterval = setInterval(() => {
     const now = Date.now();
     const cutoff = now - windowMs * 2; // Keep 2 windows worth
@@ -82,7 +88,7 @@ export function createSlidingWindowLimiter(options: SlidingWindowOptions = {}): 
         delete currentWindows[key];
       }
     }
-  }, windowMs);
+  }, CLEANUP_INTERVAL_MS);
 
   if (typeof cleanupInterval.unref === 'function') {
     cleanupInterval.unref();

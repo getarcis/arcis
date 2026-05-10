@@ -57,7 +57,7 @@ At the checkpoint, Arcis:
 - **One-line setup**: `app.use(arcis())` activates sanitization, rate limiting, and security headers. CSRF, CORS, cookies, bot detection, prompt-injection guard, token-budget guard, and error handling are opt-in middleware.
 - **20+ attack types**: XSS, SQL/NoSQL injection, command injection, path traversal, SSTI, XXE, SSRF, CSRF, HPP, prototype pollution, header injection, open redirect, LDAP injection.
 - **AI-era protections**: `detectPromptInjection` + `sanitizePromptInjection` cover ~28 jailbreak signatures (DAN/STAN/DUDE, system-prompt extraction, fake `<system>` tags, base64 smuggling). `tokenBudget` middleware caps per-key LLM token spend over a sliding window.
-- **646-pattern bot corpus**: Generated from a curated MIT-licensed corpus plus supplementary entries. 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown) with allow/deny lists and behavioral signal detection.
+- **635-pattern bot corpus**: Generated from a curated MIT-licensed corpus plus supplementary entries. 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown) with allow/deny lists and behavioral signal detection.
 - **Zero dependencies**: Core is self-contained with no transitive dependencies. Go framework adapters (Gin, Echo) are optional.
 - **Three-language parity**: Same API, same behavior, same test results across Node.js, Python, and Go. Enforced by shared test vectors.
 - **First-party framework adapters (Node)**: Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono. Each subpath import (`@arcis/node/nestjs`, `@arcis/node/sveltekit`, etc.) keeps the framework SDK as a type-only dependency, so non-users pay nothing.
@@ -478,7 +478,7 @@ The script is stripped. The rest of the comment is saved normally.
 - 20+ security flaw coverage (runtime + detection)
 - 3 SDKs (Node.js, Python, Go) at full parity
 - **12 framework adapters**: Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono (Node), FastAPI, Flask, Django (Python), Gin, Echo, net/http (Go)
-- **646-pattern bot corpus** (was 80) with allow/deny categorization
+- **635-pattern bot corpus** (was 80) with allow/deny categorization
 - **AI/LLM prompt-injection detection** across all 3 SDKs (28 signatures, 3 severity tiers)
 - **`tokenBudget` middleware** for per-key LLM token spend caps
 - 3 rate limiting algorithms (fixed, sliding, token bucket)

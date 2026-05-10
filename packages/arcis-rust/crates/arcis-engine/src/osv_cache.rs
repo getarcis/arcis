@@ -98,7 +98,20 @@ impl OsvCache {
             fs::create_dir_all(parent)?;
         }
         let bytes = serde_json::to_vec_pretty(self).map_err(io::Error::other)?;
-        fs::write(path, bytes)
+        // Atomic write: serialize to a sibling temp file, then rename. A
+        // crash mid-write leaves either the old contents or the new
+        // contents, never a half-written file. The tmp path lives in the
+        // same directory so rename stays a same-filesystem operation.
+        let tmp = match path.file_name() {
+            Some(name) => {
+                let mut candidate = name.to_owned();
+                candidate.push(".tmp");
+                path.with_file_name(candidate)
+            }
+            None => path.with_extension("tmp"),
+        };
+        fs::write(&tmp, bytes)?;
+        fs::rename(&tmp, path)
     }
 
     /// Return cached vulns iff the entry exists AND is younger than
