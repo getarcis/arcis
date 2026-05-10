@@ -13,8 +13,9 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use arcis_engine::sca::{
-    discover_manifests, enumerate_packages, scan_project, scan_project_with_osv, Finding,
-    FindingType, OsvOptions,
+    discover_manifests, enumerate_packages, scan_project, scan_project_with_osv,
+    scan_project_with_osv_paths, scan_project_with_paths, Finding, FindingType, LockfileGraphInfo,
+    OsvOptions,
 };
 use arcis_engine::sca_sbom::{emit_cyclonedx, emit_spdx};
 use arcis_engine::threat_db::Threat;
@@ -60,6 +61,11 @@ struct Args {
     /// `-o` redirecting the human report is a separate feature, not on
     /// this commit.
     output: Option<PathBuf>,
+    /// `--verbose` / `-v`: list every shortest dependency path leading to
+    /// each finding, instead of the default depth + immediate parent
+    /// summary. `-v` (lowercase) — `-V` is reserved for `--version` per
+    /// Unix convention.
+    verbose: bool,
 }
 
 /// Severity threshold for `arcis sca --fail-on <level>`. The CLI compares
@@ -152,6 +158,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut fail_on = FailOn::default();
     let mut sbom: Option<Sbom> = None;
     let mut output: Option<PathBuf> = None;
+    let mut verbose = false;
 
     let mut i = 0;
     while i < argv.len() {
@@ -163,6 +170,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--osv" => osv = true,
             "--no-cache" => no_cache = true,
             "--quiet" | "-q" => quiet = true,
+            "--verbose" | "-v" => verbose = true,
             "-h" | "--help" => return ParseOutcome::Help,
             "--fail-on" => {
                 i += 1;
@@ -271,6 +279,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         fail_on,
         sbom,
         output,
+        verbose,
     })
 }
 
@@ -361,9 +370,85 @@ fn manifest_relname(m: &Path) -> String {
         .unwrap_or_default()
 }
 
-// Eight scalar args (one per report-row datum); a wrapper struct doesn't
-// add clarity for a single-use renderer with three callsites. Revisit if
-// this grows past ~10 args or gains another caller.
+/// Render the `Path:` (or `Paths:`) line for one finding, sandwiched
+/// between `Package:` and `Location:` in the report layout. Returns
+/// without writing anything when there is no path data to surface AND
+/// the finding's location doesn't map to a flat-lockfile entry — keeps
+/// node_modules / pip-list findings free of empty/misleading rows.
+fn print_path_block<W: Write>(
+    w: &mut W,
+    f: &Finding,
+    lockfile_info: &[LockfileGraphInfo],
+    verbose: bool,
+    no_color: bool,
+) -> io::Result<()> {
+    if f.path_count > 0 {
+        if verbose {
+            writeln!(w, "{}", c("       Paths:", &[BOLD, WHITE], no_color))?;
+            for path in &f.paths {
+                let chain = path.join(" \u{2192} ");
+                writeln!(
+                    w,
+                    "{}",
+                    c(
+                        &format!("         \u{2022} depth {} \u{2014} {chain}", path.len()),
+                        &[DIM],
+                        no_color,
+                    )
+                )?;
+            }
+            return Ok(());
+        }
+        let depth = f.paths[0].len();
+        if depth == 1 {
+            writeln!(
+                w,
+                "{}",
+                c("       Path:      direct dependency", &[DIM], no_color)
+            )?;
+            return Ok(());
+        }
+        let chain = f.paths[0].join(" \u{2192} ");
+        let extra = if f.path_count > 1 {
+            format!(" (+{} more; --verbose to list)", f.path_count - 1)
+        } else {
+            String::new()
+        };
+        writeln!(
+            w,
+            "{}",
+            c(
+                &format!("       Path:      depth {depth}, via {chain}{extra}"),
+                &[DIM],
+                no_color,
+            )
+        )?;
+        return Ok(());
+    }
+    // No path data: only render an explicit "transitive (unavailable)"
+    // marker if the finding came from a structurally-flat lockfile.
+    // node_modules/pip-list findings stay silent — there's no
+    // meaningful path claim either way.
+    let is_flat_lockfile = lockfile_info
+        .iter()
+        .any(|l| !l.graph_supported && l.path.display().to_string() == f.location);
+    if is_flat_lockfile {
+        writeln!(
+            w,
+            "{}",
+            c(
+                "       Path:      transitive (path unavailable for this lockfile format)",
+                &[DIM],
+                no_color,
+            )
+        )?;
+    }
+    Ok(())
+}
+
+// Ten scalar args; a wrapper struct doesn't add clarity for a renderer
+// with a fixed call shape. Revisit if this grows past ~12 args or
+// gains another callsite outside `run` + tests.
 #[allow(clippy::too_many_arguments)]
 fn print_sca_report<W: Write>(
     w: &mut W,
@@ -374,6 +459,8 @@ fn print_sca_report<W: Write>(
     manifests: &[PathBuf],
     threat_count: usize,
     osv_enabled: bool,
+    verbose: bool,
+    lockfile_info: &[LockfileGraphInfo],
 ) -> io::Result<()> {
     let line: String = LINE_CHAR.repeat(WIDTH);
     let manifest_summary = if manifests.is_empty() {
@@ -432,6 +519,35 @@ fn print_sca_report<W: Write>(
         "  Mode:      Offline - no network calls, no telemetry"
     };
     writeln!(w, "{}", c(mode_line, &[DIM], no_color))?;
+
+    // Conditional banner row: only emit `Paths:` when at least one
+    // discovered lockfile is structurally flat (Pipfile.lock, yarn
+    // Berry, etc.). When every lockfile yields a graph, the row is
+    // suppressed so the banner stays compact for the common case.
+    if lockfile_info.iter().any(|l| !l.graph_supported) {
+        let summary: Vec<String> = lockfile_info
+            .iter()
+            .map(|l| {
+                let name = l
+                    .path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let suffix = if l.graph_supported { "graph" } else { "flat" };
+                format!("{name} ({suffix})")
+            })
+            .collect();
+        writeln!(
+            w,
+            "{}",
+            c(
+                &format!("  Paths:     {}", summary.join(", ")),
+                &[DIM],
+                no_color
+            )
+        )?;
+    }
+
     writeln!(w, "{}", c(&line, &[DIM], no_color))?;
 
     if findings.is_empty() {
@@ -517,6 +633,7 @@ fn print_sca_report<W: Write>(
                 )
             )?;
             writeln!(w, "       Package:   {}@{}", f.package, f.version)?;
+            print_path_block(w, f, lockfile_info, verbose, no_color)?;
             writeln!(
                 w,
                 "{}",
@@ -671,7 +788,7 @@ fn print_threat_list<W: Write>(w: &mut W, threats: &[Threat], no_color: bool) ->
 fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
-        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--sbom <format> [-o <file>]] [--no-color] [-q]"
+        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--sbom <format> [-o <file>]] [--no-color] [-q] [-v]"
     )?;
     writeln!(w)?;
     writeln!(
@@ -747,6 +864,14 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(w, "                      report still prints to stdout.")?;
     writeln!(w, "  --no-color          Disable colored output")?;
     writeln!(w, "  --quiet, -q         Suppress progress output")?;
+    writeln!(
+        w,
+        "  --verbose, -v       List every shortest dependency path per finding"
+    )?;
+    writeln!(
+        w,
+        "                      (default: depth + immediate-parent summary only)."
+    )?;
     Ok(())
 }
 
@@ -798,16 +923,34 @@ pub fn run(argv: &[String]) -> ExitCode {
     }
 
     let start = Instant::now();
-    let findings = if args.osv {
+    // SBOM mode skips the path-annotation walk: SBOM output is contractually
+    // CycloneDX/SPDX-shaped, paths aren't part of either spec, and skipping
+    // the graph build keeps SBOM emit fast on huge lockfiles.
+    let (findings, lockfile_info): (Vec<Finding>, Vec<LockfileGraphInfo>) = if args.sbom.is_some() {
+        let f = if args.osv {
+            let opts = OsvOptions {
+                cache_path: arcis_engine::osv_cache::OsvCache::default_path(),
+                use_cache: !args.no_cache,
+                offline: false,
+                timeout: Duration::from_secs(5),
+            };
+            scan_project_with_osv(&abs, args.system, &threats, &opts)
+        } else {
+            scan_project(&abs, args.system, &threats)
+        };
+        (f, Vec::new())
+    } else if args.osv {
         let opts = OsvOptions {
             cache_path: arcis_engine::osv_cache::OsvCache::default_path(),
             use_cache: !args.no_cache,
             offline: false,
             timeout: Duration::from_secs(5),
         };
-        scan_project_with_osv(&abs, args.system, &threats, &opts)
+        let r = scan_project_with_osv_paths(&abs, args.system, &threats, &opts);
+        (r.findings, r.lockfiles)
     } else {
-        scan_project(&abs, args.system, &threats)
+        let r = scan_project_with_paths(&abs, args.system, &threats);
+        (r.findings, r.lockfiles)
     };
     let duration = start.elapsed().as_secs_f64();
 
@@ -851,6 +994,8 @@ pub fn run(argv: &[String]) -> ExitCode {
                 &manifests,
                 threats.len(),
                 args.osv,
+                args.verbose,
+                &lockfile_info,
             );
         }
         return if should_fail(&findings, args.fail_on) {
@@ -869,6 +1014,8 @@ pub fn run(argv: &[String]) -> ExitCode {
         &manifests,
         threats.len(),
         args.osv,
+        args.verbose,
+        &lockfile_info,
     );
 
     if should_fail(&findings, args.fail_on) {
@@ -1000,7 +1147,19 @@ mod tests {
         let mut buf: Vec<u8> = Vec::new();
         let path = PathBuf::from("/tmp/demo");
         let manifests = vec![path.join("requirements.txt")];
-        print_sca_report(&mut buf, &path, &[], 0.012, true, &manifests, 47, false).unwrap();
+        print_sca_report(
+            &mut buf,
+            &path,
+            &[],
+            0.012,
+            true,
+            &manifests,
+            47,
+            false,
+            false,
+            &[],
+        )
+        .unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(out.contains("Arcis Supply Chain Scanner"));
         assert!(out.contains("Manifests: requirements.txt"));
@@ -1344,7 +1503,16 @@ mod tests {
             path_count: 0,
         }];
         print_sca_report(
-            &mut buf, &path, &findings, 0.020, true, &manifests, 47, false,
+            &mut buf,
+            &path,
+            &findings,
+            0.020,
+            true,
+            &manifests,
+            47,
+            false,
+            false,
+            &[],
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -1353,5 +1521,218 @@ mod tests {
         assert!(out.contains("Package:   axios@1.14.1"));
         assert!(out.contains("Compromised     1"));
         assert!(out.contains("Critical        1"));
+    }
+
+    // ── --verbose flag + path block + conditional banner (item 5 commit 2) ─
+
+    #[test]
+    fn parse_args_verbose_long_form() {
+        let argv = vec!["--verbose".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => assert!(a.verbose),
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_verbose_short_form() {
+        let argv = vec!["-v".to_string()];
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => assert!(a.verbose),
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_verbose_default_off() {
+        let argv: Vec<String> = vec![];
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => assert!(!a.verbose),
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn help_text_documents_verbose_flag() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--verbose, -v"), "help missing --verbose");
+        assert!(out.contains("[-v]"), "usage line missing -v");
+    }
+
+    fn finding_with_paths(paths: Vec<Vec<String>>, location: &str) -> Finding {
+        let path_count = paths.len();
+        Finding {
+            package: "axios".into(),
+            ecosystem: "npm".into(),
+            version: "1.14.1".into(),
+            severity: "critical".into(),
+            location: location.into(),
+            attack_vector: "exfil".into(),
+            remediation: "upgrade".into(),
+            source: "src".into(),
+            references: Vec::new(),
+            finding_type: FindingType::CompromisedVersion,
+            paths,
+            path_count,
+        }
+    }
+
+    #[test]
+    fn path_block_renders_direct_dependency_at_depth_1() {
+        let mut buf: Vec<u8> = Vec::new();
+        let f = finding_with_paths(vec![vec!["your-app".into()]], "/lock");
+        print_path_block(&mut buf, &f, &[], false, true).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("Path:      direct dependency"), "got {out:?}");
+    }
+
+    #[test]
+    fn path_block_renders_depth_with_chain() {
+        let mut buf: Vec<u8> = Vec::new();
+        let f = finding_with_paths(
+            vec![vec![
+                "your-app".into(),
+                "express".into(),
+                "middleware".into(),
+            ]],
+            "/lock",
+        );
+        print_path_block(&mut buf, &f, &[], false, true).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("Path:      depth 3, via your-app \u{2192} express \u{2192} middleware"),
+            "got {out:?}"
+        );
+    }
+
+    #[test]
+    fn path_block_renders_more_marker_when_multiple_paths() {
+        let mut buf: Vec<u8> = Vec::new();
+        let f = finding_with_paths(
+            vec![
+                vec!["your-app".into(), "alpha".into()],
+                vec!["your-app".into(), "bravo".into()],
+            ],
+            "/lock",
+        );
+        print_path_block(&mut buf, &f, &[], false, true).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("(+1 more; --verbose to list)"),
+            "expected +N marker; got {out:?}"
+        );
+    }
+
+    #[test]
+    fn path_block_verbose_lists_every_path() {
+        let mut buf: Vec<u8> = Vec::new();
+        let f = finding_with_paths(
+            vec![
+                vec!["your-app".into(), "alpha".into()],
+                vec!["your-app".into(), "bravo".into()],
+            ],
+            "/lock",
+        );
+        print_path_block(&mut buf, &f, &[], true, true).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("Paths:"), "got {out:?}");
+        assert!(
+            out.contains("\u{2022} depth 2 \u{2014} your-app \u{2192} alpha"),
+            "got {out:?}"
+        );
+        assert!(
+            out.contains("\u{2022} depth 2 \u{2014} your-app \u{2192} bravo"),
+            "got {out:?}"
+        );
+    }
+
+    #[test]
+    fn path_block_silent_for_node_modules_finding() {
+        // Finding with no paths AND no matching flat lockfile entry —
+        // node_modules walk, pip-list, etc. — should print nothing.
+        let mut buf: Vec<u8> = Vec::new();
+        let f = finding_with_paths(Vec::new(), "/proj/node_modules/axios/package.json");
+        print_path_block(&mut buf, &f, &[], false, true).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.is_empty(), "expected silent block; got {out:?}");
+    }
+
+    #[test]
+    fn path_block_renders_flat_marker_for_pipfile_lock() {
+        let mut buf: Vec<u8> = Vec::new();
+        let f = finding_with_paths(Vec::new(), "/proj/Pipfile.lock");
+        let lockfile_info = vec![LockfileGraphInfo {
+            path: PathBuf::from("/proj/Pipfile.lock"),
+            format: arcis_engine::sca_lockfile::LockfileFormat::PipfileLock,
+            graph_supported: false,
+        }];
+        print_path_block(&mut buf, &f, &lockfile_info, false, true).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("transitive (path unavailable for this lockfile format)"),
+            "got {out:?}"
+        );
+    }
+
+    #[test]
+    fn banner_omits_paths_row_when_all_lockfiles_are_graph() {
+        let mut buf: Vec<u8> = Vec::new();
+        let path = PathBuf::from("/proj");
+        let manifests = vec![path.join("package-lock.json")];
+        let lockfiles = vec![LockfileGraphInfo {
+            path: path.join("package-lock.json"),
+            format: arcis_engine::sca_lockfile::LockfileFormat::NpmLockV3,
+            graph_supported: true,
+        }];
+        print_sca_report(
+            &mut buf,
+            &path,
+            &[],
+            0.012,
+            true,
+            &manifests,
+            47,
+            false,
+            false,
+            &lockfiles,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            !out.contains("Paths:"),
+            "banner should omit Paths row when every lockfile yields a graph; got {out:?}"
+        );
+    }
+
+    #[test]
+    fn banner_includes_paths_row_when_pipfile_lock_is_flat() {
+        let mut buf: Vec<u8> = Vec::new();
+        let path = PathBuf::from("/proj");
+        let manifests = vec![path.join("Pipfile.lock")];
+        let lockfiles = vec![LockfileGraphInfo {
+            path: path.join("Pipfile.lock"),
+            format: arcis_engine::sca_lockfile::LockfileFormat::PipfileLock,
+            graph_supported: false,
+        }];
+        print_sca_report(
+            &mut buf,
+            &path,
+            &[],
+            0.012,
+            true,
+            &manifests,
+            47,
+            false,
+            false,
+            &lockfiles,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("Paths:     Pipfile.lock (flat)"),
+            "banner should include Paths row when Pipfile.lock is present; got {out:?}"
+        );
     }
 }

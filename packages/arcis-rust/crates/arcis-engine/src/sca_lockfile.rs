@@ -67,10 +67,13 @@ impl LockfileFormat {
     /// have transitive paths annotated.
     pub fn graph_supported(self) -> bool {
         match self {
-            Self::NpmLockV3 | Self::NpmLockV1 | Self::Poetry => true,
-            // Yarn classic + pnpm graph builders ship in commit 2.
-            // Yarn Berry + Pipfile.lock are intentionally `false` for v1.
-            Self::YarnClassic | Self::Pnpm => false,
+            Self::NpmLockV3 | Self::NpmLockV1 | Self::Poetry | Self::YarnClassic | Self::Pnpm => {
+                true
+            }
+            // Yarn Berry + Pipfile.lock are intentionally `false`. Berry
+            // requires a separate parser (different syntax + key model);
+            // Pipfile.lock is structurally flat — pipenv flattens edges
+            // before writing.
             Self::YarnBerry | Self::PipfileLock => false,
         }
     }
@@ -124,11 +127,11 @@ pub fn build_graph(path: &Path) -> Option<DepGraph> {
         LockfileFormat::NpmLockV3 => build_npm_lock_v3(path),
         LockfileFormat::NpmLockV1 => build_npm_lock_v1(path),
         LockfileFormat::Poetry => build_poetry(path),
-        // Stubs for commit 2 / deferred formats:
-        LockfileFormat::YarnClassic
-        | LockfileFormat::YarnBerry
-        | LockfileFormat::Pnpm
-        | LockfileFormat::PipfileLock => None,
+        LockfileFormat::YarnClassic => build_yarn_classic(path),
+        LockfileFormat::Pnpm => build_pnpm(path),
+        // Yarn Berry + Pipfile.lock are intentionally unsupported — see
+        // [`LockfileFormat::graph_supported`].
+        LockfileFormat::YarnBerry | LockfileFormat::PipfileLock => None,
     }
 }
 
@@ -467,6 +470,325 @@ fn poetry_root_name(lockfile: &Path) -> String {
         .unwrap_or_else(|| "(root)".to_string())
 }
 
+// ── yarn classic (yarn.lock v1) ──────────────────────────────────────────
+
+/// Graph builder for yarn classic v1 lockfiles. Each block lists every
+/// descriptor that resolves to one `(name, version)`, plus a
+/// `dependencies:` sub-block referencing children by `(name, range)`.
+/// We resolve children by looking up `<name>@<range>` in the descriptor
+/// map populated during the first pass.
+///
+/// Root edges are read from the sibling `package.json` because yarn
+/// classic doesn't record the project's own deps in `yarn.lock`.
+pub fn build_yarn_classic(path: &Path) -> Option<DepGraph> {
+    let content = fs::read_to_string(path).ok()?;
+    let project_dir = path.parent()?;
+
+    let mut graph = DepGraph::new();
+    let root_name = read_npm_package_json_name(project_dir).unwrap_or_else(|| {
+        project_dir
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(String::from)
+            .unwrap_or_else(|| "(root)".to_string())
+    });
+    let root_id = graph.add_node("npm", &root_name, "0.0.0");
+    graph.add_root(root_id);
+
+    let blocks = parse_yarn_blocks(&content);
+
+    // Pass 1: add nodes + build descriptor → resolved (name, version) map.
+    type Resolved = (String, String);
+    type DepEntry = (String, String);
+    let mut descriptor_to_resolved: std::collections::HashMap<String, Resolved> =
+        std::collections::HashMap::new();
+    // (resolved name, resolved version, list of (child_name, child_range)).
+    let mut block_data: Vec<(String, String, Vec<DepEntry>)> = Vec::new();
+
+    for block in &blocks {
+        let Some(version) = &block.version else {
+            continue;
+        };
+        let Some(first_desc) = block.descriptors.first() else {
+            continue;
+        };
+        let Some((name, _range)) = split_yarn_descriptor(first_desc) else {
+            continue;
+        };
+        let name = name.to_string();
+        let version = version.clone();
+        graph.add_node("npm", &name, &version);
+        for desc in &block.descriptors {
+            descriptor_to_resolved.insert(desc.clone(), (name.clone(), version.clone()));
+        }
+        block_data.push((name, version, block.deps.clone()));
+    }
+
+    // Pass 2: edges from each block to its dependencies.
+    for (name, version, deps) in &block_data {
+        let parent_id = match graph.find_node("npm", name, version) {
+            Some(id) => id,
+            None => continue,
+        };
+        for (dep_name, dep_range) in deps {
+            let descriptor = format!("{dep_name}@{dep_range}");
+            let Some((resolved_name, resolved_version)) = descriptor_to_resolved.get(&descriptor)
+            else {
+                continue;
+            };
+            if let Some(child_id) = graph.find_node("npm", resolved_name, resolved_version) {
+                graph.add_edge(parent_id, child_id);
+            }
+        }
+    }
+
+    // Root edges from package.json.
+    if let Ok(pj_bytes) = fs::read(project_dir.join("package.json")) {
+        if let Ok(pj_data) = serde_json::from_slice::<Value>(&pj_bytes) {
+            for dep_field in ["dependencies", "devDependencies", "optionalDependencies"] {
+                let Some(deps) = pj_data.get(dep_field).and_then(|v| v.as_object()) else {
+                    continue;
+                };
+                for (dep_name, dep_range_val) in deps {
+                    let Some(dep_range) = dep_range_val.as_str() else {
+                        continue;
+                    };
+                    let descriptor = format!("{dep_name}@{dep_range}");
+                    let Some((resolved_name, resolved_version)) =
+                        descriptor_to_resolved.get(&descriptor)
+                    else {
+                        continue;
+                    };
+                    if let Some(child_id) = graph.find_node("npm", resolved_name, resolved_version)
+                    {
+                        graph.add_edge(root_id, child_id);
+                    }
+                }
+            }
+        }
+    }
+
+    Some(graph)
+}
+
+#[derive(Debug)]
+struct YarnBlock {
+    descriptors: Vec<String>,
+    version: Option<String>,
+    deps: Vec<(String, String)>,
+}
+
+fn parse_yarn_blocks(content: &str) -> Vec<YarnBlock> {
+    let mut blocks = Vec::new();
+    let mut current: Option<YarnBlock> = None;
+    let mut in_dep_section = false;
+
+    for line in content.lines() {
+        if line.is_empty() || line.trim_start().starts_with('#') {
+            continue;
+        }
+        let leading_spaces = line.len() - line.trim_start().len();
+        let trimmed = line.trim();
+
+        if leading_spaces == 0 {
+            if let Some(c) = current.take() {
+                blocks.push(c);
+            }
+            in_dep_section = false;
+            if trimmed.ends_with(':') {
+                let header = trimmed.trim_end_matches(':');
+                let descriptors: Vec<String> = header
+                    .split(',')
+                    .map(|s| s.trim().trim_matches('"').to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                current = Some(YarnBlock {
+                    descriptors,
+                    version: None,
+                    deps: Vec::new(),
+                });
+            }
+        } else if leading_spaces == 2 {
+            if trimmed == "dependencies:" || trimmed == "optionalDependencies:" {
+                in_dep_section = true;
+            } else {
+                in_dep_section = false;
+                if let Some(rest) = trimmed.strip_prefix("version ") {
+                    if let Some(c) = current.as_mut() {
+                        c.version = Some(rest.trim_matches('"').to_string());
+                    }
+                }
+            }
+        } else if leading_spaces >= 4 && in_dep_section {
+            if let Some(c) = current.as_mut() {
+                if let Some((name, range)) = parse_yarn_dep_line(trimmed) {
+                    c.deps.push((name, range));
+                }
+            }
+        }
+    }
+    if let Some(c) = current.take() {
+        blocks.push(c);
+    }
+    blocks
+}
+
+fn parse_yarn_dep_line(line: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = line.splitn(2, ' ').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let name = parts[0].trim_matches('"');
+    let range = parts[1].trim_matches('"');
+    if name.is_empty() {
+        return None;
+    }
+    Some((name.to_string(), range.to_string()))
+}
+
+fn split_yarn_descriptor(desc: &str) -> Option<(&str, &str)> {
+    // Last `@` to handle scoped names like `@scope/pkg@^1`.
+    let at_idx = desc.rfind('@')?;
+    if at_idx == 0 {
+        return None;
+    }
+    Some((&desc[..at_idx], &desc[at_idx + 1..]))
+}
+
+fn read_npm_package_json_name(dir: &Path) -> Option<String> {
+    let pj = dir.join("package.json");
+    let bytes = fs::read(&pj).ok()?;
+    let data: Value = serde_json::from_slice(&bytes).ok()?;
+    data.get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
+// ── pnpm-lock.yaml ───────────────────────────────────────────────────────
+
+/// Graph builder for `pnpm-lock.yaml` v6+ and v9+. Both versions share
+/// the `importers` block (root deps) and a `packages` map; v9 splits
+/// edge data into a separate `snapshots` map. We resolve from whichever
+/// is present.
+///
+/// Package keys: v6 uses `/<name>@<version>` (leading slash); v9 drops
+/// the slash. Peer-dep variants append `(peer@x.y.z)` to versions; we
+/// strip that suffix for graph identity since two variants of the same
+/// `(name, version)` resolve identically for vulnerability matching.
+pub fn build_pnpm(path: &Path) -> Option<DepGraph> {
+    let content = fs::read_to_string(path).ok()?;
+    let val: serde_yml::Value = serde_yml::from_str(&content).ok()?;
+    let project_dir = path.parent()?;
+
+    let mut graph = DepGraph::new();
+    let root_name = read_npm_package_json_name(project_dir).unwrap_or_else(|| {
+        project_dir
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(String::from)
+            .unwrap_or_else(|| "(root)".to_string())
+    });
+    let root_id = graph.add_node("npm", &root_name, "0.0.0");
+    graph.add_root(root_id);
+
+    // Pass 1: add nodes from `packages` keys (works for both v6 and v9
+    // since v9's `packages` map has the same key shape minus the `/`).
+    if let Some(pkgs) = val.get("packages").and_then(|v| v.as_mapping()) {
+        for (k, _) in pkgs {
+            let Some(key) = k.as_str() else { continue };
+            let trimmed = key.strip_prefix('/').unwrap_or(key);
+            if let Some((name, version)) = parse_pnpm_pkg_key(trimmed) {
+                graph.add_node("npm", &name, &version);
+            }
+        }
+    }
+
+    // Importer roots: edges from root_id to each importer dep's resolved
+    // version. The `version` field already encodes the resolved pin.
+    if let Some(importers) = val.get("importers").and_then(|v| v.as_mapping()) {
+        for (_, importer) in importers {
+            for dep_field in ["dependencies", "devDependencies", "optionalDependencies"] {
+                let Some(deps) = importer.get(dep_field).and_then(|v| v.as_mapping()) else {
+                    continue;
+                };
+                for (k, v) in deps {
+                    let Some(name) = k.as_str() else { continue };
+                    let version = v.get("version").and_then(|x| x.as_str()).unwrap_or("");
+                    if version.is_empty() {
+                        continue;
+                    }
+                    let trimmed_version = trim_pnpm_version_suffix(version);
+                    let id = graph.add_node("npm", name, trimmed_version);
+                    graph.add_edge(root_id, id);
+                }
+            }
+        }
+    }
+
+    // Pass 2: edges from package/snapshot entries to their dependencies.
+    // Prefer `snapshots` (v9 edge map) when present; fall back to
+    // `packages` (v6 edges live there too).
+    let edge_source = val
+        .get("snapshots")
+        .or_else(|| val.get("packages"))
+        .and_then(|v| v.as_mapping());
+    if let Some(map) = edge_source {
+        for (k, v) in map {
+            let Some(key) = k.as_str() else { continue };
+            let trimmed = key.strip_prefix('/').unwrap_or(key);
+            let Some((parent_name, parent_version)) = parse_pnpm_pkg_key(trimmed) else {
+                continue;
+            };
+            let parent_id = match graph.find_node("npm", &parent_name, &parent_version) {
+                Some(id) => id,
+                None => continue,
+            };
+            let Some(deps) = v.get("dependencies").and_then(|v| v.as_mapping()) else {
+                continue;
+            };
+            for (dk, dv) in deps {
+                let Some(dep_name) = dk.as_str() else {
+                    continue;
+                };
+                let Some(dep_version) = dv.as_str() else {
+                    continue;
+                };
+                let trimmed_version = trim_pnpm_version_suffix(dep_version);
+                if let Some(child_id) = graph.find_node("npm", dep_name, trimmed_version) {
+                    graph.add_edge(parent_id, child_id);
+                }
+            }
+        }
+    }
+
+    Some(graph)
+}
+
+/// Parse a pnpm package key into `(name, version)`. Handles scoped names
+/// (`@scope/name@1.0.0`) and peer-dep suffixes (`name@1.0.0(peer@2)`).
+fn parse_pnpm_pkg_key(key: &str) -> Option<(String, String)> {
+    // Find the LAST `@` that isn't the scope marker at position 0.
+    let at_idx = key.rfind('@')?;
+    if at_idx == 0 {
+        return None;
+    }
+    let name = &key[..at_idx];
+    let version_with_suffix = &key[at_idx + 1..];
+    let version = trim_pnpm_version_suffix(version_with_suffix);
+    Some((name.to_string(), version.to_string()))
+}
+
+/// Strip pnpm peer-dep suffix `(peer@x.y.z)` from versions for graph
+/// identity. Two installations of the same `(name, version)` with
+/// different peer pins resolve to the same vulnerable artifact.
+fn trim_pnpm_version_suffix(v: &str) -> &str {
+    match v.find('(') {
+        Some(idx) => &v[..idx],
+        None => v,
+    }
+}
+
 // ── lockfile discovery ───────────────────────────────────────────────────
 
 /// Names of every lockfile / manifest [`build_graph`] knows how to inspect.
@@ -561,12 +883,10 @@ mod tests {
         assert!(LockfileFormat::NpmLockV3.graph_supported());
         assert!(LockfileFormat::NpmLockV1.graph_supported());
         assert!(LockfileFormat::Poetry.graph_supported());
+        assert!(LockfileFormat::YarnClassic.graph_supported());
+        assert!(LockfileFormat::Pnpm.graph_supported());
         assert!(!LockfileFormat::PipfileLock.graph_supported());
         assert!(!LockfileFormat::YarnBerry.graph_supported());
-        // Yarn classic + pnpm explicitly unsupported in commit 1; commit 2
-        // flips them on.
-        assert!(!LockfileFormat::YarnClassic.graph_supported());
-        assert!(!LockfileFormat::Pnpm.graph_supported());
     }
 
     // ── npm v3 ──────────────────────────────────────────────────────────
@@ -853,6 +1173,258 @@ version = "4.0.0"
         .unwrap();
         assert!(build_graph(&p).is_some());
     }
+
+    // ── yarn classic ─────────────────────────────────────────────────────
+
+    #[test]
+    fn yarn_classic_resolves_descriptor_to_version() {
+        let dir = tempdir();
+        // package.json so root edges are populated.
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"your-app","dependencies":{"axios":"^1.0.0"}}"#,
+        )
+        .unwrap();
+        let body = r#"# yarn lockfile v1
+
+"axios@^1.0.0":
+  version "1.14.1"
+  resolved "https://registry.yarnpkg.com/axios/-/axios-1.14.1.tgz"
+"#;
+        let p = dir.path().join("yarn.lock");
+        fs::write(&p, body).unwrap();
+        let g = build_yarn_classic(&p).expect("graph builds");
+        let axios = g.find_node("npm", "axios", "1.14.1").expect("axios node");
+        let path = g.shortest_path(axios).unwrap();
+        assert_eq!(path, vec!["your-app".to_string()]);
+        assert_eq!(g.depth(axios), Some(1));
+    }
+
+    #[test]
+    fn yarn_classic_dependencies_subblock() {
+        let dir = tempdir();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"app","dependencies":{"middleware":"^1.0.0"}}"#,
+        )
+        .unwrap();
+        let body = r#"# yarn lockfile v1
+
+"middleware@^1.0.0":
+  version "1.0.0"
+  resolved "https://example.com/m.tgz"
+  dependencies:
+    axios "^1"
+
+"axios@^1":
+  version "1.14.1"
+  resolved "https://example.com/a.tgz"
+"#;
+        let p = dir.path().join("yarn.lock");
+        fs::write(&p, body).unwrap();
+        let g = build_yarn_classic(&p).expect("graph builds");
+        let axios = g.find_node("npm", "axios", "1.14.1").expect("axios node");
+        let path = g.shortest_path(axios).unwrap();
+        assert_eq!(path, vec!["app".to_string(), "middleware".to_string()]);
+        assert_eq!(g.depth(axios), Some(2));
+    }
+
+    #[test]
+    fn yarn_classic_handles_scoped_descriptors() {
+        let dir = tempdir();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"app","dependencies":{"@scope/x":"^1"}}"#,
+        )
+        .unwrap();
+        let body = r#""@scope/x@^1":
+  version "1.0.0"
+  resolved "..."
+"#;
+        let p = dir.path().join("yarn.lock");
+        fs::write(&p, body).unwrap();
+        let g = build_yarn_classic(&p).expect("graph builds");
+        let scoped = g
+            .find_node("npm", "@scope/x", "1.0.0")
+            .expect("scoped node");
+        assert_eq!(g.depth(scoped), Some(1));
+    }
+
+    #[test]
+    fn yarn_classic_multiple_descriptors_share_version() {
+        let dir = tempdir();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"app","dependencies":{"axios":"^1.0.0"}}"#,
+        )
+        .unwrap();
+        let body = r#""axios@^1.0.0", "axios@^1.5.0":
+  version "1.14.1"
+  resolved "..."
+"#;
+        let p = dir.path().join("yarn.lock");
+        fs::write(&p, body).unwrap();
+        let g = build_yarn_classic(&p).expect("graph builds");
+        // Both descriptors map to the same node.
+        let n = g.find_node("npm", "axios", "1.14.1").unwrap();
+        assert_eq!(g.depth(n), Some(1));
+    }
+
+    // ── pnpm-lock.yaml ───────────────────────────────────────────────────
+
+    #[test]
+    fn pnpm_v6_direct_dep() {
+        let dir = tempdir();
+        fs::write(dir.path().join("package.json"), r#"{"name":"my-app"}"#).unwrap();
+        let body = r#"lockfileVersion: '6.0'
+
+importers:
+  .:
+    dependencies:
+      axios:
+        specifier: ^1.0.0
+        version: 1.14.1
+
+packages:
+  /axios@1.14.1:
+    resolution: {integrity: sha512-fake==}
+"#;
+        let p = dir.path().join("pnpm-lock.yaml");
+        fs::write(&p, body).unwrap();
+        let g = build_pnpm(&p).expect("graph builds");
+        let axios = g.find_node("npm", "axios", "1.14.1").expect("axios node");
+        assert_eq!(g.depth(axios), Some(1));
+    }
+
+    #[test]
+    fn pnpm_v6_transitive_via_packages() {
+        let dir = tempdir();
+        fs::write(dir.path().join("package.json"), r#"{"name":"my-app"}"#).unwrap();
+        let body = r#"lockfileVersion: '6.0'
+
+importers:
+  .:
+    dependencies:
+      middleware:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+  /middleware@1.0.0:
+    resolution: {integrity: sha512-x==}
+    dependencies:
+      axios: 1.14.1
+  /axios@1.14.1:
+    resolution: {integrity: sha512-y==}
+"#;
+        let p = dir.path().join("pnpm-lock.yaml");
+        fs::write(&p, body).unwrap();
+        let g = build_pnpm(&p).expect("graph builds");
+        let axios = g.find_node("npm", "axios", "1.14.1").expect("axios node");
+        let path = g.shortest_path(axios).unwrap();
+        assert_eq!(path, vec!["my-app".to_string(), "middleware".to_string()]);
+    }
+
+    #[test]
+    fn pnpm_strips_peer_dep_suffix_from_versions() {
+        let dir = tempdir();
+        fs::write(dir.path().join("package.json"), r#"{"name":"my-app"}"#).unwrap();
+        let body = r#"lockfileVersion: '6.0'
+
+importers:
+  .:
+    dependencies:
+      axios:
+        specifier: ^1.0.0
+        version: 1.14.1(react@18.0.0)
+
+packages:
+  /axios@1.14.1(react@18.0.0):
+    resolution: {integrity: sha512-x==}
+"#;
+        let p = dir.path().join("pnpm-lock.yaml");
+        fs::write(&p, body).unwrap();
+        let g = build_pnpm(&p).expect("graph builds");
+        // Peer-dep suffix stripped: node identity is (npm, axios, 1.14.1).
+        let axios = g
+            .find_node("npm", "axios", "1.14.1")
+            .expect("axios node with stripped suffix");
+        assert_eq!(g.depth(axios), Some(1));
+    }
+
+    #[test]
+    fn pnpm_v9_uses_snapshots_for_edges() {
+        let dir = tempdir();
+        fs::write(dir.path().join("package.json"), r#"{"name":"my-app"}"#).unwrap();
+        // v9 syntax: keys without leading `/`, edges in `snapshots`.
+        let body = r#"lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      middleware:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+  middleware@1.0.0:
+    resolution: {integrity: sha512-x==}
+  axios@1.14.1:
+    resolution: {integrity: sha512-y==}
+
+snapshots:
+  middleware@1.0.0:
+    dependencies:
+      axios: 1.14.1
+  axios@1.14.1: {}
+"#;
+        let p = dir.path().join("pnpm-lock.yaml");
+        fs::write(&p, body).unwrap();
+        let g = build_pnpm(&p).expect("graph builds");
+        let axios = g.find_node("npm", "axios", "1.14.1").expect("axios node");
+        assert_eq!(g.depth(axios), Some(2));
+    }
+
+    #[test]
+    fn pnpm_scoped_package_keys() {
+        let dir = tempdir();
+        fs::write(dir.path().join("package.json"), r#"{"name":"my-app"}"#).unwrap();
+        let body = r#"lockfileVersion: '6.0'
+
+importers:
+  .:
+    dependencies:
+      "@scope/pkg":
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+  /@scope/pkg@1.0.0:
+    resolution: {integrity: sha512-x==}
+"#;
+        let p = dir.path().join("pnpm-lock.yaml");
+        fs::write(&p, body).unwrap();
+        let g = build_pnpm(&p).expect("graph builds");
+        let scoped = g
+            .find_node("npm", "@scope/pkg", "1.0.0")
+            .expect("scoped node");
+        assert_eq!(g.depth(scoped), Some(1));
+    }
+
+    #[test]
+    fn parse_pnpm_pkg_key_handles_scoped() {
+        let (n, v) = parse_pnpm_pkg_key("@scope/pkg@1.0.0").unwrap();
+        assert_eq!(n, "@scope/pkg");
+        assert_eq!(v, "1.0.0");
+    }
+
+    #[test]
+    fn trim_pnpm_version_strips_peer_suffix() {
+        assert_eq!(trim_pnpm_version_suffix("1.0.0(react@18)"), "1.0.0");
+        assert_eq!(trim_pnpm_version_suffix("1.0.0"), "1.0.0");
+    }
+
+    // ── lockfile discovery ───────────────────────────────────────────────
 
     #[test]
     fn discover_lockfiles_lists_all_present() {
