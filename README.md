@@ -397,7 +397,7 @@ Response sent to client
 | Principle | What It Means |
 |-----------|--------------|
 | **Contract-First** | Specification before code. `API_SPEC.md` → `TEST_VECTORS.json` → implementation. |
-| **Zero Dependencies** | Self-contained. No transitive dependencies. Zero supply chain risk. |
+| **Lean Dependencies** | Node + Python SDKs ship with zero runtime dependencies. Go SDK has a stdlib-only core; framework adapters (Gin, Echo) are imported on demand. |
 | **Fail Open** | If infrastructure (Redis) fails, allow requests through. Availability > denial. |
 | **Defensive Defaults** | Secure out of the box. Users opt OUT of protection, not in. |
 | **Remove Then Encode** | Strip dangerous patterns before encoding. Encoding first hides them from pattern matching. |
@@ -465,7 +465,7 @@ The script is stripped. The rest of the comment is saved normally.
 | Input validation | Yes | No | No | No | No | No |
 | SSRF prevention | Yes | No | No | No | No | Yes |
 | Multi-language | 3 SDKs | Node only | Browser only | Node only | 4 SDKs | Node + Python |
-| Zero dependencies | Yes | Yes | No | No | No | No |
+| Lean core dependencies | Yes | Yes | No | No | No | No |
 | Open Source | Yes | Yes | Yes | Yes | Freemium | Paid |
 | CLI scanner | Yes | No | No | No | No | Yes |
 
@@ -523,7 +523,7 @@ Arcis is a strong defense layer, but it is not a silver bullet:
 
 ### Sanitization Approach
 
-Arcis uses regex-based pattern matching for attack detection. This is a deliberate trade-off: zero dependencies and minimal overhead, at the cost of not having a full HTML/SQL parser.
+Arcis uses regex-based pattern matching for attack detection. This is a deliberate trade-off: lean dependency footprint and minimal overhead, at the cost of not having a full HTML/SQL parser.
 
 **SQL injection specifically:** Arcis strips known SQL attack patterns from user input as a defense-in-depth layer. This is **not a replacement for parameterized queries**. It is an additional barrier. Your database layer should always use parameterized queries or a safe ORM.
 

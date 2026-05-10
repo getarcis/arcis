@@ -53,10 +53,7 @@ fn ljust(s: &str, width: usize) -> String {
 pub fn print<W: Write>(w: &mut W, version: &str, verbose: bool) -> io::Result<()> {
     writeln!(w)?;
     writeln!(w, "  Arcis  v{version}")?;
-    writeln!(
-        w,
-        "  Zero-dep security middleware + scanners for Node, Python, Go."
-    )?;
+    writeln!(w, "  Security middleware + scanners for Node, Python, Go.")?;
     writeln!(w)?;
     writeln!(w, "  Commands")?;
     for row in COMMANDS {

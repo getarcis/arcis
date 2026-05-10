@@ -1,8 +1,8 @@
 # Arcis — Go SDK
 
-Zero-dependency security middleware for Go web applications. First-party
-adapters ship for Gin, Echo, and chi (works with any router that accepts
-stdlib `http.Handler` middleware via the chi adapter). Detects +
+Security middleware for Go web applications. The core is stdlib-only;
+Gin, Echo, and chi adapters import their respective router (chi works
+with any router that accepts stdlib `http.Handler` middleware). Detects +
 sanitizes XSS, SQL injection, NoSQL injection, path traversal, command
 injection, prototype pollution, SSTI, XXE, and more across the same
 surface as the Node and Python SDKs.
@@ -71,6 +71,34 @@ func main() {
     e.Start(":8080")
 }
 ```
+
+## Quick start (plain net/http)
+
+For users without a third-party router, the `nethttp` subpackage exposes
+the same middleware shape as a `func(http.Handler) http.Handler`
+decorator. No router dependency.
+
+```go
+import (
+    "net/http"
+    archttp "github.com/GagancM/arcis/nethttp"
+)
+
+func main() {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", handler)
+
+    cfg := archttp.DefaultConfig()
+    cfg.Block = true
+    var h http.Handler = mux
+    h = archttp.MiddlewareWithConfig(cfg)(h)
+
+    http.ListenAndServe(":8080", h)
+}
+```
+
+Composes with any router that accepts stdlib middleware (chi, gorilla/mux,
+or hand-rolled).
 
 ## Block mode (v1.4.4+)
 
