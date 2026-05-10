@@ -1,15 +1,26 @@
 # Arcis — Go SDK
 
 Security middleware for Go web applications. The core is stdlib-only;
-Gin, Echo, and chi adapters import their respective router (chi works
-with any router that accepts stdlib `http.Handler` middleware). Detects +
-sanitizes XSS, SQL injection, NoSQL injection, path traversal, command
-injection, prototype pollution, SSTI, XXE, and more across the same
-surface as the Node and Python SDKs.
+Gin, Echo, chi, and Fiber adapters each import their respective router
+(chi works with any router that accepts stdlib `http.Handler`
+middleware via the chi adapter; a thin `nethttp` re-export covers users
+without any third-party router). Detects + sanitizes XSS, SQL
+injection, NoSQL injection, path traversal, command injection,
+prototype pollution, SSTI, XXE, and more across the same surface as the
+Node and Python SDKs.
 
 ```bash
 go get github.com/GagancM/arcis@latest
 ```
+
+## What's new in v1.5.0
+
+- **chi adapter** (`github.com/GagancM/arcis/chi`) — granular helpers (Headers / Sanitizer / Validate / Csrf / SecureCookies / Cors / ErrorHandler) plus the bundle middleware. Stdlib-only at runtime; composes with any router that accepts `func(http.Handler) http.Handler`.
+- **Fiber adapter** (`github.com/GagancM/arcis/fiber`) — bundle middleware + standalone `RateLimit` helpers + `WithTelemetry` option, mirroring gin/echo/chi.
+- **net/http stdlib helper** (`github.com/GagancM/arcis/nethttp`) — drop-in for users without a third-party router. Re-exports the chi adapter (which is itself stdlib-only), no chi dep needed at runtime.
+- **Telemetry parity** with Node + Python — `telemetry.NewClient` + `MiddlewareWithConfig`'s `Telemetry` field stream allow / deny decisions to a self-hosted dashboard.
+- **Guards API** (`arcis.NewGuards`) — non-HTTP rule engine for queue consumers, agent tool handlers, background jobs.
+- **AI-era protections**: 28-signature prompt-injection library (`DetectPromptInjection`), per-key `TokenBudget`, 646-pattern bot corpus from `getarcis/well-known-bots`.
 
 ## Quick start (Gin)
 
