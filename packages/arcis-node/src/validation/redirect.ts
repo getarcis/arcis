@@ -79,9 +79,9 @@ export function validateRedirect(
   const cleaned = url.replace(CONTROL_CHARS, '');
 
   // Block dangerous protocols (javascript:, data:, etc.)
-  if (DANGEROUS_PROTOCOLS.test(cleaned)) {
-    const proto = cleaned.match(DANGEROUS_PROTOCOLS);
-    return { safe: false, reason: `dangerous protocol: ${proto![0]}` };
+  const proto = cleaned.match(DANGEROUS_PROTOCOLS);
+  if (proto) {
+    return { safe: false, reason: `dangerous protocol: ${proto[0]}` };
   }
 
   // Block backslash-prefixed paths — browsers treat \ as / in URLs

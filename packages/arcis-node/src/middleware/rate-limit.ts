@@ -136,6 +136,7 @@ export function createRateLimiter(options: RateLimitOptions = {}): RateLimiterMi
     } catch (error) {
       // External store failed — fall back to in-memory rate limiting.
       // Pure fail-open is a security bypass; in-memory fallback maintains protection.
+      // eslint-disable-next-line no-console
       console.error('[arcis] Rate limiter store error, using in-memory fallback:', error);
       try {
         const key = keyGenerator(req);

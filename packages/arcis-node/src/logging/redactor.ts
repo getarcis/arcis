@@ -91,6 +91,7 @@ export function createSafeLogger(options: LogOptions = {}): SafeLogger {
       entry.data = redact(data);
     }
 
+    // eslint-disable-next-line no-console
     console.log(JSON.stringify(entry));
   }
 
