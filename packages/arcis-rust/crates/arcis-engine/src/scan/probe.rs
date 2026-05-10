@@ -904,6 +904,91 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn scan_route_threads_csrf_header_on_every_request_when_set() {
+        // Load-bearing contract: when AuthConfig.csrf is populated, the
+        // CSRF token rides as a request header on EVERY request — the
+        // probe step PLUS every vector dispatch. Same shape as the
+        // bearer / cookie threading tests above.
+        use crate::scan::csrf::CsrfState;
+        use crate::scan::test_server::{MockResponse, MockServer};
+
+        let server = MockServer::start().await;
+        server.on("POST", "/api/test", |_req| MockResponse::ok("{}"));
+
+        let auth = AuthConfig {
+            csrf: Some(CsrfState {
+                token: "csrf-tok-arcis-test-7e1f4d".into(),
+                thread_header: "X-CSRF-Token".into(),
+            }),
+            ..Default::default()
+        };
+        let cats = vec!["xss".to_string()];
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: Some(&cats),
+            thorough: false,
+            auth: Some(&auth),
+            cancel_on: CancelMode::FirstVuln,
+        };
+        let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
+
+        let captured = server.requests();
+        assert!(!captured.is_empty(), "expected at least one request");
+        for req in &captured {
+            assert_eq!(
+                req.headers.get("x-csrf-token").map(String::as_str),
+                Some("csrf-tok-arcis-test-7e1f4d"),
+                "every probe + vector request must carry the CSRF header; got: {req:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn scan_route_default_csrf_header_is_x_csrf_token() {
+        // Pin the default thread-header NAME at the probe layer too,
+        // not just at the unit-test layer. `DEFAULT_THREAD_HEADER`
+        // resolves to `X-CSRF-Token`; the Express csurf middleware
+        // default + the X-XSRF-TOKEN/Laravel-sanctum reference axis
+        // assume that exact name. Renaming would break the integration
+        // without obvious test failure unless this is pinned.
+        use crate::scan::csrf::{CsrfState, DEFAULT_THREAD_HEADER};
+        use crate::scan::test_server::{MockResponse, MockServer};
+
+        assert_eq!(DEFAULT_THREAD_HEADER, "X-CSRF-Token");
+
+        let server = MockServer::start().await;
+        server.on("POST", "/api/test", |_req| MockResponse::ok("{}"));
+
+        let auth = AuthConfig {
+            csrf: Some(CsrfState {
+                token: "csrf-default-name-test".into(),
+                thread_header: DEFAULT_THREAD_HEADER.into(),
+            }),
+            ..Default::default()
+        };
+        let cats = vec!["xss".to_string()];
+        let opts = ScanOptions {
+            fields: &["q"],
+            timeout: Duration::from_secs(2),
+            categories: Some(&cats),
+            thorough: false,
+            auth: Some(&auth),
+            cancel_on: CancelMode::FirstVuln,
+        };
+        let _ = scan_route(&server.url(), "POST", "/api/test", &opts).await;
+
+        let captured = server.requests();
+        assert!(!captured.is_empty());
+        for req in &captured {
+            assert!(
+                req.headers.contains_key("x-csrf-token"),
+                "default CSRF header must be `X-CSRF-Token`; got: {req:?}"
+            );
+        }
+    }
+
     // -------- speculative-cancellation tests --------
 
     #[test]
