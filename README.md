@@ -464,7 +464,7 @@ The script is stripped. The rest of the comment is saved normally.
 | Bot detection | Yes | No | No | No | Yes | Yes |
 | Input validation | Yes | No | No | No | No | No |
 | SSRF prevention | Yes | No | No | No | No | Yes |
-| Multi-language | 3 SDKs | Node only | Browser only | Node only | 4 SDKs | Node + Python |
+| Multi-language | 3 SDKs | Node only | Browser only | Node only | Node + Python | Node + Python |
 | Lean core dependencies | Yes | Yes | No | No | No | No |
 | Open Source | Yes | Yes | Yes | Yes | Freemium | Paid |
 | CLI scanner | Yes | No | No | No | No | Yes |
