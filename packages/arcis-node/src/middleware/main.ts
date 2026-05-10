@@ -3,20 +3,21 @@
  * Main arcis() middleware factory
  */
 
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler, Response, NextFunction } from 'express';
 import type {
   ArcisOptions,
   ArcisFunction,
   ArcisMiddlewareStack,
   HeaderOptions,
   RateLimitOptions,
+  SanitizeEvent,
   SanitizeOptions,
 } from '../core/types';
 import { createHeaders } from './headers';
 import { createRateLimiter } from './rate-limit';
 import { createErrorHandler } from './error-handler';
 import { createTelemetryEmitter, tapSanitizerThreats } from './telemetry';
-import { createSanitizer } from '../sanitizers';
+import { createSanitizer, scanThreats } from '../sanitizers';
 import { validate } from '../validation';
 import { createSafeLogger } from '../logging';
 import { TelemetryClient } from '../telemetry/client';
@@ -81,9 +82,114 @@ function buildTelemetryFromEnv(): TelemetryOptions | undefined {
  * app.use(middleware);
  * process.on('SIGTERM', () => middleware.close());
  */
+/**
+ * Issue #47 — observer middleware. Pre-scans `req.body / req.query /
+ * req.params / req.path` for threats and fires `onSanitize` for each hit.
+ * Always calls `next()` (no blocking, no mutation) — control flow is
+ * owned by the rate-limit and sanitizer middlewares downstream.
+ *
+ * Errors thrown from the user callback are caught and swallowed so a
+ * buggy observer can't take down the request path.
+ */
+function createSanitizeObserver(
+  onSanitize: (event: SanitizeEvent) => void,
+): RequestHandler {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const fields: ReadonlyArray<readonly [string, unknown]> = [
+      ['body', req.body],
+      ['query', req.query],
+      ['params', req.params],
+      ['path', req.path],
+    ];
+    for (const [name, value] of fields) {
+      const hit = scanThreats(value);
+      if (!hit) continue;
+      try {
+        onSanitize({
+          type: hit.vector,
+          field: name,
+          original: hit.matchedPattern,
+          pattern: hit.matchedPattern,
+        });
+      } catch {
+        // Observer must never break the response — fail-open.
+      }
+    }
+    next();
+  };
+}
+
+/**
+ * Issue #47 — wraps a 429-emitting middleware so the response body is
+ * suppressed in dry-run mode. The X-RateLimit-* headers the limiter set
+ * BEFORE deciding to 429 still flow through (they were attached to the
+ * response Header map by the limiter), giving observability without
+ * actually blocking the request.
+ *
+ * The rate-limit middleware's 429 path is `res.status(429).json({...})`
+ * followed by an early return (no `next()` call). To suppress, we
+ * intercept `res.status` and on 429:
+ *   - flag `suppressed`,
+ *   - swallow the chained `.json(...)` (no body write),
+ *   - restore the originals,
+ *   - call `next()` ourselves so the rest of the middleware stack runs.
+ *
+ * This is monkey-patching with a tightly-scoped lifetime — restored
+ * the moment we hand control downstream so no other middleware sees
+ * the patched methods.
+ */
+function suppressRateLimit429(handler: RequestHandler): RequestHandler {
+  return (req, res, next) => {
+    const originalStatus = res.status.bind(res);
+    const originalJson = res.json.bind(res);
+    let suppressed = false;
+    let nextCalled = false;
+
+    const restore = (): void => {
+      res.status = originalStatus;
+      res.json = originalJson;
+    };
+
+    res.status = ((code: number): Response => {
+      if (code === 429) {
+        suppressed = true;
+        return res; // chainable; the .json below no-ops.
+      }
+      return originalStatus(code);
+    }) as Response['status'];
+
+    res.json = ((body: unknown): Response => {
+      if (suppressed) {
+        // Limiter's 429 path: it called .status(429).json(...) and then
+        // returned without next(). Hand control to the rest of the chain
+        // ourselves. Restore originals first so downstream sees a clean
+        // ResponseWriter.
+        restore();
+        if (!nextCalled) {
+          nextCalled = true;
+          next();
+        }
+        return res;
+      }
+      return originalJson(body);
+    }) as Response['json'];
+
+    handler(req, res, (err) => {
+      // Allow path: handler called next() itself. Restore methods so
+      // downstream middleware operates on the unwrapped response.
+      restore();
+      if (!nextCalled) {
+        nextCalled = true;
+        next(err);
+      }
+    });
+  };
+}
+
 export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
   const middlewares: RequestHandler[] = [];
   const cleanupFns: (() => void)[] = [];
+  const dryRun = options.dryRun === true;
 
   // Telemetry emitter — first, so latency includes the full middleware chain.
   // Opt-in: zero overhead unless options.telemetry.endpoint is set, OR
@@ -109,24 +215,40 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
     middlewares.push(createHeaders(headerOpts));
   }
 
+  // Issue #47 — observer pre-scan. Sits BEFORE the rate-limit + sanitizer so
+  // the callback fires on every request that contains a threat, not just
+  // those that survive rate-limiting. Skipped when no callback is set so
+  // the default zero-overhead path is preserved.
+  if (options.onSanitize) {
+    middlewares.push(createSanitizeObserver(options.onSanitize));
+  }
+
   // Rate limiting — emitter detects 429 from response status, no wrap needed.
+  // Dry-run wraps the limiter so the limiter's 429 decision is silently
+  // dropped (headers still set; request continues). X-RateLimit-* headers
+  // surface either way so dashboards see the would-have-been decision.
   if (options.rateLimit !== false) {
     const rateLimitOpts: RateLimitOptions = typeof options.rateLimit === 'object'
       ? options.rateLimit
       : {};
     const rateLimiter = createRateLimiter(rateLimitOpts);
-    middlewares.push(rateLimiter);
+    middlewares.push(dryRun ? suppressRateLimit429(rateLimiter) : rateLimiter);
     cleanupFns.push(() => rateLimiter.close());
   }
 
   // Input sanitization — wrap with telemetry tap so SecurityThreatError
   // populates req.__arcis with vector/rule/severity for the emitter.
+  // Dry-run forces block: false so the sanitizer can never short-circuit
+  // with a 403; detection still happens via the observer above.
   if (options.sanitize !== false) {
     const sanitizeOpts: SanitizeOptions = typeof options.sanitize === 'object'
       ? { ...options.sanitize }
       : {};
     if (options.block && sanitizeOpts.block === undefined) {
       sanitizeOpts.block = true;
+    }
+    if (dryRun) {
+      sanitizeOpts.block = false;
     }
     const sanitizer = createSanitizer(sanitizeOpts);
     middlewares.push(telemetryClient ? tapSanitizerThreats(sanitizer) : sanitizer);
