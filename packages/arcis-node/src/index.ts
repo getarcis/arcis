@@ -43,11 +43,44 @@ export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from '
 export { botProtection, detectBot } from './middleware/bot-detection';
 export { csrfProtection, createCsrf, generateCsrfToken, validateCsrfToken } from './middleware/csrf';
 export { hpp, createHpp } from './middleware/hpp';
+export {
+  responseSplittingGuard,
+  detectResponseSplitting,
+  sanitizeResponseHeader,
+  ResponseSplittingError,
+} from './middleware/response-splitting';
+export type { ResponseSplittingGuardOptions } from './middleware/response-splitting';
 export { tokenBudget } from './middleware/token-budget';
 export type {
   TokenBudgetOptions,
   TokenBudgetMiddleware,
 } from './middleware/token-budget';
+export { eventLoopProtection } from './middleware/overload';
+export type {
+  EventLoopProtectionOptions,
+  EventLoopProtectionMiddleware,
+} from './middleware/overload';
+export { methodAllowlist } from './middleware/method-allowlist';
+export type { MethodAllowlistOptions } from './middleware/method-allowlist';
+export { massAssign } from './middleware/mass-assign';
+export type { MassAssignOptions } from './middleware/mass-assign';
+export { protectLogin, protectSignup, protectApi } from './middleware/protect';
+export type {
+  ProtectLoginOptions,
+  ProtectSignupOptions,
+  ProtectApiOptions,
+} from './middleware/protect';
+export { graphqlGuard } from './middleware/graphql';
+export type { GraphqlGuardMiddlewareOptions } from './middleware/graphql';
+export {
+  inspectGraphqlQuery,
+  detectGraphqlAbuse,
+} from './sanitizers/graphql';
+export type {
+  GraphqlGuardOptions,
+  GraphqlGuardResult,
+  GraphqlViolation,
+} from './sanitizers/graphql';
 export { Guards } from './guards';
 export type {
   GuardsConfig,
@@ -175,6 +208,17 @@ export type {
 
 // URL validation types
 export type { ValidateUrlOptions, ValidateUrlResult } from './validation/url';
+export {
+  validateUrlAsync,
+  pinnedDnsLookup,
+  safeFollowRedirect,
+} from './validation/url-async';
+export type {
+  ValidateUrlAsyncOptions,
+  ValidateUrlAsyncResult,
+  DnsLookup,
+  LookupAddress,
+} from './validation/url-async';
 export type { CorsOptions } from './middleware/cors';
 export type { SecureCookieOptions } from './middleware/cookies';
 export type { ValidateFileOptions, FileInput, ValidateFileResult } from './validation/file';

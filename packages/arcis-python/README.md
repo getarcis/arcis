@@ -2,7 +2,6 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/arcis.svg?label=pypi&color=00996D)](https://pypi.org/project/arcis/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/arcis.svg?label=downloads&color=00996D)](https://pypi.org/project/arcis/)
-[![GitHub stars](https://img.shields.io/github/stars/GagancM/arcis?style=flat&color=00996D)](https://github.com/GagancM/arcis/stargazers)
 [![Python 3.9+](https://img.shields.io/pypi/pyversions/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -10,9 +9,15 @@
 
 Arcis is a cross-platform security library that provides drop-in protection against common web vulnerabilities. Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
+**1,219+ tests passing.**
+
 ## What's new in v1.5.0
 
-- **SDK-only release.** `pip install arcis` now ships the runtime middleware only — zero runtime dependencies. The CLI moved to its own package: `npm install -g @arcis/cli`. See "CLI" below.
+- **SDK-only release.** `pip install arcis` ships the runtime middleware with zero runtime dependencies. The CLI moved to its own package: `npm install -g @arcis/cli`.
+- **Litestar adapter** (`arcis.litestar.ArcisMiddleware`) — pure-ASGI, type-only `litestar` import. Composes with Litestar via `DefineMiddleware` and with any other ASGI host (Starlette, Quart, Hypercorn) via direct instantiation.
+- **`verify_email_mx_async`** — async-safe MX verification. The sync `verify_email_mx` was the one user-facing call that blocked the event loop on FastAPI handlers; the async variant uses `dns.asyncresolver` natively (or threads to `asyncio.to_thread` as fallback).
+- **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 646-pattern bot corpus, `Guards` API for non-HTTP contexts.
+- **Composite helpers**: `signup_protection` (rate-limit + bot + email-MX) — full recipe for protecting account creation.
 - The middleware API is unchanged. Existing `Arcis(app)` / `app.add_middleware(ArcisMiddleware, ...)` code keeps working.
 - See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
 

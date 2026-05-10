@@ -2,16 +2,24 @@
 
 [![npm version](https://img.shields.io/npm/v/@arcis/node.svg?label=npm&color=00996D)](https://www.npmjs.com/package/@arcis/node)
 [![npm downloads](https://img.shields.io/npm/dm/@arcis/node.svg?label=downloads&color=00996D)](https://www.npmjs.com/package/@arcis/node)
-[![GitHub stars](https://img.shields.io/github/stars/GagancM/arcis?style=flat&color=00996D)](https://github.com/GagancM/arcis/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 **One-line security middleware for Node.js.**
 
 Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
-**20+ attack vectors covered. 1,451+ tests. Zero dependencies.**
+**20+ attack vectors covered. 1,869+ tests. Zero runtime dependencies.**
 
-## What's new in v1.4.4
+## What's new in v1.5.0
+
+- **10 first-party framework adapters** — Express + Fastify (`@arcis/node/fastify`) + Koa (`@arcis/node/koa`) + Hono (`@arcis/node/hono`) + Next.js (`@arcis/node/nextjs`) + NestJS + SvelteKit + Astro + Nuxt + Bun. Each subpath import keeps the framework SDK as a type-only dependency.
+- **New attack vectors**: GraphQL depth-bombs (`graphqlGuard`), LDAP / XPath / email-header injection wired into block-mode, mass assignment (`massAssign`), HTTP method tampering (`methodAllowlist`), response splitting (`responseSplittingGuard`), event-loop overload (`eventLoopProtection`), SSRF DNS TOCTOU (`validateUrlAsync` + `pinnedDnsLookup` + `safeFollowRedirect`).
+- **AI-era protections**: 28-signature prompt-injection library (`detectPromptInjection`), per-key `tokenBudget` middleware, 646-pattern bot corpus.
+- **Composite helpers**: `protectLogin`, `protectSignup`, `protectApi`.
+- **Dry-run / `onSanitize` mode**: observe attack surface without enforcing.
+- **Guards API**: `arcis.guard({ input, context })` for queue consumers + agent tool handlers.
+
+## What was new in v1.4.4
 
 - **Detect-and-block middleware** — opt in with `arcis({ block: true })`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
 - **Telemetry queue cap** — sustained dashboard outage no longer OOMs the worker. Drop-oldest semantics, optional `onQueueOverflow` callback.

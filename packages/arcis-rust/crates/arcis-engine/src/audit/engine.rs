@@ -6,7 +6,10 @@
 //! lives in `arcis-cli` next to the clap glue.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::thread;
 
 use super::finding_id;
 use super::rules::{rules as compiled_rules, Language, Rule, Severity};
@@ -170,6 +173,80 @@ pub fn scan_file_with_suppression(path: &Path) -> FileResult {
     FileResult {
         findings,
         suppressed,
+    }
+}
+
+/// Scan multiple files in parallel using `jobs` worker threads.
+///
+/// cli-audit.md item 11. Returns the combined per-file
+/// [`FileResult`]s — findings concatenated (unordered; caller sorts)
+/// and suppression counts summed. Bounded concurrency: at most `jobs`
+/// files in flight at once. Memory stays flat regardless of total file
+/// count because each worker only holds one file's content at a time.
+///
+/// Workers steal indices from a shared atomic cursor — no per-file
+/// channel, no `Arc<Vec>` clones, just a counter and a results mutex.
+/// Output ordering is non-deterministic by design; callers that need
+/// a stable order sort by `(severity, file, line)` after collection
+/// (which the CLI already does for byte-equal JSON / SARIF parity).
+///
+/// `jobs == 0` falls through to the serial path (treated as 1). Passing
+/// more workers than files spawns at most one worker per file.
+pub fn scan_files_parallel(paths: &[PathBuf], jobs: usize) -> FileResult {
+    if paths.is_empty() {
+        return FileResult::default();
+    }
+
+    // Serial fast path: avoids thread + sync overhead for tiny scans
+    // and gives us a single code path for `jobs in {0, 1}`.
+    let effective = jobs.max(1).min(paths.len());
+    if effective == 1 {
+        let mut findings = Vec::new();
+        let mut suppressed = 0usize;
+        for p in paths {
+            let r = scan_file_with_suppression(p);
+            findings.extend(r.findings);
+            suppressed += r.suppressed;
+        }
+        return FileResult {
+            findings,
+            suppressed,
+        };
+    }
+
+    let cursor = AtomicUsize::new(0);
+    let findings: Mutex<Vec<Finding>> = Mutex::new(Vec::new());
+    let suppressed = AtomicUsize::new(0);
+
+    thread::scope(|s| {
+        for _ in 0..effective {
+            s.spawn(|| loop {
+                let i = cursor.fetch_add(1, Ordering::Relaxed);
+                if i >= paths.len() {
+                    break;
+                }
+                let r = scan_file_with_suppression(&paths[i]);
+                if !r.findings.is_empty() {
+                    // Lock only when we have something to push — common
+                    // scan path is "file has no findings" so contention
+                    // stays low even at high `jobs`.
+                    findings
+                        .lock()
+                        .expect("audit findings mutex poisoned")
+                        .extend(r.findings);
+                }
+                if r.suppressed > 0 {
+                    suppressed.fetch_add(r.suppressed, Ordering::Relaxed);
+                }
+            });
+        }
+    });
+
+    FileResult {
+        findings: findings
+            .into_inner()
+            .expect("audit findings mutex poisoned"),
+        suppressed: suppressed.load(Ordering::Relaxed),
     }
 }
 
@@ -612,6 +689,135 @@ mod tests {
         let findings = scan_directory(td.path(), None, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].file.contains("main.py"));
+    }
+
+    // ── parallel scan (cli-audit.md item 11) ───────────────────────────
+
+    #[test]
+    fn scan_files_parallel_empty_returns_empty() {
+        let r = scan_files_parallel(&[], 8);
+        assert!(r.findings.is_empty());
+        assert_eq!(r.suppressed, 0);
+    }
+
+    #[test]
+    fn scan_files_parallel_jobs_zero_treated_as_one() {
+        // Robustness: --jobs 0 from the CLI shouldn't divide-by-zero
+        // or hang; the engine clamps to a serial scan.
+        let td = TempDir::new().unwrap();
+        let f = write(&td, "a.py", "yaml.load(f)\n");
+        let r = scan_files_parallel(&[f], 0);
+        assert_eq!(r.findings.len(), 1);
+        assert_eq!(r.findings[0].rule_id, "YAML-UNSAFE");
+    }
+
+    #[test]
+    fn scan_files_parallel_serial_path_when_jobs_one() {
+        // jobs=1 hits the no-thread fast path. Validates the same code
+        // path that serves as the single-core CI fallback.
+        let td = TempDir::new().unwrap();
+        let a = write(&td, "a.py", "yaml.load(f)\n");
+        let b = write(&td, "b.py", "pickle.loads(b'x')\n");
+        let r = scan_files_parallel(&[a, b], 1);
+        assert_eq!(r.findings.len(), 2);
+    }
+
+    #[test]
+    fn scan_files_parallel_jobs_more_than_files_clamps() {
+        // jobs=64 over 2 files should not spawn 64 idle workers; the
+        // engine clamps to `files.len()`. Just check correctness — we
+        // don't probe the worker count externally, only the result.
+        let td = TempDir::new().unwrap();
+        let a = write(&td, "a.py", "yaml.load(f)\n");
+        let b = write(&td, "b.py", "pickle.loads(b'x')\n");
+        let r = scan_files_parallel(&[a, b], 64);
+        assert_eq!(r.findings.len(), 2);
+    }
+
+    #[test]
+    fn scan_files_parallel_findings_match_serial_after_sort() {
+        // Semantic equivalence: parallel scan must produce the same
+        // findings as the serial path (same fields, same count) once
+        // sorted by (severity, file, line). This is the load-bearing
+        // correctness gate — if it ever fails, parity is broken.
+        let td = TempDir::new().unwrap();
+        let mut paths = Vec::new();
+        for i in 0..40 {
+            let p = write(
+                &td,
+                &format!("f{i}.py"),
+                "yaml.load(f)\npickle.loads(b'x')\neval(z)\n",
+            );
+            paths.push(p);
+        }
+
+        // Serial baseline.
+        let mut serial = FileResult::default();
+        for p in &paths {
+            let r = scan_file_with_suppression(p);
+            serial.findings.extend(r.findings);
+            serial.suppressed += r.suppressed;
+        }
+        serial.findings.sort_by(|a, b| {
+            a.severity
+                .cmp(&b.severity)
+                .then_with(|| a.file.cmp(&b.file))
+                .then_with(|| a.line.cmp(&b.line))
+        });
+
+        // Parallel result with 8 workers — same files, same findings.
+        let mut parallel = scan_files_parallel(&paths, 8);
+        parallel.findings.sort_by(|a, b| {
+            a.severity
+                .cmp(&b.severity)
+                .then_with(|| a.file.cmp(&b.file))
+                .then_with(|| a.line.cmp(&b.line))
+        });
+
+        assert_eq!(parallel.findings, serial.findings);
+        assert_eq!(parallel.suppressed, serial.suppressed);
+    }
+
+    #[test]
+    fn scan_files_parallel_suppression_count_aggregates() {
+        // Suppression count summed across files when each suppresses
+        // some findings. Validates the AtomicUsize aggregation path.
+        let td = TempDir::new().unwrap();
+        let mut paths = Vec::new();
+        for i in 0..10 {
+            let p = write(
+                &td,
+                &format!("f{i}.py"),
+                "yaml.load(f)  # arcis-audit: ignore\npickle.loads(b'x')\n",
+            );
+            paths.push(p);
+        }
+        let r = scan_files_parallel(&paths, 4);
+        // 10 files × 1 suppression each = 10. Pickle line still fires.
+        assert_eq!(r.suppressed, 10);
+        assert_eq!(r.findings.len(), 10);
+        assert!(r.findings.iter().all(|f| f.rule_id == "PICKLE-LOAD"));
+    }
+
+    #[test]
+    fn scan_files_parallel_no_lost_findings_under_pressure() {
+        // Stress: many small files + high jobs count. The atomic
+        // cursor must hand each file to exactly one worker — no
+        // duplicates, no skips. Total findings = files × per-file count.
+        let td = TempDir::new().unwrap();
+        let mut paths = Vec::new();
+        const N: usize = 200;
+        for i in 0..N {
+            let p = write(&td, &format!("a{i}.py"), "yaml.load(f)\n");
+            paths.push(p);
+        }
+        let r = scan_files_parallel(&paths, 16);
+        assert_eq!(
+            r.findings.len(),
+            N,
+            "expected exactly {N} findings (one per file), got {}",
+            r.findings.len()
+        );
     }
 
     #[test]

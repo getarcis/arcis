@@ -72,7 +72,14 @@ export function errorHandler(
   const customHandler = typeof options === 'object' ? options.customHandler : undefined;
 
   return (err: HttpError, req: Request, res: Response, _next: NextFunction) => {
-    const statusCode = err.statusCode || err.status || 500;
+    // Clamp to a valid HTTP error range. A thrown error with a bogus
+    // statusCode (negative, zero, or > 599) would otherwise be sent to
+    // the client and break proxies, browsers, or compliance scanners.
+    const rawStatus = err.statusCode ?? err.status ?? 500;
+    const statusCode =
+      Number.isFinite(rawStatus) && rawStatus >= 400 && rawStatus <= 599
+        ? Math.floor(rawStatus)
+        : 500;
 
     // Custom handler takes precedence
     if (customHandler) {

@@ -167,8 +167,33 @@ function toolResult(text: string, structured?: unknown): CallToolResult {
   return structured !== undefined ? { content, structuredContent: structured as Record<string, unknown> } : { content };
 }
 
+/**
+ * Validate that a path argument exists and is a directory the server can read.
+ * Returns null on success or a human-readable error string on failure. We
+ * surface the error inline through the MCP tool result instead of letting
+ * the underlying CLI fail; failing earlier gives a clearer error to the
+ * MCP client and avoids spawning a subprocess for a path we know is bad.
+ */
+function validatePath(path: string): string | null {
+  try {
+    // Synchronous and cheap. Tool calls already cross a process boundary
+    // via spawn; this stat is a rounding error in comparison.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    const stat = fs.statSync(path);
+    if (!stat.isDirectory()) {
+      return `path is not a directory: ${path}`;
+    }
+    return null;
+  } catch {
+    return `path does not exist or is not readable: ${path}`;
+  }
+}
+
 async function handleAudit(input: Record<string, unknown>): Promise<CallToolResult> {
   const path = typeof input.path === 'string' ? input.path : process.cwd();
+  const pathError = validatePath(path);
+  if (pathError) return toolResult(`arcis_audit: ${pathError}`);
   const args = ['audit', path];
   if (typeof input.language === 'string' && input.language !== 'auto') {
     args.push('--language', input.language);
@@ -186,6 +211,8 @@ async function handleAudit(input: Record<string, unknown>): Promise<CallToolResu
 
 async function handleSca(input: Record<string, unknown>): Promise<CallToolResult> {
   const path = typeof input.path === 'string' ? input.path : process.cwd();
+  const pathError = validatePath(path);
+  if (pathError) return toolResult(`arcis_sca: ${pathError}`);
   const args = ['sca', path];
   if (input.system === true) args.push('--system');
   const r = await runArcisCli(args);

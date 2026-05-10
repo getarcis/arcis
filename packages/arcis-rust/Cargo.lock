@@ -76,6 +76,7 @@ dependencies = [
  "arcis-engine",
  "clap",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

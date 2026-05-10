@@ -51,10 +51,25 @@
       "import": "./dist/telemetry/index.mjs",
       "require": "./dist/telemetry/index.js"
     },
+    "./fastify": {
+      "types": "./dist/fastify/index.d.ts",
+      "import": "./dist/fastify/index.mjs",
+      "require": "./dist/fastify/index.js"
+    },
+    "./koa": {
+      "types": "./dist/koa/index.d.ts",
+      "import": "./dist/koa/index.mjs",
+      "require": "./dist/koa/index.js"
+    },
     "./nestjs": {
       "types": "./dist/nestjs/index.d.ts",
       "import": "./dist/nestjs/index.mjs",
       "require": "./dist/nestjs/index.js"
+    },
+    "./nextjs": {
+      "types": "./dist/nextjs/index.d.ts",
+      "import": "./dist/nextjs/index.mjs",
+      "require": "./dist/nextjs/index.js"
     },
     "./sveltekit": {
       "types": "./dist/sveltekit/index.d.ts",
@@ -75,6 +90,11 @@
       "types": "./dist/bun/index.d.ts",
       "import": "./dist/bun/index.mjs",
       "require": "./dist/bun/index.js"
+    },
+    "./hono": {
+      "types": "./dist/hono/index.d.ts",
+      "import": "./dist/hono/index.mjs",
+      "require": "./dist/hono/index.js"
     }
   },
   "files": [
