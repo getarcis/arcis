@@ -107,11 +107,11 @@
       <ul>
         <li><strong>Runtime defense.</strong> Snyk shows you risks. Arcis blocks attacks live. If a previously-unknown bypass shows up in production, Snyk has nothing to say; Arcis sanitizes and blocks at the request boundary.</li>
         <li><strong>Bundled CLI + middleware.</strong> Arcis ships <code>arcis sca</code> (supply-chain scanner) and <code>arcis audit</code>/<code>arcis scan</code> (static analysis) alongside the runtime middleware. Small teams get baseline coverage from one tool. Snyk requires a separate platform plus the runtime defense you'd source from somewhere else.</li>
-        <li><strong>Free forever, MIT.</strong> Arcis is fully open source. Snyk's free tier has tight limits and the substantive features (Snyk Code, container scanning, IaC) are paid. For a solo dev or early-stage team, Arcis covers more ground at zero cost.</li>
+        <li><strong>MIT, fully open source.</strong> Snyk's free tier has tight limits and the substantive features (Snyk Code, container scanning, IaC) are paid. For a solo dev or early-stage team, Arcis covers more ground without a vendor commitment.</li>
       </ul>
 
       <h2 id="capability-matrix">Capability matrix</h2>
-      <p>Comparison reflects public state of both projects as of 2026-05-06.</p>
+      <p>Comparison reflects public state of both projects as of 2026-05-10.</p>
 
       <div class="comparison-table">
         <table>
@@ -130,7 +130,7 @@
             <tr><td>Container / IaC scanning</td><td>Yes</td><td>No</td></tr>
             <tr><td>Vulnerability research team</td><td>Yes</td><td>No (community + public sources)</td></tr>
             <tr><td>IDE integration</td><td>Yes (polished)</td><td>Roadmap</td></tr>
-            <tr><td>License</td><td>Commercial (limited free tier)</td><td>MIT, fully free</td></tr>
+            <tr><td>License</td><td>Commercial (limited free tier)</td><td>MIT, open source</td></tr>
             <tr><td>Languages covered (runtime)</td><td>N/A (no runtime)</td><td>Node, Python, Go (full parity)</td></tr>
             <tr><td>Best fit</td><td>Mid-to-large engineering orgs needing a security platform</td><td>Solo devs, small teams, projects that want zero-config runtime defense</td></tr>
           </tbody>
@@ -140,7 +140,7 @@
       <h2 id="how-to-choose">How to choose</h2>
       <p>This isn't really a head-to-head. The honest framing: <strong>most teams should run both</strong>. Snyk in CI to catch issues before deploy, Arcis at runtime to block attacks against the issues that slip through (or that haven't been disclosed yet).</p>
 
-      <p>If you have to pick one and your blast radius is small (solo dev, side project, early-stage startup), pick Arcis. You get a baseline of supply-chain + static-analysis scanning <em>plus</em> live runtime defense, all free under MIT.</p>
+      <p>If you have to pick one and your blast radius is small (solo dev, side project, early-stage startup), pick Arcis. You get a baseline of supply-chain + static-analysis scanning <em>plus</em> live runtime defense, all under MIT.</p>
 
       <p>If you have a security budget and an engineering org, pay for Snyk for its database and IDE depth, and use Arcis as the runtime defense that Snyk doesn't provide.</p>
 
