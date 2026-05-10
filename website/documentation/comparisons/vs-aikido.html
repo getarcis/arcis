@@ -107,12 +107,12 @@
       <ul>
         <li><strong>Three SDKs at full parity.</strong> Aikido Zen is Node-first. Their Python agent is newer; their Go support is limited. Arcis runs the same protections in Node, Python, and Go from a shared spec.</li>
         <li><strong>No agent injection.</strong> Aikido requires a startup-time agent that monkey-patches your Node built-ins. That carries operational risk if a future Node release changes internals or another tool patches the same modules. Arcis is plain middleware: no monkey-patching, no agent, no startup hook.</li>
-        <li><strong>Fully open source under MIT.</strong> Aikido Zen is open core: the agent is open, but the orchestrator and dashboard sit behind a paid plan. Arcis is MIT all the way down. Self-host the dashboard if you want telemetry.</li>
+        <li><strong>Fully open source under MIT.</strong> Aikido Zen is open core: the agent is open, but the orchestrator and dashboard sit behind a paid plan. Arcis is MIT all the way down, with all signatures, rules, and patterns in public files.</li>
         <li><strong>20+ vectors, not just sink-based ones.</strong> Aikido's RASP model only catches attacks at sinks. Things like rate limiting, security headers, CORS, CSRF, bot detection, prompt injection, and supply chain scanning live outside the sink set. Arcis bundles all of those.</li>
       </ul>
 
       <h2 id="capability-matrix">Capability matrix</h2>
-      <p>Comparison reflects public state of both projects as of 2026-05-06.</p>
+      <p>Comparison reflects public state of both projects as of 2026-05-10.</p>
 
       <div class="comparison-table">
         <table>
@@ -126,7 +126,7 @@
           <tbody>
             <tr><td>License</td><td>Open core (agent is open, control plane is paid)</td><td>MIT, fully open</td></tr>
             <tr><td>Architecture</td><td>RASP agent (monkey-patches Node built-ins)</td><td>Middleware (no patching)</td></tr>
-            <tr><td>Languages</td><td>Node (mature), Python (newer)</td><td>Node, Python, Go (all parity)</td></tr>
+            <tr><td>Languages</td><td>Node (mature), Python (newer)</td><td>Node, Python, Go (full parity, shared spec)</td></tr>
             <tr><td>Detection model</td><td>Sink-based (intercept dangerous calls)</td><td>Source-based (sanitize at the request boundary)</td></tr>
             <tr><td>Bypass resistance</td><td>Higher on covered sinks</td><td>Higher on novel attack surfaces (no monkey-patch dependency)</td></tr>
             <tr><td>Coverage scope</td><td>Sinks Aikido knows about</td><td>20+ request-boundary vectors (XSS, SQL, NoSQL, path, command, SSTI, XXE, SSRF, prompt injection, etc.)</td></tr>
@@ -154,7 +154,7 @@
       <p><strong>Pick Arcis if:</strong></p>
       <ul>
         <li>You run Python or Go services and want the same protections as your Node services.</li>
-        <li>You want everything fully open source under MIT, no paid tier required for the runtime.</li>
+        <li>You want every signature, rule, and pattern in your security stack to be open and auditable under MIT.</li>
         <li>You don't want a startup-time agent or monkey-patches in your process.</li>
         <li>You want a broader request-boundary toolkit (rate limits, headers, CSRF, bot detection, prompt injection, supply-chain scanning) in one package.</li>
       </ul>

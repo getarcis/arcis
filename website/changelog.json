@@ -3,19 +3,24 @@
   "releases": [
     {
       "version": "1.5.0",
-      "date": "2026-05-06",
-      "summary": "Five new Node framework adapters, AI-era protections (prompt-injection lib + LLM token-budget middleware), 646-pattern bot corpus, native-Rust CLI.",
+      "date": "2026-05-10",
+      "summary": "10 Node framework adapters, Litestar (Python), chi + Fiber (Go), 9 new attack vectors, AI-era protections, Guards API, native-Rust CLI.",
       "details": [
-        "Five new first-party framework adapters in Node, each a clean subpath import: `@arcis/node/nestjs`, `@arcis/node/sveltekit`, `@arcis/node/astro`, `@arcis/node/nuxt`, `@arcis/node/bun` (Bun + Hono in one). Framework SDKs are type-only references. non-users pay no runtime cost.",
-        "Prompt-injection signature library across all 3 SDKs. ~28 patterns covering jailbreak frameworks (DAN/STAN/DUDE), system-prompt extraction, fake `&lt;system&gt;` tags, conversation-replay forgeries, base64/ROT13 smuggling. `detectPromptInjection()` + `sanitizePromptInjection()` with HIGH/MEDIUM/LOW severity tiers.",
-        "`tokenBudget` middleware for LLM-handler routes. Per-key sliding-window token cap with optional per-request size limit, custom estimator hook, `X-Token-Budget-*` response headers.",
-        "Bot corpus expanded from 80 to 646 patterns sourced from a curated MIT-licensed corpus + supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes).",
-        "CLI (`audit` / `scan` / `sca`) ships separately as `npm install -g @arcis/cli`. a single static native-Rust binary across Linux, macOS, Windows. No Python or other runtime required.",
-        "Python `arcis` package is now SDK-only. `pip install arcis` no longer puts an `arcis` command on your shell PATH and no longer carries `rich` as a runtime dependency.",
-        "Same scanner commands, faster cold start (~30&ndash;60ms vs ~700ms previously), embedded threat database for full offline use.",
-        "Migration: if you previously relied on `pip install arcis` shipping the `arcis` command, switch to `npm install -g @arcis/cli`. The SDK middleware API is unchanged."
+        "10 first-party Node framework adapters as clean subpath imports: `@arcis/node/fastify`, `/koa`, `/hono`, `/nextjs`, `/nestjs`, `/sveltekit`, `/astro`, `/nuxt`, `/bun` join the existing Express adapter. Each keeps the framework SDK as a type-only dependency. non-users pay no runtime cost.",
+        "Litestar adapter for Python (`arcis.litestar.ArcisMiddleware`). Pure-ASGI, type-only `litestar` import. Composes via `DefineMiddleware` and works with any other ASGI host (Starlette, Quart, Hypercorn).",
+        "chi + Fiber Go adapters added; `arcis-go/nethttp` re-export covers users without a third-party router. The Go SDK now ships Gin, Echo, chi, Fiber, and net/http at parity.",
+        "9 new attack vectors wired into block-mode middleware: #21 GraphQL depth-bombs (`graphqlGuard`), #22 LDAP injection, #23 XPath injection, #24 email-header injection, #25 mass assignment (`massAssign`), #26 HTTP method tampering (`methodAllowlist`), #27 response splitting (`responseSplittingGuard`), #30 event-loop overload (`eventLoopProtection`), #31 SSRF DNS TOCTOU (`validateUrlAsync` + `pinnedDnsLookup` + `safeFollowRedirect`).",
+        "AI-era protections at parity across SDKs: 28-signature prompt-injection library covering jailbreak frameworks (DAN/STAN/DUDE), system-prompt extraction, fake `&lt;system&gt;` tags, conversation-replay forgeries, base64/ROT13 smuggling.",
+        "`tokenBudget` middleware for LLM-handler routes: per-key sliding-window token cap with optional per-request size limit, custom estimator hook, `X-Token-Budget-*` response headers.",
+        "Bot corpus expanded to 646 patterns sourced from a curated MIT corpus + supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes).",
+        "Composite helpers: `protectLogin`, `protectSignup`, `protectApi` (Node) and `signup_protection` (Python). Full recipes for protecting common high-risk surfaces.",
+        "Dry-run / `onSanitize` mode: observe attack surface without enforcing.",
+        "Guards API: `arcis.guard({ input, context })` for queue consumers, agent tool handlers, and other non-HTTP contexts where there is no request object.",
+        "Python `verify_email_mx_async`: async-safe MX verification using `dns.asyncresolver`, no longer blocks the event loop on FastAPI handlers.",
+        "CLI ships separately as a single static native-Rust binary: `npm install -g @arcis/cli`. ~30-60ms cold start (was ~700ms), embedded threat database, full offline use, OSV cache layer with 24h TTL. Works regardless of whether your app is Node, Python, or Go.",
+        "Python `arcis` package is now SDK-only. `pip install arcis` no longer puts an `arcis` command on your shell PATH. Migration: switch to `npm install -g @arcis/cli`. The SDK middleware API is unchanged."
       ],
-      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)", "@arcis/cli (npm, native binary)"]
+      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)", "@arcis/cli (npm, native binary)", "@arcis/mcp"]
     },
     {
       "version": "1.4.4",
@@ -52,13 +57,7 @@
     {
       "version": "1.4.2",
       "date": "2026-04-17",
-      "summary": "12 security bypass vectors closed. SSTI and XXE parity added to Go. Unicode path traversal bypass fixed across all SDKs.",
-      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)"]
-    },
-    {
-      "version": "1.4.1",
-      "date": "2026-04-10",
-      "summary": "LDAP injection protection added. Filter operator and DN character escaping across Node.js, Python, and Go.",
+      "summary": "LDAP injection protection across all SDKs, 12 security bypass vectors closed, SSTI and XXE parity added to Go, Unicode path traversal bypass fixed.",
       "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)"]
     },
     {

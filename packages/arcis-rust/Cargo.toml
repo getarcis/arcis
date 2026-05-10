@@ -58,6 +58,13 @@ sha2 = "0.10"
 # `.git/info/exclude`. `walkdir` stays in the manifest unused for now
 # per the cross-track ADD-ONLY rule; will be GC'd when all tracks merge.
 ignore = "0.4"
+# YAML deserialization for `pnpm-lock.yaml` graph reconstruction
+# (cli-sca.md Phase C item 5). `serde_yml` is the actively-maintained
+# fork of the deprecated `serde_yaml` crate (David Tolnay archived
+# `serde_yaml` in 2024). Drop-in API for our use case (decode a stable
+# YAML schema). Declared in workspace dependencies in commit 1 so the
+# pnpm builder in commit 2 doesn't churn Cargo.lock again.
+serde_yml = "0.0.12"
 
 [profile.release]
 # Smaller, faster binary. The tradeoffs (longer compile, no incremental in

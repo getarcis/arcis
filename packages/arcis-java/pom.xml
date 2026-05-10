@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>Arcis</name>
-    <description>Security middleware for Java web applications. Protects against 42+ security flaws with zero dependencies.</description>
+    <description>Security middleware for Java web applications. Protects against 42+ security flaws with a lean dependency footprint.</description>
     <url>https://github.com/GagancM/arcis</url>
 
     <licenses>

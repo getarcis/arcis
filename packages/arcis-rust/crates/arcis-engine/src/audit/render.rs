@@ -27,6 +27,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
+use super::baseline::{BaselineEntry, BaselineSummary};
 use super::engine::Finding;
 use super::rules::{rules as compiled_rules, Rule, Severity};
 
@@ -64,6 +65,44 @@ pub struct JsonReport<'a> {
     /// informative — confirms the field exists even on a clean run).
     /// Ignored files do NOT appear in `filesScanned` or `byLanguage`.
     pub ignored: usize,
+    /// Baseline diff context (cli-audit.md item 9).
+    ///
+    /// **Locked schema.** When `Some`, an additional `summary.baseline`
+    /// nested object is emitted with EXACTLY these keys, in this order:
+    ///
+    /// 1. `path`           — string, the baseline file path the user gave
+    /// 2. `createdAt`      — string, ISO 8601 UTC from the baseline file
+    /// 3. `added`          — integer, count of new findings (also = `findings.len()`)
+    /// 4. `resolvedCount`  — integer, count of baseline entries no longer present
+    /// 5. `unchangedCount` — integer, count of baseline entries that re-fired
+    /// 6. `staleCount`     — integer, count of baseline entries whose ruleId
+    ///    no longer exists in the registry
+    ///
+    /// When `None`, the `summary.baseline` block is omitted entirely
+    /// (NOT emitted as `null` — absent). Future fields MUST be added to
+    /// the enumeration above AND to [`BaselineSummary`].
+    ///
+    /// Caller responsibility: when this is `Some`, `findings` should
+    /// already be filtered to "added only" — the renderer does not
+    /// filter for you.
+    pub baseline: Option<&'a BaselineSummary<'a>>,
+    /// Resolved findings from the baseline diff (cli-audit.md item 9).
+    ///
+    /// **Locked schema.** When [`Self::baseline`] is `Some`, a top-level
+    /// `resolvedFindings` array is emitted; each element has EXACTLY
+    /// these keys, in this order:
+    ///
+    /// 1. `id`     — deterministic finding fingerprint (verbatim from baseline)
+    /// 2. `ruleId` — rule that produced the original finding
+    /// 3. `file`   — relpath captured at baseline creation
+    /// 4. `line`   — 1-indexed line at baseline creation
+    ///
+    /// No message, severity, or snippet — those bodies were never
+    /// stored in the baseline and the current run can't resurrect them.
+    /// When [`Self::baseline`] is `None`, `resolvedFindings` is omitted
+    /// regardless of the slice contents (an empty slice + `None`
+    /// baseline produces no key, NOT an empty array).
+    pub resolved_findings: &'a [BaselineEntry],
 }
 
 /// Render the audit result as a JSON document. Schema:
@@ -127,6 +166,19 @@ pub fn render_json(report: &JsonReport<'_>) -> String {
     // `.gitignore` / `.git/info/exclude`. Always emitted (same noise
     // tradeoff as `suppressed`); the human report hides the line at 0.
     summary.insert("ignored".into(), Value::from(report.ignored));
+    // cli-audit.md item 9: baseline diff summary block. Emitted only
+    // when `report.baseline` is `Some` — absent (NOT null) on a
+    // baseline-less run. Schema is locked; see [`JsonReport::baseline`].
+    if let Some(b) = report.baseline {
+        let mut bm = Map::new();
+        bm.insert("path".into(), Value::from(b.path));
+        bm.insert("createdAt".into(), Value::from(b.created_at));
+        bm.insert("added".into(), Value::from(b.added));
+        bm.insert("resolvedCount".into(), Value::from(b.resolved_count));
+        bm.insert("unchangedCount".into(), Value::from(b.unchanged_count));
+        bm.insert("staleCount".into(), Value::from(b.stale_count));
+        summary.insert("baseline".into(), Value::Object(bm));
+    }
     doc.insert("summary".into(), Value::Object(summary));
 
     let mut findings_arr = Vec::with_capacity(report.findings.len());
@@ -146,6 +198,24 @@ pub fn render_json(report: &JsonReport<'_>) -> String {
         findings_arr.push(Value::Object(item));
     }
     doc.insert("findings".into(), Value::Array(findings_arr));
+
+    // cli-audit.md item 9: top-level `resolvedFindings` array. Gated on
+    // `baseline.is_some()` — if the caller is in baseline mode the array
+    // appears even when empty (consumers can rely on its presence in
+    // baseline mode). When the caller is NOT in baseline mode, the key
+    // is absent regardless of `resolved_findings` contents.
+    if report.baseline.is_some() {
+        let mut arr = Vec::with_capacity(report.resolved_findings.len());
+        for e in report.resolved_findings {
+            let mut item = Map::new();
+            item.insert("id".into(), Value::from(e.id.as_str()));
+            item.insert("ruleId".into(), Value::from(e.rule_id.as_str()));
+            item.insert("file".into(), Value::from(e.file.as_str()));
+            item.insert("line".into(), Value::from(e.line));
+            arr.push(Value::Object(item));
+        }
+        doc.insert("resolvedFindings".into(), Value::Array(arr));
+    }
 
     let raw = serde_json::to_string_pretty(&Value::Object(doc))
         .expect("serde_json never fails on values built from owned data");
@@ -408,6 +478,8 @@ mod tests {
             severity_filter: None,
             suppressed: 0,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         };
         let out = render_json(&report);
         let doc = parse(&out);
@@ -441,6 +513,8 @@ mod tests {
             severity_filter: Some(Severity::High),
             suppressed: 0,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         };
         let doc = parse(&render_json(&report));
         assert_eq!(doc["severityFilter"], Json::from("high"));
@@ -463,6 +537,8 @@ mod tests {
             severity_filter: None,
             suppressed: 0,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         };
         let out = render_json(&report);
         let doc = parse(&out);
@@ -498,6 +574,8 @@ mod tests {
             severity_filter: None,
             suppressed: 0,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         });
         // String-position sniff: ruleId opens the finding object, id
         // follows immediately, severity comes after.
@@ -530,6 +608,8 @@ mod tests {
             severity_filter: None,
             suppressed: 0,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         });
         let positions: Vec<usize> = [
             "\"tool\"",
@@ -567,6 +647,8 @@ mod tests {
             severity_filter: None,
             suppressed: 0,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         });
         assert!(
             out.contains("\\u2014"),
@@ -597,6 +679,8 @@ mod tests {
             severity_filter: None,
             suppressed: 12,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         });
         let doc = parse(&out);
         assert_eq!(doc["summary"]["suppressed"], Json::from(12u64));
@@ -624,6 +708,8 @@ mod tests {
             severity_filter: None,
             suppressed: 0,
             ignored: 4,
+            baseline: None,
+            resolved_findings: &[],
         });
         let doc = parse(&out);
         assert_eq!(doc["summary"]["ignored"], Json::from(4u64));
@@ -649,6 +735,8 @@ mod tests {
             severity_filter: None,
             suppressed: 0,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         });
         let doc = parse(&out);
         assert_eq!(doc["summary"]["ignored"], Json::from(0u64));
@@ -670,6 +758,8 @@ mod tests {
             severity_filter: None,
             suppressed: 0,
             ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
         });
         // Python `json.dumps(..., indent=2)` uses 2-space indent. Our
         // serde_json::to_string_pretty default is also 2 spaces. Pin
@@ -679,6 +769,220 @@ mod tests {
         assert!(lines[1].starts_with("  "));
         assert!(!lines[1].starts_with("   ")); // not 3+
         assert!(!lines[1].starts_with('\t'));
+    }
+
+    // ── render_json: baseline diff (cli-audit.md item 9) ───────────────
+
+    fn baseline_entry_fixture(id: &str) -> BaselineEntry {
+        BaselineEntry {
+            id: id.to_string(),
+            rule_id: "YAML-UNSAFE".to_string(),
+            file: "src/a.py".to_string(),
+            line: 10,
+        }
+    }
+
+    #[test]
+    fn json_emits_summary_baseline_block_when_baseline_present() {
+        // Sentinel-pin contains-check: every locked-schema key for the
+        // `summary.baseline` block must appear literally in the output.
+        // Future renames or accidental drops surface here loudly.
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let bs = BaselineSummary {
+            path: ".arcis-baseline.json",
+            created_at: "2026-05-07T12:00:00Z",
+            added: 3,
+            resolved_count: 1,
+            unchanged_count: 12,
+            stale_count: 0,
+        };
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 0,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
+            baseline: Some(&bs),
+            resolved_findings: &[],
+        });
+        for needle in [
+            "\"baseline\"",
+            "\"path\"",
+            "\"createdAt\"",
+            "\"added\"",
+            "\"resolvedCount\"",
+            "\"unchangedCount\"",
+            "\"staleCount\"",
+        ] {
+            assert!(
+                out.contains(needle),
+                "summary.baseline block missing literal key {needle} in:\n{out}"
+            );
+        }
+        // Counts present as integers, not strings.
+        let doc = parse(&out);
+        assert_eq!(doc["summary"]["baseline"]["added"], Json::from(3u64));
+        assert_eq!(
+            doc["summary"]["baseline"]["resolvedCount"],
+            Json::from(1u64)
+        );
+        assert_eq!(
+            doc["summary"]["baseline"]["unchangedCount"],
+            Json::from(12u64)
+        );
+        assert_eq!(doc["summary"]["baseline"]["staleCount"], Json::from(0u64));
+        assert_eq!(
+            doc["summary"]["baseline"]["path"],
+            Json::from(".arcis-baseline.json")
+        );
+        assert_eq!(
+            doc["summary"]["baseline"]["createdAt"],
+            Json::from("2026-05-07T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn json_omits_baseline_block_when_baseline_none() {
+        // Absent — NOT null, NOT empty object. Consumers can use the
+        // key's presence to detect baseline mode.
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 0,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
+            baseline: None,
+            resolved_findings: &[],
+        });
+        assert!(
+            !out.contains("\"baseline\""),
+            "summary.baseline must be absent when baseline is None, got:\n{out}"
+        );
+        let doc = parse(&out);
+        assert!(doc["summary"].get("baseline").is_none());
+    }
+
+    #[test]
+    fn json_emits_top_level_resolved_findings_when_present() {
+        // Sentinel-pin: the literal key `resolvedFindings` must appear,
+        // and each entry serializes as {id, ruleId, file, line}. Any
+        // future refactor that drops or renames the array breaks here.
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let bs = BaselineSummary {
+            path: "b.json",
+            created_at: "2026-05-07T00:00:00Z",
+            added: 0,
+            resolved_count: 1,
+            unchanged_count: 0,
+            stale_count: 0,
+        };
+        let resolved = vec![baseline_entry_fixture("YAML-UNSAFE-deadbeefcafef00d")];
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 0,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
+            baseline: Some(&bs),
+            resolved_findings: &resolved,
+        });
+        assert!(
+            out.contains("\"resolvedFindings\""),
+            "missing literal `resolvedFindings` key in:\n{out}"
+        );
+        let doc = parse(&out);
+        let arr = doc["resolvedFindings"].as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["id"], Json::from("YAML-UNSAFE-deadbeefcafef00d"));
+        assert_eq!(arr[0]["ruleId"], Json::from("YAML-UNSAFE"));
+        assert_eq!(arr[0]["file"], Json::from("src/a.py"));
+        assert_eq!(arr[0]["line"], Json::from(10u64));
+    }
+
+    #[test]
+    fn json_resolved_findings_emitted_even_when_array_empty_in_baseline_mode() {
+        // Locked-schema rule: in baseline mode the `resolvedFindings`
+        // key is present even if no resolutions exist. Consumers in
+        // baseline mode get a uniform shape.
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let bs = BaselineSummary {
+            path: "b.json",
+            created_at: "2026-05-07T00:00:00Z",
+            added: 0,
+            resolved_count: 0,
+            unchanged_count: 0,
+            stale_count: 0,
+        };
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 0,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
+            baseline: Some(&bs),
+            resolved_findings: &[],
+        });
+        let doc = parse(&out);
+        assert!(doc.get("resolvedFindings").is_some());
+        assert_eq!(doc["resolvedFindings"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn json_omits_resolved_findings_when_baseline_none() {
+        // Absent when not in baseline mode — even if the caller
+        // accidentally passes a non-empty `resolved_findings` slice.
+        // Gating is on `baseline.is_some()`, not on slice contents.
+        let by_lang = BTreeMap::new();
+        let by_sev = BTreeMap::new();
+        let resolved = vec![baseline_entry_fixture("YAML-UNSAFE-1111111111111111")];
+        let out = render_json(&JsonReport {
+            tool_version: "1.0",
+            target: "/tmp",
+            findings: &[],
+            files_scanned: 0,
+            by_language: &by_lang,
+            rules_applied: 0,
+            by_severity: &by_sev,
+            duration_ms: 0,
+            severity_filter: None,
+            suppressed: 0,
+            ignored: 0,
+            baseline: None,
+            resolved_findings: &resolved,
+        });
+        assert!(
+            !out.contains("\"resolvedFindings\""),
+            "resolvedFindings must be absent when baseline is None, got:\n{out}"
+        );
     }
 
     // ── render_sarif ───────────────────────────────────────────────────

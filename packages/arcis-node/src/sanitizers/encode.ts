@@ -67,7 +67,8 @@ export function encodeForJs(value: string): string {
   // Use for-of to iterate codepoints, not UTF-16 code units.
   // This correctly handles surrogate pairs (emoji, symbols outside BMP).
   for (const char of value) {
-    const cp = char.codePointAt(0)!;
+    const cp = char.codePointAt(0);
+    if (cp === undefined) continue;
     // Allow a-z A-Z 0-9
     if (
       (cp >= 0x30 && cp <= 0x39) || // 0-9

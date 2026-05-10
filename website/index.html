@@ -14,9 +14,9 @@
   </script>
 
   <title>Arcis: Security Middleware for Every Backend</title>
-  <meta name="description" content="One line of code protects your app against 20+ attack vectors. Zero dependencies. Works with Node.js, Python, and Go.">
+  <meta name="description" content="One line of code protects your app against 20+ attack vectors. Lean dependency footprint. Works with Node.js, Python, and Go.">
   <meta property="og:title" content="Arcis. Security Middleware for Every Backend">
-  <meta property="og:description" content="One line of code. 20+ attack vectors handled. Zero dependencies. Node.js, Python, Go.">
+  <meta property="og:description" content="One line of code. 20+ attack vectors handled. Three languages: Node.js, Python, Go.">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1329,7 +1329,7 @@
           <div class="stat-label">SDKs. Node, Python, Go</div>
         </div>
         <div class="stat reveal reveal-delay-2">
-          <div class="stat-number">2,800+</div>
+          <div class="stat-number">3,388+</div>
           <div class="stat-label">Tests Passing</div>
         </div>
         <div class="stat reveal reveal-delay-3">
@@ -1395,7 +1395,7 @@
           <ul>
             <li>One package, one line: <code>app.use(arcis({ block: true }))</code></li>
             <li>20+ attack vectors covered instantly.</li>
-            <li>Zero dependencies. Zero configuration.</li>
+            <li>Lean dependencies. Zero configuration.</li>
           </ul>
         </div>
       </div>
@@ -1609,8 +1609,8 @@
             <tr><td>Bot detection</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td></tr>
             <tr><td>SSRF prevention</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="check">&#10003;</span></td></tr>
             <tr><td>Supply chain scanner</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td></tr>
-            <tr><td>Multi-language</td><td class="arcis-col"><span class="check">3 SDKs</span></td><td>Node only</td><td>Browser</td><td>Node only</td><td>3 SDKs</td><td>Node + Py</td></tr>
-            <tr><td>Zero dependencies</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td></tr>
+            <tr><td>Multi-language</td><td class="arcis-col"><span class="check">3 SDKs</span></td><td>Node only</td><td>Browser</td><td>Node only</td><td>Node + Py</td><td>Node + Py</td></tr>
+            <tr><td>Lean core dependencies</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td><td><span class="cross">&#10005;</span></td></tr>
             <tr><td>Open source</td><td class="arcis-col"><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td><td>Freemium</td><td>Paid</td></tr>
           </tbody>
         </table>
@@ -1666,7 +1666,7 @@
       <div class="changelog-list" id="changelog-list">
         <div class="changelog-item reveal">
           <span class="changelog-version">v1.5.0</span>
-          <span class="changelog-text">Five new Node framework adapters (NestJS, SvelteKit, Astro, Nuxt, Bun + Hono), AI-era protections (prompt-injection signature library + LLM token-budget middleware), 646-pattern bot corpus, native-Rust CLI.</span>
+          <span class="changelog-text">Ten Node framework adapters (Express + Fastify + Koa + Hono + Next.js + NestJS + SvelteKit + Astro + Nuxt + Bun), Litestar adapter (Python), chi + Fiber + nethttp adapters (Go), nine new attack vectors (#21 GraphQL, #22 LDAP, #23 XPath, #24 email-header, #25 mass-assign, #26 method-tampering, #27 response-splitting, #30 event-loop, #31 SSRF DNS TOCTOU), AI-era protections + native-Rust CLI.</span>
         </div>
         <div class="changelog-item reveal reveal-delay-1">
           <span class="changelog-version">v1.4.4</span>
@@ -1677,8 +1677,8 @@
           <span class="changelog-text">Telemetry pipeline shipped. Self-hosted dashboard accepts decision events from running middleware (Node + Python).</span>
         </div>
         <div class="changelog-item reveal reveal-delay-3">
-          <span class="changelog-version">v1.4.1</span>
-          <span class="changelog-text">LDAP injection protection added. Filter operator and DN character escaping across Node.js, Python, and Go.</span>
+          <span class="changelog-version">v1.4.2</span>
+          <span class="changelog-text">LDAP injection protection across all SDKs, 12 security bypass vectors closed, SSTI and XXE parity added to Go, Unicode path traversal bypass fixed.</span>
         </div>
       </div>
 
@@ -1859,7 +1859,7 @@
       <div class="footer-inner">
         <div class="footer-brand">
           <div class="footer-logo">Arcis<span>.</span></div>
-          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, zero dependencies.</p>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, lean dependency footprint.</p>
           <div class="footer-badges">
             <span class="footer-badge">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>

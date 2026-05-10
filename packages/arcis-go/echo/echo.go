@@ -80,6 +80,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	arcis "github.com/GagancM/arcis"
+	"github.com/GagancM/arcis/sanitizers"
 	"github.com/GagancM/arcis/telemetry"
 )
 
@@ -746,13 +747,9 @@ func CsrfProtection(opts arcis.CsrfOptions) echo.MiddlewareFunc {
 				headerName = "X-Csrf-Token"
 			}
 			requestToken := c.Request().Header.Get(headerName)
-			if requestToken == "" {
-				fieldName := opts.FieldName
-				if fieldName == "" {
-					fieldName = "_csrf"
-				}
-				requestToken = c.QueryParam(fieldName)
-			}
+			// SECURITY: query string intentionally not supported. Tokens
+			// in URLs leak to server logs, Referer headers, browser
+			// history, and CDN/proxy caches. Header only.
 
 			if !csrf.Check(method, c.Request().URL.Path, cookieToken, requestToken) {
 				return c.JSON(http.StatusForbidden, map[string]string{
@@ -774,16 +771,21 @@ func csrfCookieName(opts arcis.CsrfOptions) string {
 }
 
 func buildEchoCsrfCookie(opts arcis.CsrfOptions, token string) string {
-	name := csrfCookieName(opts)
-	path := opts.Cookie.Path
+	// SECURITY: strip CRLF from any user-controlled cookie components
+	// before building the Set-Cookie value. Without this, a header
+	// value containing \r\n could split the response or inject
+	// arbitrary headers.
+	name := sanitizers.SanitizeHeaderValue(csrfCookieName(opts))
+	safeToken := sanitizers.SanitizeHeaderValue(token)
+	path := sanitizers.SanitizeHeaderValue(opts.Cookie.Path)
 	if path == "" {
 		path = "/"
 	}
-	sameSite := opts.Cookie.SameSite
+	sameSite := sanitizers.SanitizeHeaderValue(opts.Cookie.SameSite)
 	if sameSite == "" {
 		sameSite = "Lax"
 	}
-	parts := []string{name + "=" + token, "Path=" + path}
+	parts := []string{name + "=" + safeToken, "Path=" + path}
 	if opts.Cookie.HttpOnly {
 		parts = append(parts, "HttpOnly")
 	}
@@ -796,7 +798,7 @@ func buildEchoCsrfCookie(opts arcis.CsrfOptions, token string) string {
 	}
 	parts = append(parts, "SameSite="+sameSite)
 	if opts.Cookie.Domain != "" {
-		parts = append(parts, "Domain="+opts.Cookie.Domain)
+		parts = append(parts, "Domain="+sanitizers.SanitizeHeaderValue(opts.Cookie.Domain))
 	}
 	return strings.Join(parts, "; ")
 }

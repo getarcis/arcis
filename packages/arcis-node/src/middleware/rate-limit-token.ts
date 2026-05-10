@@ -137,6 +137,7 @@ export function createTokenBucketLimiter(options: TokenBucketOptions = {}): Toke
       next();
     } catch (error) {
       // Fail open
+      // eslint-disable-next-line no-console
       console.error('[arcis] Token bucket rate limiter error:', error);
       next();
     }

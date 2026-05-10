@@ -95,7 +95,7 @@
       <div class="docs-breadcrumb">Docs / Comparisons</div>
       <h1>Arcis vs Arcjet</h1>
       <p class="lead">
-        Arcjet was a fair starting point for application-layer security at the API edge. Arcis is the open-source, in-process answer for teams who don't want a SaaS layer in their security stack.
+        Arcjet pioneered application-layer security at the API edge with cloud-decisioned middleware. Arcis is the open-source, in-process alternative for teams who don't want a SaaS layer in their security stack.
       </p>
 
       <h2 id="tldr">TL;DR</h2>
@@ -104,7 +104,7 @@
       <h2 id="where-they-win">Where Arcjet wins</h2>
       <ul>
         <li><strong>Wasm-based local ML for AI rules.</strong> Arcjet ships a closed Wasm blob that runs locally and evaluates richer signals than pattern matching. For prompt-injection detection at the highest accuracy bar, that's a real edge over a signature library.</li>
-        <li><strong>Mature distribution.</strong> 11+ first-party Node framework adapters, MCP server integration, Cursor and Claude Code plugins. They started in 2023 and have had time to build the ecosystem.</li>
+        <li><strong>Mature distribution.</strong> Polished editor plugins (Cursor, Claude Code), longer track record, and a paid managed control plane that some teams prefer not to operate themselves. They started in 2023 and have had time to build the ecosystem.</li>
         <li><strong>Funded team.</strong> $12M raised across Seed and Series A. They will keep shipping. If you're picking a vendor for a five-year procurement window, that matters.</li>
       </ul>
 
@@ -117,7 +117,7 @@
       </ul>
 
       <h2 id="capability-matrix">Capability matrix</h2>
-      <p>Comparison reflects public state of both projects as of 2026-05-06.</p>
+      <p>Comparison reflects public state of both projects as of 2026-05-10.</p>
 
       <div class="comparison-table">
         <table>
@@ -133,15 +133,14 @@
             <tr><td>Architecture</td><td>SDK + cloud decisioning</td><td>SDK only (in-process)</td></tr>
             <tr><td>Cloud dependency</td><td>Required for value-add features</td><td>None (optional self-hosted dashboard)</td></tr>
             <tr><td>Languages</td><td>Node (mature), Python (newer), Go (newer)</td><td>Node, Python, Go (all parity)</td></tr>
-            <tr><td>Node framework adapters</td><td>~11 first-party</td><td>6 first-party (Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono)</td></tr>
-            <tr><td>Python framework adapters</td><td>FastAPI, generic</td><td>FastAPI, Flask, Django</td></tr>
-            <tr><td>Go framework adapters</td><td>Generic</td><td>Gin, Echo, net/http</td></tr>
+            <tr><td>Node framework adapters</td><td>~11 first-party</td><td>10 first-party (Express, Fastify, Koa, Hono, Next.js, NestJS, SvelteKit, Astro, Nuxt, Bun)</td></tr>
+            <tr><td>Python framework adapters</td><td>FastAPI, generic</td><td>FastAPI, Flask, Django, Litestar</td></tr>
+            <tr><td>Go framework adapters</td><td>Generic</td><td>Gin, Echo, chi, Fiber, net/http</td></tr>
             <tr><td>Bot corpus</td><td>Their MIT well-known-bots + cloud scoring</td><td>646 patterns sourced from the same MIT corpus + supplementary entries, all local</td></tr>
             <tr><td>AI/LLM defenses</td><td>Wasm ML model for prompt-injection scoring</td><td>~28 signature patterns across HIGH/MEDIUM/LOW tiers + tokenBudget middleware</td></tr>
             <tr><td>Rate limiting</td><td>Cloud-decisioned</td><td>In-process, fixed/sliding/token-bucket, optional Redis</td></tr>
             <tr><td>Supply chain scanner</td><td>No</td><td>Yes (<code>arcis sca</code>)</td></tr>
             <tr><td>Static analysis CLI</td><td>No</td><td>Yes (<code>arcis audit</code> + <code>arcis scan</code>)</td></tr>
-            <tr><td>Pricing</td><td>Freemium with paid tiers + Enterprise</td><td>Free forever (paid tier coming for hosted dashboard, the OSS core stays free)</td></tr>
           </tbody>
         </table>
       </div>

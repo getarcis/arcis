@@ -111,3 +111,22 @@ export function detectHeaderInjection(input: string): boolean {
   HEADER_INJECTION_PATTERN.lastIndex = 0;
   return HEADER_INJECTION_PATTERN.test(input);
 }
+
+/**
+ * Email-header injection prevention. Same byte-level threat as HTTP
+ * header injection — `\r\n` in a user-controlled email field
+ * (`To`, `From`, `Subject`, etc.) lets an attacker inject extra headers
+ * (most commonly Bcc) and pivot a contact form into a spam relay.
+ *
+ * Aliased to the HTTP-header sanitizers because the wire-level fix is
+ * identical: strip CRLF + null bytes from the value before
+ * concatenating into the header. Use these in form-to-email handlers:
+ *
+ * ```ts
+ * const subject = sanitizeEmailHeader(req.body.subject);
+ * const to = sanitizeEmailHeader(req.body.to);
+ * if (detectEmailHeaderInjection(req.body.to)) reject(...);
+ * ```
+ */
+export const sanitizeEmailHeader = sanitizeHeaderValue;
+export const detectEmailHeaderInjection = detectHeaderInjection;

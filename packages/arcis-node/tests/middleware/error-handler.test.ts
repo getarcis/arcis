@@ -65,6 +65,22 @@ describe('errorHandler', () => {
       expect(res.status).toHaveBeenCalledWith(403);
     });
 
+    it('should clamp out-of-range statusCode to 500 (regression)', () => {
+      // Regression: previously any err.statusCode passed through directly,
+      // so a thrown error with statusCode -1 or 99999 would set an invalid
+      // HTTP status on the response, breaking proxies and clients.
+      for (const bogus of [-1, 0, 99, 600, 9999, NaN, Infinity]) {
+        const req = mockRequest();
+        const res = mockResponse();
+        const next = vi.fn();
+        const handler = errorHandler(false);
+        const error: Error & { statusCode?: number } = new Error('boom');
+        error.statusCode = bogus;
+        handler(error, req as Request, res as Response, next as NextFunction);
+        expect(res.status).toHaveBeenCalledWith(500);
+      }
+    });
+
     it('should default to 500 status', () => {
       const req = mockRequest();
       const res = mockResponse();

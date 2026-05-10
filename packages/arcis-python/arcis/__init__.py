@@ -143,9 +143,15 @@ from .sanitizers import (
 from .validation.email import (
     validate_email_address,
     verify_email_mx,
+    verify_email_mx_async,
     is_valid_email_syntax,
     EmailValidationResult,
 )
+
+# Litestar adapter (and any ASGI host) — pure ASGI middleware, type-only
+# litestar import. Lazy via attribute access to avoid a hard import on
+# package load when the user is on the FastAPI / Flask / Django path.
+from .litestar import ArcisMiddleware as ArcisLitestarMiddleware
 
 from .middleware.rate_limit_sliding import SlidingWindowLimiter
 from .middleware.rate_limit_token import TokenBucketLimiter
@@ -233,8 +239,10 @@ __all__ = [
     # Email validation (advanced)
     "validate_email_address",
     "verify_email_mx",
+    "verify_email_mx_async",
     "is_valid_email_syntax",
     "EmailValidationResult",
+    "ArcisLitestarMiddleware",
     # Rate limiters
     "SlidingWindowLimiter",
     "TokenBucketLimiter",

@@ -13,6 +13,9 @@ import { sanitizePath, detectPathTraversal } from './path';
 import { sanitizeCommand, detectCommandInjection } from './command';
 import { detectSsti } from './ssti';
 import { detectXxe } from './xxe';
+import { detectLdapInjection } from './ldap';
+import { detectXpathInjection } from './xpath';
+import { detectHeaderInjection } from './headers';
 
 /**
  * Sanitize a string value against multiple attack vectors.
@@ -157,7 +160,10 @@ export interface ThreatHit {
     | 'command'
     | 'prototype'
     | 'ssti'
-    | 'xxe';
+    | 'xxe'
+    | 'ldap'
+    | 'xpath'
+    | 'header';
   rule: string;
   matchedPattern: string;
 }
@@ -214,6 +220,24 @@ export function scanThreats(data: unknown, depth = 0): ThreatHit | null {
   }
   if (detectCommandInjection(data)) {
     return { vector: 'command', rule: 'command/match', matchedPattern: sample };
+  }
+  // LDAP + XPath checks come AFTER command/path so a string that's
+  // primarily a path-traversal payload (`../`) gets attributed to
+  // path, not LDAP (the `\` in `..\..\` would otherwise hit the LDAP
+  // backslash filter).
+  if (detectLdapInjection(data)) {
+    return { vector: 'ldap', rule: 'ldap/match', matchedPattern: sample };
+  }
+  if (detectXpathInjection(data)) {
+    return { vector: 'xpath', rule: 'xpath/match', matchedPattern: sample };
+  }
+  // Header injection (HTTP response splitting + email-header injection
+  // share the same byte-level threat: CRLF in a value that gets
+  // concatenated into a header). Last in the chain so the more-specific
+  // detectors (xss / sql / etc.) win on input that's both — e.g. an XSS
+  // payload with a stray newline still attributes to xss.
+  if (detectHeaderInjection(data)) {
+    return { vector: 'header', rule: 'header/match', matchedPattern: sample };
   }
   return null;
 }

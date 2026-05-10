@@ -12,7 +12,17 @@ import { RATE_LIMIT } from '../core/constants';
 /** Generic Redis client interface (works with ioredis, redis, etc.) */
 export interface RedisClientLike {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, mode?: string, duration?: number): Promise<unknown>;
+  /**
+   * SET with optional flags. Supports both `set(key, value)` and
+   * `set(key, value, 'EX', seconds, 'NX')` shapes for atomic
+   * set-if-not-exists with TTL. Returns 'OK' on success; null when NX
+   * is supplied and the key already exists.
+   */
+  set(
+    key: string,
+    value: string,
+    ...args: Array<string | number>
+  ): Promise<string | null | unknown>;
   setex(key: string, seconds: number, value: string): Promise<unknown>;
   expire(key: string, seconds: number): Promise<unknown>;
   incr(key: string): Promise<number>;
@@ -98,18 +108,19 @@ export class RedisStore implements RateLimitStore {
 
   async increment(key: string): Promise<number> {
     const redisKey = this.getKey(key);
-    
-    // INCR creates key with value 1 if it doesn't exist
-    const count = await this.client.incr(redisKey);
 
-    // Set expiry only on first increment using EXPIRE, which sets the TTL
-    // without overwriting the value (unlike SET ... EX which would reset the
-    // counter if two requests increment concurrently before expiry is set).
-    if (count === 1) {
-      await this.client.expire(redisKey, this.windowSec);
+    // SECURITY / RELIABILITY: Atomic first-increment via SET ... EX ... NX.
+    // If the key did not exist, this single command creates it with value
+    // 1 and the window TTL atomically. If it existed, SET returns null
+    // and we fall through to INCR for the actual count. This eliminates
+    // the INCR-then-EXPIRE race where a connection drop between the two
+    // commands could leave a counter without a TTL, locking out the
+    // client until manual intervention.
+    const created = await this.client.set(redisKey, '1', 'EX', this.windowSec, 'NX');
+    if (created === 'OK' || created === true) {
+      return 1;
     }
-
-    return count;
+    return this.client.incr(redisKey);
   }
 
   async decrement(key: string): Promise<void> {

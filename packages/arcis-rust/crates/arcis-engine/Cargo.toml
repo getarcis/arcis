@@ -35,6 +35,10 @@ sha2 = { workspace = true }
 # under the hood so we lose nothing performance-wise vs the previous
 # raw walkdir traversal.
 ignore = { workspace = true }
+# pnpm-lock.yaml deserialization for `arcis sca` transitive paths
+# (cli-sca.md Phase C item 5, commit 2). Workspace dep declared in
+# commit 1; first import lands with the pnpm graph builder in commit 2.
+serde_yml = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.10"
