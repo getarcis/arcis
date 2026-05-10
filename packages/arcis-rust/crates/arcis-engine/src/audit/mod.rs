@@ -29,7 +29,7 @@ pub use baseline::{
 };
 pub use engine::{
     scan_directory, scan_directory_with_suppression, scan_file, scan_file_with_suppression,
-    FileResult, Finding,
+    scan_files_parallel, FileResult, Finding,
 };
 pub use finding_id::{assign_ids, compute as compute_finding_id, normalize_relpath};
 pub use render::{render_json, render_sarif, JsonReport, SarifReport};

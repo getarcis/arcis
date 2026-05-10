@@ -15,12 +15,18 @@ use std::time::Instant;
 
 use arcis_engine::audit::{
     assign_ids, classify_baseline, collect_files_with_options, detect_language, render_json,
-    render_sarif, rules as compiled_rules, scan_file_with_suppression, Baseline, BaselineEntry,
+    render_sarif, rules as compiled_rules, scan_files_parallel, Baseline, BaselineEntry,
     BaselineError, BaselineSummary, Finding, IgnoreOptions, JsonReport, Language, SarifReport,
     Severity,
 };
 
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Default worker count when `--jobs` is not given. cli-audit.md item 11
+/// pins this at 8: enough to hit the 4–8× speedup target on 1k-file
+/// monorepos without oversubscribing typical dev machines. Users on
+/// tiny CI runners or beefy 16-core boxes override via `--jobs N`.
+const DEFAULT_JOBS: usize = 8;
 
 #[derive(Debug)]
 struct Args {
@@ -51,6 +57,10 @@ struct Args {
     /// `<path>.tmp` rename). Always exits 0 — recording IS success by
     /// definition. Mutually exclusive with [`Self::baseline`].
     baseline_write: Option<PathBuf>,
+    /// `--jobs N` / `-j N`: worker thread count for parallel file
+    /// scanning. cli-audit.md item 11. `None` falls back to
+    /// [`DEFAULT_JOBS`] (8). Zero is rejected at parse time.
+    jobs: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -75,6 +85,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut no_gitignore = false;
     let mut baseline: Option<PathBuf> = None;
     let mut baseline_write: Option<PathBuf> = None;
+    let mut jobs: Option<usize> = None;
 
     let mut iter = argv.iter().enumerate();
     while let Some((_, arg)) = iter.next() {
@@ -142,6 +153,22 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                     );
                 }
             },
+            "--jobs" | "-j" => match iter.next() {
+                Some((_, v)) => match v.parse::<usize>() {
+                    Ok(0) => {
+                        return ParseOutcome::Err("arcis audit: --jobs must be at least 1".into());
+                    }
+                    Ok(n) => jobs = Some(n),
+                    Err(_) => {
+                        return ParseOutcome::Err(format!(
+                            "arcis audit: invalid --jobs value: {v} (expected a positive integer)"
+                        ));
+                    }
+                },
+                None => {
+                    return ParseOutcome::Err("arcis audit: --jobs requires an argument".into());
+                }
+            },
             "--severity" | "-s" => match iter.next() {
                 Some((_, v)) => match Severity::parse(v) {
                     Some(s) => severity = Some(s),
@@ -184,6 +211,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         no_gitignore,
         baseline,
         baseline_write,
+        jobs,
     })
 }
 
@@ -285,6 +313,10 @@ fn print_help<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(
         out,
         "                       will surface the lower-severity entries as resolved."
+    )?;
+    writeln!(
+        out,
+        "  -j, --jobs N         Worker threads for parallel file scanning (default 8)."
     )?;
     writeln!(out, "  -h, --help           Show this message and exit.")?;
     Ok(())
@@ -468,15 +500,15 @@ pub fn run(argv: &[String]) -> ExitCode {
         None => compiled_rules().len(),
     };
 
-    // Run scan. Time only the scan phase, like Python.
+    // Run scan. Time only the scan phase, like Python. Worker pool
+    // (cli-audit.md item 11) processes files concurrently; the engine
+    // clamps `jobs` to `[1, files.len()]` and falls through to the
+    // serial path on a single-core CI runner without thread overhead.
+    let jobs = args.jobs.unwrap_or(DEFAULT_JOBS);
     let start = Instant::now();
-    let mut findings: Vec<Finding> = Vec::new();
-    let mut suppressed_total: usize = 0;
-    for f in &files {
-        let r = scan_file_with_suppression(f);
-        findings.extend(r.findings);
-        suppressed_total += r.suppressed;
-    }
+    let scan_result = scan_files_parallel(&files, jobs);
+    let mut findings: Vec<Finding> = scan_result.findings;
+    let suppressed_total: usize = scan_result.suppressed;
     let duration_ms = start.elapsed().as_millis() as u64;
 
     // Severity filter — keep findings whose severity rank <= threshold.
@@ -1238,6 +1270,84 @@ mod tests {
     fn parse_args_baseline_write_without_path_errors() {
         let r = parse_args(&[".".to_string(), "--baseline-write".to_string()]);
         assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("requires a path")));
+    }
+
+    // ── --jobs flag (cli-audit.md item 11) ─────────────────────────────
+
+    #[test]
+    fn parse_args_jobs_long_flag() {
+        match parse_args(&[".".to_string(), "--jobs".to_string(), "4".to_string()]) {
+            ParseOutcome::Args(a) => assert_eq!(a.jobs, Some(4)),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_jobs_short_flag() {
+        match parse_args(&[".".to_string(), "-j".to_string(), "16".to_string()]) {
+            ParseOutcome::Args(a) => assert_eq!(a.jobs, Some(16)),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_jobs_default_is_none() {
+        // Caller fills in DEFAULT_JOBS (8) — parser stays neutral so the
+        // explicit-flag-vs-default distinction stays visible if we ever
+        // need to log it.
+        match parse_args(&[".".to_string()]) {
+            ParseOutcome::Args(a) => assert!(a.jobs.is_none()),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_jobs_zero_errors() {
+        // Zero workers would never make progress. Reject at parse time
+        // so the user gets a clear message instead of a silent hang.
+        let r = parse_args(&[".".to_string(), "--jobs".to_string(), "0".to_string()]);
+        assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("at least 1")));
+    }
+
+    #[test]
+    fn parse_args_jobs_non_numeric_errors() {
+        let r = parse_args(&[".".to_string(), "--jobs".to_string(), "many".to_string()]);
+        assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("invalid --jobs")));
+    }
+
+    #[test]
+    fn parse_args_jobs_negative_errors() {
+        // `-4`.parse::<usize>() rejects the leading minus — covered by
+        // the same path as the non-numeric case but pin it explicitly so
+        // a future move to a signed type doesn't silently accept it.
+        let r = parse_args(&[".".to_string(), "--jobs".to_string(), "-4".to_string()]);
+        assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("invalid --jobs")));
+    }
+
+    #[test]
+    fn parse_args_jobs_without_value_errors() {
+        let r = parse_args(&[".".to_string(), "--jobs".to_string()]);
+        assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("requires an argument")));
+    }
+
+    #[test]
+    fn help_text_documents_jobs_flag() {
+        // Refinement #3 mirror: pin --jobs in the help text. Both forms
+        // appear, the default (8) is named, and the purpose ("parallel"
+        // / "worker") is surfaced so users know what they're tuning.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--jobs"), "help must mention --jobs");
+        assert!(out.contains("-j"), "help must mention -j short form");
+        assert!(
+            out.contains("8"),
+            "help must surface the default worker count: {out}"
+        );
+        assert!(
+            out.to_lowercase().contains("worker") || out.to_lowercase().contains("parallel"),
+            "help must explain --jobs is about parallelism: {out}"
+        );
     }
 
     #[test]
