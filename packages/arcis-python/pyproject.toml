@@ -8,6 +8,7 @@ version = "1.5.0"
 description = "Inside-the-app security middleware for Python. One install protects FastAPI, Flask, and Django against XSS, SQL injection, CSRF, SSRF, HPP, prompt injection, bot traffic, rate limiting, and 20+ more attack types. Includes prompt-injection signature library, LLM token-budget middleware, and a 646-pattern bot corpus with consistent API across the Node and Go SDKs. The CLI ships separately at npm install -g @arcis/cli."
 readme = "README.md"
 license = {text = "MIT"}
+license-files = ["LICENSE"]
 authors = [
     {name = "Gagan CM", email = "gagancm@users.noreply.github.com"}
 ]
