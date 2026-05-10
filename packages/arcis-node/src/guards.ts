@@ -217,12 +217,14 @@ export class Guards {
         result.severity !== 'none' &&
         SEVERITY_RANK[result.severity] >= this.piDenyRank
       ) {
-        const top = result.matches.find((m) => m.severity === result.severity)!;
+        const top = result.matches.find((m) => m.severity === result.severity) ?? result.matches[0];
         return {
           ok: false,
           vector: 'prompt-injection',
           severity: result.severity,
-          reason: `Prompt injection detected (${top.rule}): ${top.description}`,
+          reason: top
+            ? `Prompt injection detected (${top.rule}): ${top.description}`
+            : 'Prompt injection detected',
           matches: piMatches,
         };
       }

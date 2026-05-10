@@ -99,6 +99,7 @@ export function errorHandler(
       if (logger) {
         logger.error('Request error', logData);
       } else {
+        // eslint-disable-next-line no-console
         console.error('[arcis] Request error:', logData);
       }
     }

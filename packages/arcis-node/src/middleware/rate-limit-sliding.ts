@@ -145,6 +145,7 @@ export function createSlidingWindowLimiter(options: SlidingWindowOptions = {}): 
       next();
     } catch (error) {
       // Fail open
+      // eslint-disable-next-line no-console
       console.error('[arcis] Sliding window rate limiter error:', error);
       next();
     }
