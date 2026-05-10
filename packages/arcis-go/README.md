@@ -54,6 +54,24 @@ in test builds. The adapter's middleware signature is the standard
 `func(next http.Handler) http.Handler`, so it composes with any router
 that accepts stdlib middleware (gorilla/mux, plain `net/http`, etc.).
 
+## Quick start (Fiber)
+
+```go
+import (
+    "github.com/gofiber/fiber/v2"
+    arcisfiber "github.com/GagancM/arcis/fiber"
+)
+
+func main() {
+    app := fiber.New()
+    cfg := arcisfiber.DefaultConfig()
+    cfg.Block = true
+    app.Use(arcisfiber.MiddlewareWithConfig(cfg))
+    app.Get("/", handler)
+    app.Listen(":8080")
+}
+```
+
 ## Quick start (Echo)
 
 ```go
