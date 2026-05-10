@@ -208,6 +208,17 @@ export type {
 
 // URL validation types
 export type { ValidateUrlOptions, ValidateUrlResult } from './validation/url';
+export {
+  validateUrlAsync,
+  pinnedDnsLookup,
+  safeFollowRedirect,
+} from './validation/url-async';
+export type {
+  ValidateUrlAsyncOptions,
+  ValidateUrlAsyncResult,
+  DnsLookup,
+  LookupAddress,
+} from './validation/url-async';
 export type { CorsOptions } from './middleware/cors';
 export type { SecureCookieOptions } from './middleware/cookies';
 export type { ValidateFileOptions, FileInput, ValidateFileResult } from './validation/file';
