@@ -13,8 +13,9 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use arcis_engine::scan::{
-    attack_categories, discover_routes, execute_login, format_curl, payloads::slug, scan_route,
-    AuthConfig, CancelMode, DiscoveredRoute, LoginConfig, RouteResult, ScanOptions, DEFAULT_FIELDS,
+    attack_categories, discover_routes, execute_login, fetch_csrf, format_curl, parse_csrf_spec,
+    payloads::slug, scan_route, AuthConfig, CancelMode, CsrfSpec, DiscoveredRoute, LoginConfig,
+    RouteResult, ScanOptions, DEFAULT_FIELDS,
 };
 
 const RESET: &str = "\x1b[0m";
@@ -44,6 +45,8 @@ struct Args {
     login_form: Vec<(String, String)>,
     login_json: bool,
     cancel_on: CancelMode,
+    csrf_spec: Option<CsrfSpec>,
+    csrf_header: Option<String>,
 }
 
 #[derive(Debug)]
@@ -74,6 +77,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         login_form: Vec::new(),
         login_json: false,
         cancel_on: CancelMode::default(),
+        csrf_spec: None,
+        csrf_header: None,
     };
 
     let mut i = 0;
@@ -211,6 +216,40 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
                 }
             }
             "--login-json" => args.login_json = true,
+            "--csrf-from" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --csrf-from needs a value".into());
+                };
+                match parse_csrf_spec(v) {
+                    Ok(spec) => args.csrf_spec = Some(spec),
+                    Err(e) => return ParseOutcome::Err(format!("arcis scan: {e}")),
+                }
+            }
+            arg if arg.starts_with("--csrf-from=") => {
+                let v = &arg["--csrf-from=".len()..];
+                match parse_csrf_spec(v) {
+                    Ok(spec) => args.csrf_spec = Some(spec),
+                    Err(e) => return ParseOutcome::Err(format!("arcis scan: {e}")),
+                }
+            }
+            "--csrf-header" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --csrf-header needs a value".into());
+                };
+                match validate_csrf_header_name(v) {
+                    Ok(n) => args.csrf_header = Some(n),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--csrf-header=") => {
+                let v = &arg["--csrf-header=".len()..];
+                match validate_csrf_header_name(v) {
+                    Ok(n) => args.csrf_header = Some(n),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
             "--cancel-on" => {
                 i += 1;
                 let Some(v) = argv.get(i) else {
@@ -259,6 +298,11 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     if args.login_url.is_none() && args.login_json {
         return ParseOutcome::Err("arcis scan: --login-json requires --login".into());
     }
+    // --csrf-header is meaningless without --csrf-from. Pinned by tests
+    // so the orphan-flag UX stays consistent with the --login family.
+    if args.csrf_spec.is_none() && args.csrf_header.is_some() {
+        return ParseOutcome::Err("arcis scan: --csrf-header requires --csrf-from".into());
+    }
 
     ParseOutcome::Args(Box::new(args))
 }
@@ -302,6 +346,23 @@ fn parse_cancel_on(value: &str) -> Result<CancelMode, String> {
             "arcis scan: invalid --cancel-on value: {other}\n  Valid values: first-vuln, never"
         )),
     }
+}
+
+/// Validate the `--csrf-header` value. Non-empty (after trim) and free
+/// of control bytes (anything `< 0x20` or `0x7F`). The engine's
+/// [`reqwest::header::HeaderName::from_bytes`] would silently skip an
+/// invalid name; the CLI surfaces the error at parse time so the user
+/// gets a clear `exit 2` rather than a silent missing header at runtime.
+fn validate_csrf_header_name(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        return Err("arcis scan: --csrf-header cannot be empty or whitespace-only".into());
+    }
+    if value.bytes().any(|b| b < 0x20 || b == 0x7F) {
+        return Err(format!(
+            "arcis scan: invalid --csrf-header name: must be a token (no control bytes), got: {value:?}"
+        ));
+    }
+    Ok(value.to_string())
 }
 
 fn parse_login_form_pair(value: &str) -> Result<(String, String), String> {
@@ -492,6 +553,38 @@ fn print_help(out: &mut dyn Write) -> io::Result<()> {
     writeln!(
         out,
         "                               Form keys + values never appear in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --csrf-from SPEC         Fetch a CSRF token before scanning. SPEC = GET:/path[:STRATEGY:NAME]."
+    )?;
+    writeln!(
+        out,
+        "                               STRATEGY = json | cookie | header (auto-detect when omitted)."
+    )?;
+    writeln!(
+        out,
+        "                               Composes with --bearer / --cookie / --login. Applies token"
+    )?;
+    writeln!(
+        out,
+        "                               to subsequent POST/PUT/PATCH/DELETE requests."
+    )?;
+    writeln!(
+        out,
+        "                               Token value never appears in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --csrf-header NAME       Outbound header used to thread the captured CSRF token."
+    )?;
+    writeln!(
+        out,
+        "                               X-CSRF-Token (default). Use X-XSRF-TOKEN for Angular,"
+    )?;
+    writeln!(
+        out,
+        "                               X-CSRFToken for Django. Requires --csrf-from."
     )?;
     writeln!(
         out,
@@ -862,7 +955,11 @@ pub fn run(argv: &[String]) -> ExitCode {
     //      capture the artifact into a populated AuthConfig.
     //   2. `--bearer` and/or `--cookie` set: compose manually.
     //   3. Neither: no auth.
-    let auth_config: Option<AuthConfig> = if let Some(url) = args.login_url.as_deref() {
+    //
+    // `--csrf-from` is orthogonal — it augments whatever auth_config
+    // results from this block (including no-auth) with a fetched
+    // CSRF token. See the CSRF block below.
+    let mut auth_config: Option<AuthConfig> = if let Some(url) = args.login_url.as_deref() {
         let lcfg = LoginConfig {
             url: url.to_string(),
             form: args.login_form.clone(),
@@ -899,6 +996,38 @@ pub fn run(argv: &[String]) -> ExitCode {
     } else {
         None
     };
+
+    // CSRF fetch — runs AFTER the auth-config block (login session
+    // cookie / bearer / manual cookie all available to the GET) but
+    // BEFORE the scan begins. Order-of-operations contract: login →
+    // CSRF → scan. Composes with every auth method without mutex.
+    if let Some(mut spec) = args.csrf_spec.clone() {
+        if let Some(name) = args.csrf_header.as_deref() {
+            spec.thread_header = name.to_string();
+        }
+        let base = auth_config.clone().unwrap_or_default();
+        let outcome = match runtime.block_on(fetch_csrf(&spec, &base, &target_url, timeout)) {
+            Ok(o) => o,
+            Err(e) => {
+                let _ = writeln!(err, "arcis scan: {e}");
+                return ExitCode::from(2);
+            }
+        };
+        let mut cfg = auth_config.unwrap_or_default();
+        cfg.csrf = Some(outcome.state);
+        // Cookie-strategy double-submit: append the freshly-fetched
+        // `name=value` to whatever cookie the user / login flow already
+        // built. Verbatim no-parse policy — engine + CLI both refuse
+        // to dedupe. HTTP servers honor last-occurrence on the wire,
+        // so the fresh value wins server-side without merge logic.
+        if let Some(extra) = outcome.cookie_to_append {
+            cfg.cookie = match cfg.cookie.take() {
+                Some(existing) => Some(format!("{existing}; {extra}")),
+                None => Some(extra),
+            };
+        }
+        auth_config = Some(cfg);
+    }
 
     let start = Instant::now();
     let results: Vec<RouteResult> = runtime.block_on(async {
@@ -1987,6 +2116,280 @@ mod tests {
         assert_eq!(
             summary.total_vectors,
             summary.total_blocked + summary.total_vulnerable
+        );
+    }
+
+    // ---- --csrf-from / --csrf-header parser + composition ----
+
+    #[test]
+    fn csrf_from_short_form_parses_as_auto_strategy() {
+        use arcis_engine::scan::CsrfStrategy;
+        let a = args(&["--csrf-from", "GET:/csrf"]);
+        let spec = a.csrf_spec.unwrap();
+        assert_eq!(spec.url, "/csrf");
+        assert_eq!(spec.strategy, CsrfStrategy::Auto);
+        // Default thread_header until --csrf-header overrides.
+        assert_eq!(spec.thread_header, "X-CSRF-Token");
+    }
+
+    #[test]
+    fn csrf_from_long_form_parses_json_strategy() {
+        use arcis_engine::scan::CsrfStrategy;
+        let a = args(&["--csrf-from", "GET:/csrf:json:csrfToken"]);
+        let spec = a.csrf_spec.unwrap();
+        assert_eq!(spec.url, "/csrf");
+        assert_eq!(spec.strategy, CsrfStrategy::Json("csrfToken".into()));
+    }
+
+    #[test]
+    fn csrf_from_inline_equals_form_parses() {
+        // Both the space-separated and inline-equals forms parse the
+        // same — mirrors the --bearer / --cookie / --login pattern.
+        let a = args(&["--csrf-from=GET:/csrf"]);
+        assert!(a.csrf_spec.is_some());
+    }
+
+    #[test]
+    fn csrf_from_rejects_invalid_spec() {
+        // Engine `parse_csrf_spec` rejects non-GET methods. CLI must
+        // surface this as exit 2 (parse error), not a runtime failure.
+        let argv: Vec<String> = ["--csrf-from", "POST:/csrf"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(msg.contains("only GET"), "got: {msg}");
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn csrf_header_overrides_default_thread_header_at_run() {
+        // Parser stores the override raw; the `run()` block rewrites
+        // `spec.thread_header` before dispatching `fetch_csrf`. The
+        // parser-level assertion: both flags coexist on `Args`.
+        let a = args(&["--csrf-from", "GET:/csrf", "--csrf-header", "X-XSRF-TOKEN"]);
+        assert!(a.csrf_spec.is_some());
+        assert_eq!(a.csrf_header.as_deref(), Some("X-XSRF-TOKEN"));
+    }
+
+    #[test]
+    fn csrf_header_inline_equals_form_parses() {
+        let a = args(&["--csrf-from=GET:/csrf", "--csrf-header=X-CSRFToken"]);
+        assert_eq!(a.csrf_header.as_deref(), Some("X-CSRFToken"));
+    }
+
+    #[test]
+    fn csrf_header_flag_rejects_empty_and_invalid_header_chars() {
+        // Empty / whitespace-only — same template as other flags.
+        for bad in &["", "   ", "\t\n"] {
+            let argv: Vec<String> = ["--csrf-from", "GET:/csrf", "--csrf-header", bad]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            match parse_args(&argv) {
+                ParseOutcome::Err(msg) => assert!(
+                    msg.contains("--csrf-header cannot be empty"),
+                    "for {bad:?}: {msg}"
+                ),
+                other => panic!("expected Err for {bad:?}, got {other:?}"),
+            }
+        }
+        // Control bytes — CR, LF, NUL, DEL. All must be rejected with
+        // the "no control bytes" error so the engine's silent-skip
+        // posture is never reached.
+        for bad in &[
+            "X-Bad\r\nHeader",
+            "X-Bad\nHeader",
+            "X-Bad\0Header",
+            "X-Bad\x7FHeader",
+        ] {
+            let argv: Vec<String> = ["--csrf-from", "GET:/csrf", "--csrf-header", bad]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            match parse_args(&argv) {
+                ParseOutcome::Err(msg) => {
+                    assert!(msg.contains("no control bytes"), "for {bad:?}: {msg}")
+                }
+                other => panic!("expected Err for {bad:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn csrf_header_without_csrf_from_is_rejected_as_orphan() {
+        // Consistency with --login-form / --login-json: a header
+        // override has no purpose without the source flag, so it must
+        // exit 2 at parse time rather than silently no-op at runtime.
+        let argv: Vec<String> = ["--csrf-header", "X-XSRF-TOKEN"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(
+                    msg.contains("--csrf-header requires --csrf-from"),
+                    "got: {msg}"
+                );
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn csrf_from_composes_with_bearer_without_mutex() {
+        // CSRF is orthogonal to the auth-method axis — no mutex with
+        // --bearer / --cookie / --login. Parses cleanly.
+        let a = args(&["--csrf-from", "GET:/csrf", "--bearer", "test-bearer-xyz"]);
+        assert!(a.csrf_spec.is_some());
+        assert_eq!(a.bearer.as_deref(), Some("test-bearer-xyz"));
+    }
+
+    #[test]
+    fn csrf_from_composes_with_cookie_without_mutex() {
+        let a = args(&["--csrf-from", "GET:/csrf", "--cookie", "session=abc"]);
+        assert!(a.csrf_spec.is_some());
+        assert_eq!(a.cookie.as_deref(), Some("session=abc"));
+    }
+
+    #[test]
+    fn csrf_from_composes_with_login_without_mutex() {
+        // The --login mutex check refers to --bearer / --cookie only.
+        // --csrf-from must coexist with --login: real CSRF endpoints
+        // (Django, Laravel sanctum) require an authenticated session,
+        // so fetching CSRF AFTER login is the load-bearing path.
+        let a = args(&[
+            "--csrf-from",
+            "GET:/csrf",
+            "--login",
+            "http://localhost:5000/auth/login",
+            "--login-form",
+            "user=admin",
+            "--login-form",
+            "pass=hunter2",
+        ]);
+        assert!(a.csrf_spec.is_some());
+        assert_eq!(
+            a.login_url.as_deref(),
+            Some("http://localhost:5000/auth/login")
+        );
+        assert_eq!(a.login_form.len(), 2);
+    }
+
+    #[test]
+    fn help_text_documents_csrf_from_strategies() {
+        // Pin every literal the help text MUST surface so docs stay
+        // load-bearing. Drift here surfaces immediately in this test.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        for lit in [
+            "--csrf-from",
+            "--csrf-header",
+            "STRATEGY = json | cookie | header",
+            "X-CSRF-Token (default)",
+            "POST/PUT/PATCH/DELETE",
+        ] {
+            assert!(s.contains(lit), "help missing literal {lit:?}; got:\n{s}");
+        }
+    }
+
+    #[test]
+    fn json_redacts_csrf_token_value_when_csrf_state_set() {
+        // CLI-level sentinel pin: the threaded CSRF token value MUST
+        // NEVER appear in --json output, and the methods array MUST
+        // surface `csrf-from`. Mirrors the auth-layer sentinel tests
+        // but goes through the CLI's print_json_report — pins the end
+        // -to-end redaction path the user actually sees.
+        use arcis_engine::scan::CsrfState;
+        const CSRF_SENTINEL: &str = "csrf-cli-leaktest-1f9b3e-do-not-emit";
+        let auth = AuthConfig {
+            csrf: Some(CsrfState {
+                token: CSRF_SENTINEL.into(),
+                thread_header: "X-CSRF-Token".into(),
+            }),
+            ..Default::default()
+        };
+        let summary = ScanSummary {
+            routes_total: 0,
+            routes_reachable: 0,
+            total_vectors: 0,
+            total_blocked: 0,
+            total_vulnerable: 0,
+            duration_secs: 0.0,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // Pretty-printer splits the array across lines; pin the
+        // contract without coupling to whitespace.
+        let methods_pos = s.find(r#""methods""#).expect("methods key missing");
+        let csrf_pos = s.find(r#""csrf-from""#).expect("csrf-from missing");
+        assert!(
+            csrf_pos > methods_pos,
+            "csrf-from must appear inside methods array; got:\n{s}"
+        );
+        assert!(
+            !s.contains(CSRF_SENTINEL),
+            "CSRF token value leaked in CLI JSON output: {s}"
+        );
+    }
+
+    #[test]
+    fn json_emits_csrf_from_method_in_methods_array_alongside_bearer() {
+        // Pin the ordering contract at the CLI layer: alphabetical
+        // bearer < cookie < csrf-from when no login is set. Drift
+        // here would silently break downstream JSON consumers.
+        use arcis_engine::scan::CsrfState;
+        let auth = AuthConfig {
+            bearer: Some("test-bearer".into()),
+            cookie: Some("session=abc".into()),
+            csrf: Some(CsrfState {
+                token: "tok".into(),
+                thread_header: "X-CSRF-Token".into(),
+            }),
+            ..Default::default()
+        };
+        let summary = ScanSummary {
+            routes_total: 0,
+            routes_reachable: 0,
+            total_vectors: 0,
+            total_blocked: 0,
+            total_vulnerable: 0,
+            duration_secs: 0.0,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // All three methods present + alphabetical positional ordering.
+        // Whitespace-agnostic — only document positions matter.
+        let bi = s.find(r#""bearer""#).expect("bearer not found");
+        let ci = s.find(r#""cookie""#).expect("cookie not found");
+        let csi = s.find(r#""csrf-from""#).expect("csrf-from not found");
+        assert!(
+            bi < ci,
+            "bearer must appear before cookie; bearer@{bi}, cookie@{ci}"
+        );
+        assert!(
+            ci < csi,
+            "cookie must appear before csrf-from; cookie@{ci}, csrf-from@{csi}"
         );
     }
 }
