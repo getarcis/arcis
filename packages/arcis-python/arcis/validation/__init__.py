@@ -7,7 +7,7 @@ from .schema import SchemaValidator, create_validator
 from .url import validate_url_ssrf, is_url_safe, ValidateUrlOptions, ValidateUrlResult
 from .redirect import validate_redirect, is_redirect_safe, ValidateRedirectOptions, ValidateRedirectResult
 from .file import validate_file, sanitize_filename, is_dangerous_extension, ValidateFileResult
-from .email import validate_email_address, verify_email_mx, is_valid_email_syntax, EmailValidationResult
+from .email import validate_email_address, verify_email_mx, verify_email_mx_async, is_valid_email_syntax, EmailValidationResult
 
 __all__ = [
     "Validator",
@@ -31,6 +31,7 @@ __all__ = [
     "ValidateFileResult",
     "validate_email_address",
     "verify_email_mx",
+    "verify_email_mx_async",
     "is_valid_email_syntax",
     "EmailValidationResult",
 ]
