@@ -143,6 +143,7 @@ from .sanitizers import (
 from .validation.email import (
     validate_email_address,
     verify_email_mx,
+    verify_email_mx_async,
     is_valid_email_syntax,
     EmailValidationResult,
 )
@@ -233,6 +234,7 @@ __all__ = [
     # Email validation (advanced)
     "validate_email_address",
     "verify_email_mx",
+    "verify_email_mx_async",
     "is_valid_email_syntax",
     "EmailValidationResult",
     # Rate limiters
