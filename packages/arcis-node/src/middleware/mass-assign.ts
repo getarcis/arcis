@@ -111,7 +111,7 @@ export function massAssign(options: MassAssignOptions): RequestHandler {
     // No body: nothing to filter. Express sets req.body to {} when the
     // body parser ran but the request had no body, and to undefined
     // when no parser was wired — both flow through unchanged.
-    if (body == null) {
+    if (body === undefined || body === null) {
       next();
       return;
     }
