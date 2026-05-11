@@ -19,6 +19,10 @@ export default defineConfig({
     'logging/index': 'src/logging/index.ts',
     'stores/index': 'src/stores/index.ts',
     'utils/index': 'src/utils/index.ts',
+    // Node CLI binary. package.json's "bin" points at ./dist/cli/arcis.mjs
+    // so the ESM build is the canonical entry. Shebang prepended via
+    // banner below so the file is executable when npm symlinks it.
+    'cli/arcis': 'src/cli/arcis.ts',
   },
   format: ['cjs', 'esm'],
   dts: false,

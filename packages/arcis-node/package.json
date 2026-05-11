@@ -101,6 +101,9 @@
     "dist",
     "scripts/postinstall.cjs"
   ],
+  "bin": {
+    "arcis": "./dist/cli/arcis.mjs"
+  },
   "scripts": {
     "build": "tsup && tsc --emitDeclarationOnly --declaration --declarationMap",
     "dev": "tsup --watch",

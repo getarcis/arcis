@@ -38,6 +38,7 @@ fastapi = ["fastapi>=0.68.0", "starlette>=0.14.0"]
 django = ["django>=3.2"]
 redis = ["redis>=4.0.0"]
 telemetry = ["httpx>=0.24.0"]
+interactive = ["questionary>=2.0.0"]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
