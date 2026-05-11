@@ -1,0 +1,52 @@
+//! HTTP scanner module.
+//!
+//! Direct port of `packages/arcis-python/arcis/cli/scan.py` (and its peers
+//! `payloads.py` + `discovery.py`). Surface mirrors the engine / cli split
+//! used elsewhere in the workspace:
+//!
+//! * `payloads` - attack-vector corpus (categories, default fields,
+//!   blocked-status set). Static data, no I/O.
+//! * `classifier` - `_classify(status, body, payload)` from `scan.py`:
+//!   response shape -> hit / miss / connection-error.
+//! * `discover` - env-file parser, port + control-plane probes,
+//!   source-aware route walk for JS/TS/Python/Go.
+//! * `probe` - async HTTP client (tokio + reqwest) with concurrency
+//!   cap, ordered result collection.
+//!
+//! Output formatting (human / `--json`) lives in `arcis-cli` next to the
+//! clap glue.
+
+pub mod auth;
+pub mod classifier;
+pub mod csrf;
+pub mod discover;
+pub mod login;
+pub mod payloads;
+pub mod probe;
+pub mod repro;
+
+// Test-only mock HTTP server. `pub(crate)` so any scan submodule's
+// `#[cfg(test)] mod tests` can reach it (today `probe`, soon `auth`).
+#[cfg(test)]
+pub(crate) mod test_server;
+
+pub use auth::{AuthConfig, AuthError};
+pub use classifier::{classify, Classification};
+pub use csrf::{
+    fetch_csrf, parse_spec as parse_csrf_spec, CsrfError, CsrfFetchOutcome, CsrfSpec, CsrfState,
+    CsrfStrategy, DEFAULT_THREAD_HEADER as DEFAULT_CSRF_THREAD_HEADER,
+};
+pub use discover::{
+    detect_project_kind, detect_target, discover_routes, env_target, probe_control_plane,
+    probe_dev_ports, read_env_files, sniff_framework, DiscoveredRoute, TargetCandidate,
+    CONTROL_PLANE_URL, DEV_PORTS, ENV_TARGET_KEYS,
+};
+pub use login::{execute_login, LoginConfig, LoginError};
+pub use payloads::{
+    attack_categories, AttackCategory, AttackVector, BLOCKED_STATUS_CODES, DEFAULT_FIELDS,
+};
+pub use probe::{
+    scan_route, send_one, CancelInfo, CancelKind, CancelMode, RouteResult, ScanOptions,
+    VectorResult,
+};
+pub use repro::format_curl;

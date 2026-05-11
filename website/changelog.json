@@ -2,16 +2,37 @@
   "_comment": "Single source of truth for the website's Recently Shipped section + the standalone changelog page. The dashboard's 'Changelog' sidebar link also points at the rendered HTML view. Add new versions to the top of `releases`. Keep summaries one sentence; full bullets in `details`.",
   "releases": [
     {
+      "version": "1.5.0",
+      "date": "2026-05-10",
+      "summary": "10 Node framework adapters, Litestar (Python), chi + Fiber (Go), 9 new attack vectors, AI-era protections, Guards API, native-Rust CLI.",
+      "details": [
+        "10 first-party Node framework adapters as clean subpath imports: `@arcis/node/fastify`, `/koa`, `/hono`, `/nextjs`, `/nestjs`, `/sveltekit`, `/astro`, `/nuxt`, `/bun` join the existing Express adapter. Each keeps the framework SDK as a type-only dependency. non-users pay no runtime cost.",
+        "Litestar adapter for Python (`arcis.litestar.ArcisMiddleware`). Pure-ASGI, type-only `litestar` import. Composes via `DefineMiddleware` and works with any other ASGI host (Starlette, Quart, Hypercorn).",
+        "chi + Fiber Go adapters added; `arcis-go/nethttp` re-export covers users without a third-party router. The Go SDK now ships Gin, Echo, chi, Fiber, and net/http at parity.",
+        "9 new attack vectors wired into block-mode middleware: #21 GraphQL depth-bombs (`graphqlGuard`), #22 LDAP injection, #23 XPath injection, #24 email-header injection, #25 mass assignment (`massAssign`), #26 HTTP method tampering (`methodAllowlist`), #27 response splitting (`responseSplittingGuard`), #30 event-loop overload (`eventLoopProtection`), #31 SSRF DNS TOCTOU (`validateUrlAsync` + `pinnedDnsLookup` + `safeFollowRedirect`).",
+        "AI-era protections at parity across SDKs: 28-signature prompt-injection library covering jailbreak frameworks (DAN/STAN/DUDE), system-prompt extraction, fake `&lt;system&gt;` tags, conversation-replay forgeries, base64/ROT13 smuggling.",
+        "`tokenBudget` middleware for LLM-handler routes: per-key sliding-window token cap with optional per-request size limit, custom estimator hook, `X-Token-Budget-*` response headers.",
+        "Bot corpus expanded to 646 patterns sourced from a curated MIT corpus + supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes).",
+        "Composite helpers: `protectLogin`, `protectSignup`, `protectApi` (Node) and `signup_protection` (Python). Full recipes for protecting common high-risk surfaces.",
+        "Dry-run / `onSanitize` mode: observe attack surface without enforcing.",
+        "Guards API: `arcis.guard({ input, context })` for queue consumers, agent tool handlers, and other non-HTTP contexts where there is no request object.",
+        "Python `verify_email_mx_async`: async-safe MX verification using `dns.asyncresolver`, no longer blocks the event loop on FastAPI handlers.",
+        "CLI ships separately as a single static native-Rust binary: `npm install -g @arcis/cli`. ~30-60ms cold start (was ~700ms), embedded threat database, full offline use, OSV cache layer with 24h TTL. Works regardless of whether your app is Node, Python, or Go.",
+        "Python `arcis` package is now SDK-only. `pip install arcis` no longer puts an `arcis` command on your shell PATH. Migration: switch to `npm install -g @arcis/cli`. The SDK middleware API is unchanged."
+      ],
+      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)", "@arcis/cli (npm, native binary)", "@arcis/mcp"]
+    },
+    {
       "version": "1.4.4",
       "date": "2026-05-02",
       "summary": "Detect-and-block middleware across all 3 SDKs, optional opt-in flag. Block-mode 403s land on the dashboard with full vector attribution.",
       "details": [
         "Block-mode middleware in Node, Python, and Go (`arcis({block:true})` / `ArcisMiddleware(block=True)` / `Config{Block:true}`). Returns 403 + tags telemetry marker on attack-pattern match.",
         "6 missing Python standalone detectors (XSS, SQL, NoSQL, path, command, prototype pollution).",
-        "Cross-SDK `scanThreats()` walker — vector ordering identical across SDKs. SSTI + XXE included.",
+        "Cross-SDK `scanThreats()` walker. vector ordering identical across SDKs. SSTI + XXE included.",
         "FastAPI name-mangling fix: `request.state.__arcis` markers were silently mangled to `_ArcisMiddleware__arcis`. Now uses `_arcis_marker` constant.",
         "Python middleware deny paths (CSRF, bot, signup) tag the marker so dashboard shows the right vector.",
-        "Telemetry queue capped with drop-oldest semantics — sustained dashboard outage no longer OOMs the worker.",
+        "Telemetry queue capped with drop-oldest semantics. Sustained dashboard outage no longer OOMs the worker.",
         "Dashboard ingest: per-field length caps + 4 MB body limit + workspace-switch race fixed.",
         "CLI overhaul: `arcis --list` discovery, live progress bars, summary blocks, `arcis update` command, optional interactive picker.",
         "End-to-end CLI → dashboard wiring: `arcis scan/audit/sca` POST results to the dashboard when env vars are set.",
@@ -36,13 +57,7 @@
     {
       "version": "1.4.2",
       "date": "2026-04-17",
-      "summary": "12 security bypass vectors closed. SSTI and XXE parity added to Go. Unicode path traversal bypass fixed across all SDKs.",
-      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)"]
-    },
-    {
-      "version": "1.4.1",
-      "date": "2026-04-10",
-      "summary": "LDAP injection protection added. Filter operator and DN character escaping across Node.js, Python, and Go.",
+      "summary": "LDAP injection protection across all SDKs, 12 security bypass vectors closed, SSTI and XXE parity added to Go, Unicode path traversal bypass fixed.",
       "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)"]
     },
     {

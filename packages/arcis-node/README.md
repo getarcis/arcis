@@ -2,36 +2,66 @@
 
 [![npm version](https://img.shields.io/npm/v/@arcis/node.svg?label=npm&color=00996D)](https://www.npmjs.com/package/@arcis/node)
 [![npm downloads](https://img.shields.io/npm/dm/@arcis/node.svg?label=downloads&color=00996D)](https://www.npmjs.com/package/@arcis/node)
-[![GitHub stars](https://img.shields.io/github/stars/GagancM/arcis?style=flat&color=00996D)](https://github.com/GagancM/arcis/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 **One-line security middleware for Node.js.**
 
 Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
-**20+ attack vectors covered. 1,451+ tests. Zero dependencies.**
+**20+ attack vectors covered. 1,869+ tests. Zero runtime dependencies.**
 
-## What's new in v1.4.4
+## What's new in v1.5.0
+
+- **10 first-party framework adapters** — Express + Fastify (`@arcis/node/fastify`) + Koa (`@arcis/node/koa`) + Hono (`@arcis/node/hono`) + Next.js (`@arcis/node/nextjs`) + NestJS + SvelteKit + Astro + Nuxt + Bun. Each subpath import keeps the framework SDK as a type-only dependency.
+- **New attack vectors**: GraphQL depth-bombs (`graphqlGuard`), LDAP / XPath / email-header injection wired into block-mode, mass assignment (`massAssign`), HTTP method tampering (`methodAllowlist`), response splitting (`responseSplittingGuard`), event-loop overload (`eventLoopProtection`), SSRF DNS TOCTOU (`validateUrlAsync` + `pinnedDnsLookup` + `safeFollowRedirect`).
+- **AI-era protections**: 28-signature prompt-injection library (`detectPromptInjection`), per-key `tokenBudget` middleware, 646-pattern bot corpus.
+- **Composite helpers**: `protectLogin`, `protectSignup`, `protectApi`.
+- **Dry-run / `onSanitize` mode**: observe attack surface without enforcing.
+- **Guards API**: `arcis.guard({ input, context })` for queue consumers + agent tool handlers.
+
+## What was new in v1.4.4
 
 - **Detect-and-block middleware** — opt in with `arcis({ block: true })`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
 - **Telemetry queue cap** — sustained dashboard outage no longer OOMs the worker. Drop-oldest semantics, optional `onQueueOverflow` callback.
-- **`arcis` CLI binary** — `npx arcis --list`, `arcis update`, `arcis scan/audit/sca` (delegates to the Python `arcis` for canonical implementations).
 - See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
 
 ## Installation
 
 ```bash
-npm install @arcis/node
+npm install @arcis/node dotenv
 ```
+
+> **Install in your backend project, not the frontend.** Arcis is server-side middleware. For separated stacks (Next.js + Express, React + FastAPI, etc.), this package goes in the server folder. A frontend bundle would leak the API key into client JS and the middleware never runs there anyway.
+>
+> **`.env` lives next to your server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_` — those expose values to the browser. Add `.env` to `.gitignore`.
+
+### CLI (audit / scan / sca) ships separately as a native binary
+
+The Arcis SDK ships in this Node package. The Arcis **CLI** scanners — `arcis audit`, `arcis scan`, `arcis sca` — ship as a single static binary distributed on npm:
+
+```bash
+npm install -g @arcis/cli
+arcis --version
+```
+
+The npm SDK package (`@arcis/node`) does not put a CLI on your PATH on its own. Install `@arcis/cli` (separate package) for the scanner. The CLI works regardless of whether your app is Node, Python, or Go.
 
 ## Quick Start
 
 ### With Express (built-in adapter)
 
 ```js
+import express from 'express';
 import { arcis } from '@arcis/node';
+import 'dotenv/config';
 
-app.use(arcis());
+const app = express();
+
+// block: true returns 403 on detected attacks. Defaults to false
+// (sanitize + observe) so existing apps don't break on rollout.
+app.use(arcis({ block: true }));
+
+app.listen(3000);
 // That's it. Sanitization, rate limiting, and security headers are on.
 ```
 

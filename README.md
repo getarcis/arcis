@@ -11,11 +11,10 @@
 [![npm downloads](https://img.shields.io/npm/dm/@arcis/node.svg?label=npm%20downloads&color=00996D)](https://www.npmjs.com/package/@arcis/node)
 [![PyPI version](https://img.shields.io/pypi/v/arcis.svg?label=arcis%20%28PyPI%29&color=00996D)](https://pypi.org/project/arcis/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/arcis.svg?label=pip%20downloads&color=00996D)](https://pypi.org/project/arcis/)
-[![GitHub stars](https://img.shields.io/github/stars/GagancM/arcis?style=flat&color=00996D)](https://github.com/GagancM/arcis/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Arcis is a zero-dependency security middleware for Node.js, Python, and Go. <br />
-One line of code protects your application against XSS, SQL injection, SSRF, CSRF, HPP, path traversal, and 15+ more attack types at runtime.
+**Inside-the-app security middleware. One install. Three languages.** <br />
+Blocks XSS, SQL injection, SSRF, CSRF, prompt injection, bot traffic, and 20+ more attack types before your handler runs. Fully open-source. No cloud dependency. No closed binaries. No agent.
 
 **Install once. Protect everything.**
 
@@ -31,9 +30,9 @@ Arcis sits between incoming requests and your application code. It sanitizes inp
 
 **Why Arcis Exists**
 
-To properly secure a web application today, you need 8-12 separate libraries: `helmet`, `DOMPurify`, `express-rate-limit`, `csurf`, `cors`, `hpp`, `express-validator`, and more. Each has its own API, its own configuration, and its own update cycle. Most developers skip half of them because the setup is too complex.
+Securing a modern backend usually means stitching together eight to twelve separate packages, one per concern (headers, rate limits, CSRF, sanitization, CORS, validation, bot detection, error scrubbing). Each ships its own API, its own config, its own release cycle. Most developers skip half of them because the setup is too complex.
 
-Arcis replaces all of those with one package and one line of code.
+Arcis replaces the patchwork with one package and one line of code, and gives you the same API in three languages.
 
 ## Arcis in Action
 
@@ -54,14 +53,18 @@ At the checkpoint, Arcis:
 
 ## Features
 
-- **One-line setup**: `app.use(arcis())` activates sanitization, rate limiting, and security headers. CSRF, CORS, cookies, bot detection, and error handling are opt-in middleware.
+- **One-line setup**: `app.use(arcis())` activates sanitization, rate limiting, and security headers. CSRF, CORS, cookies, bot detection, prompt-injection guard, token-budget guard, and error handling are opt-in middleware.
 - **20+ attack types**: XSS, SQL/NoSQL injection, command injection, path traversal, SSTI, XXE, SSRF, CSRF, HPP, prototype pollution, header injection, open redirect, LDAP injection.
-- **Zero dependencies**: Core is self-contained with no transitive dependencies. Go framework adapters (Gin, Echo) are optional.
+- **AI-era protections**: `detectPromptInjection` + `sanitizePromptInjection` cover ~28 jailbreak signatures (DAN/STAN/DUDE, system-prompt extraction, fake `<system>` tags, base64 smuggling). `tokenBudget` middleware caps per-key LLM token spend over a sliding window.
+- **635-pattern bot corpus**: Generated from a curated MIT-licensed corpus plus supplementary entries. 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown) with allow/deny lists and behavioral signal detection.
+- **Lean dependencies**: Node + Python SDKs ship with zero runtime dependencies. Go SDK has a stdlib-only core; framework adapters (Gin, Echo, chi, Fiber) are imported on demand.
 - **Three-language parity**: Same API, same behavior, same test results across Node.js, Python, and Go. Enforced by shared test vectors.
-- **Framework-agnostic core**: Sanitizers, validators, and encoders work with plain strings and objects. No framework lock-in. Adapters for Express, FastAPI, Flask, Django, Gin, and Echo.
+- **First-party framework adapters (Node)**: Express, Fastify, Koa, Hono, Next.js, NestJS, SvelteKit, Astro, Nuxt, Bun. Each subpath import (`@arcis/node/fastify`, `@arcis/node/hono`, `@arcis/node/nextjs`, etc.) keeps the framework SDK as a type-only dependency, so non-users pay nothing.
+- **First-party framework adapters (Python)**: FastAPI, Flask, Django, Litestar (and any ASGI host).
+- **First-party framework adapters (Go)**: Gin, Echo, chi, Fiber, plus a stdlib `net/http` helper.
 - **Context-aware output encoding**: `encodeForHtml()`, `encodeForJs()`, `encodeForUrl()`, `encodeForCss()`, `encodeForAttribute()` for safe rendering in every output context.
 - **Supply chain scanner**: `arcis sca` checks lockfiles, `node_modules`, and Python environments against a database of known compromised packages.
-- **Static analysis CLI**: `arcis scan` and `arcis audit` flag unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, weak crypto) across 14 rules.
+- **Static analysis CLI**: `arcis scan` and `arcis audit` flag unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, weak crypto) across 23 rules.
 
 ## Threat Coverage
 
@@ -81,7 +84,10 @@ At the checkpoint, Arcis:
 | **Open Redirect** | Absolute URLs, `javascript:`, protocol-relative, backslash/control char bypass |
 | **CSRF** | Double-submit cookie, token generation and validation |
 | **Rate Limiting** | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
-| **Bot Detection** | 80+ patterns, 7 categories (crawlers, scrapers, AI bots, etc.), behavioral signals |
+| **Bot Detection** | 650 patterns sourced from a curated MIT corpus + supplementary entries, 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. The corpus is also published standalone at [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots). |
+| **MCP server (`@arcis/mcp`)** | Model Context Protocol server exposing `arcis_audit`, `arcis_sca`, `arcis_scan`, and `arcis_detect_prompt_injection` as tools that Cursor, Claude Code, and any MCP-aware agent can call. |
+| **Prompt Injection** | 28 signatures across HIGH/MEDIUM/LOW tiers: jailbreak frameworks, system-prompt extraction, fake `<system>` tags, conversation-replay forgeries, base64/ROT13 smuggling hints |
+| **LLM Token Budget** | Per-key sliding-window token cap with optional per-request size limit. Custom estimator hook for tiktoken or your own counter. `X-Token-Budget-*` headers on every response |
 | **Security Headers** | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control (16 headers) |
 | **Error Leakage** | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
 | **CORS** | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
@@ -122,31 +128,54 @@ At the checkpoint, Arcis:
 ### Install
 
 ```bash
-npm install @arcis/node          # Node.js
-pip install arcis                # Python
-go get github.com/GagancM/arcis  # Go
+npm install @arcis/node          # Node.js SDK
+pip install arcis                # Python SDK
+go get github.com/GagancM/arcis  # Go SDK
+
+npm install -g @arcis/cli        # CLI: audit / scan / sca (single static binary)
 ```
+
+> **Heads up — three rules that catch every newcomer:**
+> 1. **Install in your backend project, not the frontend.** Arcis is server-side middleware. Bundling it into a React / Vite / Next.js client folder leaks the API key into client JS and the middleware never runs there anyway.
+> 2. **`.env` lives next to the server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_` — those expose values to the browser. Add `.env` to `.gitignore`.
+> 3. **The CLI is its own package.** `audit`, `scan`, and `sca` ship as a native binary via `npm install -g @arcis/cli`. It works regardless of whether your app is Node, Python, or Go. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case.)
 
 ### Protect Your App (One Line)
 
 **Node.js (Express):**
 ```js
+import express from 'express';
 import { arcis } from '@arcis/node';
-app.use(arcis());
+import 'dotenv/config';
+
+const app = express();
+// block: true returns 403 on detected attacks. Default is false
+// (sanitize + observe) so existing apps don't break on rollout.
+app.use(arcis({ block: true }));
 // Core active: sanitization, rate limiting, security headers.
 // Optional: corsProtection(), csrfProtection(), botProtection(), cookieSecurity()
 ```
 
 **Python (FastAPI):**
 ```python
+from fastapi import FastAPI
 from arcis import ArcisMiddleware
-app.add_middleware(ArcisMiddleware)
+from dotenv import load_dotenv
+
+load_dotenv()
+app = FastAPI()
+app.add_middleware(ArcisMiddleware, block=True)
 ```
 
 **Python (Flask):**
 ```python
+from flask import Flask
 from arcis import Arcis
-Arcis(app)
+from dotenv import load_dotenv
+
+load_dotenv()
+app = Flask(__name__)
+Arcis(app, block=True)
 ```
 
 **Python (Django):**
@@ -157,12 +186,12 @@ Arcis(app)
 
 **Go (Gin):**
 ```go
-r.Use(arcisgin.Middleware())
+r.Use(arcisgin.Middleware(arcis.Config{Block: true}))
 ```
 
 **Go (Echo):**
 ```go
-e.Use(arcisecho.Middleware())
+e.Use(arcisecho.Middleware(arcis.Config{Block: true}))
 ```
 
 That's it. Your application is now protected against 20+ security flaws.
@@ -174,10 +203,12 @@ That's it. Your application is now protected against 20+ security flaws.
 ### Node.js (Express)
 
 ```js
+import express from 'express';
 import { arcis } from '@arcis/node';
+import 'dotenv/config';
 
 const app = express();
-app.use(arcis());
+app.use(arcis({ block: true }));
 ```
 
 ### Node.js (Fastify, Koa, Hono, etc.)
@@ -207,7 +238,7 @@ app.use('*', async (c, next) => {
 });
 ```
 
-> Built-in adapters for Fastify, Koa, and Hono are on the roadmap. The core functions work today.
+> Built-in adapters now ship for Fastify (`@arcis/node/fastify`), Koa (`@arcis/node/koa`), and Hono (`@arcis/node/hono`) alongside the existing Express, Next.js, NestJS, SvelteKit, Astro, Nuxt, and Bun adapters.
 
 ---
 
@@ -366,7 +397,7 @@ Response sent to client
 | Principle | What It Means |
 |-----------|--------------|
 | **Contract-First** | Specification before code. `API_SPEC.md` → `TEST_VECTORS.json` → implementation. |
-| **Zero Dependencies** | Self-contained. No transitive dependencies. Zero supply chain risk. |
+| **Lean Dependencies** | Node + Python SDKs ship with zero runtime dependencies. Go SDK has a stdlib-only core; framework adapters (Gin, Echo) are imported on demand. |
 | **Fail Open** | If infrastructure (Redis) fails, allow requests through. Availability > denial. |
 | **Defensive Defaults** | Secure out of the box. Users opt OUT of protection, not in. |
 | **Remove Then Encode** | Strip dangerous patterns before encoding. Encoding first hides them from pattern matching. |
@@ -383,7 +414,7 @@ Response sent to client
 | **Python** | Flask, FastAPI, Django | Work standalone | Stable |
 | **Go** | net/http, Gin, Echo | Work standalone | Beta |
 
-**Node.js:** Built-in adapters for Fastify, Koa, and Hono are planned. The core functions already work with these frameworks today.
+**Node.js:** First-party adapters ship for Express, Fastify, Koa, Hono, Next.js, NestJS, SvelteKit, Astro, Nuxt, and Bun. Import any of them via subpath (`@arcis/node/fastify`, `@arcis/node/hono`, etc.) — framework types stay compile-time-only.
 
 ---
 
@@ -393,10 +424,10 @@ All SDKs are tested against a shared set of test vectors (`TEST_VECTORS.json`) t
 
 | SDK | Tests | Framework | Status |
 |-----|-------|-----------|--------|
-| Node.js | 1,298 | vitest | All passing |
-| Python | 1,011 | pytest | All passing |
-| Go | 483+ | go test -race | All passing |
-| **Total** | **2,792+** | | |
+| Node.js | 1,869 | vitest | All passing |
+| Python | 1,219 | pytest | All passing |
+| Go | 300+ | go test -race | All passing |
+| **Total** | **3,388+** | | |
 
 ---
 
@@ -433,8 +464,8 @@ The script is stripped. The rest of the comment is saved normally.
 | Bot detection | Yes | No | No | No | Yes | Yes |
 | Input validation | Yes | No | No | No | No | No |
 | SSRF prevention | Yes | No | No | No | No | Yes |
-| Multi-language | 3 SDKs | Node only | Browser only | Node only | 4 SDKs | Node + Python |
-| Zero dependencies | Yes | Yes | No | No | No | No |
+| Multi-language | 3 SDKs | Node only | Browser only | Node only | Node + Python | Node + Python |
+| Lean core dependencies | Yes | Yes | No | No | No | No |
 | Open Source | Yes | Yes | Yes | Yes | Freemium | Paid |
 | CLI scanner | Yes | No | No | No | No | Yes |
 
@@ -442,14 +473,18 @@ The script is stripped. The rest of the comment is saved normally.
 
 ## Roadmap
 
-### Completed (v1.0 to v1.4)
+### Completed (v1.0 through v1.5)
 
 - 20+ security flaw coverage (runtime + detection)
 - 3 SDKs (Node.js, Python, Go) at full parity
-- 7 framework adapters (Express, FastAPI, Flask, Django, Gin, Echo, net/http)
+- **12 framework adapters**: Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono (Node), FastAPI, Flask, Django (Python), Gin, Echo, net/http (Go)
+- **635-pattern bot corpus** (was 80) with allow/deny categorization
+- **AI/LLM prompt-injection detection** across all 3 SDKs (28 signatures, 3 severity tiers)
+- **`tokenBudget` middleware** for per-key LLM token spend caps
 - 3 rate limiting algorithms (fixed, sliding, token bucket)
 - Redis store support
-- `arcis scan` + `arcis audit` + `arcis sca` CLI tools
+- `arcis scan` + `arcis audit` + `arcis sca` CLI tools (native Rust, single binary via `npm install -g @arcis/cli`)
+- Runtime telemetry stream to a self-hosted control plane (opt-in)
 - Context-aware output encoding (HTML body, attributes, JS, CSS, URL)
 - COOP, CORP, COEP cross-origin isolation headers
 - HPP (HTTP Parameter Pollution) protection
@@ -457,14 +492,13 @@ The script is stripped. The rest of the comment is saved normally.
 - LDAP injection protection
 - SSTI and XXE sanitization across all 3 SDKs
 - Security bypass hardening (Unicode normalization, decimal/octal IP encoding, surrogate pairs)
-- 2,792+ tests, published on npm + PyPI
+- ~3,388+ tests across 3 SDKs, published on npm + PyPI
 
 ### Planned
 
+- Guards API: protect non-HTTP contexts (jobs, queues, agent tool handlers, gRPC) with the same Arcis decisions
 - Security Score: `arcis scan --score` returns an actionable 0-100 score
-- AI Crawler Detection: block GPTBot, ClaudeBot, etc.
 - Advanced Rate Limiting: IPv6 subnet grouping, penalty/reward, dynamic limits
-- Runtime Telemetry: dashboard showing attacks blocked, top vectors, trending threats
 - GitHub Action: automatic security checks on every PR
 - VS Code Extension: real-time security warnings while coding
 
@@ -481,7 +515,7 @@ Arcis is a strong defense layer, but it is not a silver bullet:
 | Concern | Why Middleware Isn't Enough | What You Still Need |
 |---------|---------------------------|---------------------|
 | SQL injection | Arcis detects and strips known SQL patterns from input. It does **not** enforce parameterized queries. Regex detection is a complementary layer, not a substitute. | Always use parameterized queries or an ORM. Arcis is defense-in-depth, not your primary SQL defense. |
-| Rate limiting | Arcis rate limits at the application layer (per-process, with optional Redis for distributed). It does **not** replace proxy-level or load-balancer-level limiting. | Use nginx/Cloudflare/ALB rate limiting as your first line. Arcis catches what slips through. |
+| Rate limiting | Arcis rate limits at the application layer (per-process, with optional Redis for distributed). It does **not** replace proxy-level or load-balancer-level limiting. | Use your CDN, reverse proxy, or load balancer rate limiting as your first line. Arcis catches what slips through. |
 | Business logic flaws | Only your code knows your business rules | Application-specific validation |
 | Authentication | Arcis protects auth flows but doesn't implement auth | Use a proper auth library (Passport, Auth0, etc.) |
 | Secrets management | Infrastructure concern, not middleware | Use environment variables or a secrets manager |
@@ -489,13 +523,25 @@ Arcis is a strong defense layer, but it is not a silver bullet:
 
 ### Sanitization Approach
 
-Arcis uses regex-based pattern matching for attack detection. This is a deliberate trade-off: zero dependencies and minimal overhead, at the cost of not having a full HTML/SQL parser.
+Arcis uses regex-based pattern matching for attack detection. This is a deliberate trade-off: lean dependency footprint and minimal overhead, at the cost of not having a full HTML/SQL parser.
 
 **SQL injection specifically:** Arcis strips known SQL attack patterns from user input as a defense-in-depth layer. This is **not a replacement for parameterized queries**. It is an additional barrier. Your database layer should always use parameterized queries or a safe ORM.
 
-**Rate limiting specifically:** Application-level rate limiting protects against floods reaching your application code. For high-traffic production systems, this should complement proxy-level or CDN-level rate limiting (nginx, Cloudflare, AWS ALB), not replace it. Arcis supports Redis-backed distributed rate limiting for multi-instance deployments.
+**Rate limiting specifically:** Application-level rate limiting protects against floods reaching your application code. For high-traffic production systems, this should complement edge-level rate limiting at your CDN, reverse proxy, or load balancer, not replace it. Arcis supports Redis-backed distributed rate limiting for multi-instance deployments.
 
 ---
+
+## Example apps
+
+Five public clone-and-run repos that show Arcis blocking real attack payloads end-to-end. Each one is a small server + an `attack` script that fires 8 payloads (XSS, SQL injection, NoSQL, path traversal, command injection, SSTI, XXE, plus a safe-input control) and reports which ones Arcis blocked.
+
+| Repo | Stack | Adapter |
+|---|---|---|
+| [`getarcis/arcis-example-express`](https://github.com/getarcis/arcis-example-express) | Node + Express | `arcis()` |
+| [`getarcis/arcis-example-nestjs`](https://github.com/getarcis/arcis-example-nestjs) | Node + NestJS | `@arcis/node/nestjs` |
+| [`getarcis/arcis-example-bun`](https://github.com/getarcis/arcis-example-bun) | Bun + Hono | `@arcis/node/bun` |
+| [`getarcis/arcis-example-fastapi`](https://github.com/getarcis/arcis-example-fastapi) | Python + FastAPI | `arcis.ArcisMiddleware` |
+| [`getarcis/arcis-example-gin`](https://github.com/getarcis/arcis-example-gin) | Go + Gin | `arcisgin.Middleware` |
 
 ## Documentation
 

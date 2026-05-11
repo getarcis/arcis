@@ -1,0 +1,74 @@
+# Arcis Rust workspace.
+#
+# Three crates:
+#   * arcis-cli     — the `arcis` binary (clap dispatcher)
+#   * arcis-engine  — shared logic (sanitizers, rule matching, version parser).
+#   * arcis-data    — embedded JSON data (threat DB, audit rules, attack
+#                     vectors) loaded via include_bytes!().
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/arcis-cli",
+    "crates/arcis-engine",
+    "crates/arcis-data",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Gagan CM <cm.g@northeastern.edu>"]
+repository = "https://github.com/Gagancm/arcis"
+description = "Native Rust CLI for Arcis security middleware"
+rust-version = "1.75"
+
+[workspace.dependencies]
+arcis-engine = { path = "crates/arcis-engine", version = "0.1.0" }
+arcis-data = { path = "crates/arcis-data", version = "0.1.0" }
+
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+# `preserve_order` flips serde_json's internal Map from BTreeMap to
+# IndexMap so we can emit JSON with explicit field ordering. Required
+# for byte-equal parity with Python's json.dumps (which preserves dict
+# insertion order on 3.7+).
+serde_json = { version = "1.0", features = ["preserve_order"] }
+anyhow = "1.0"
+thiserror = "2.0"
+regex = "1.10"
+# Async stack for `arcis scan`. `rt-multi-thread` matches Python's
+# ThreadPoolExecutor model; `macros` gives us `tokio::test`.
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+# `rustls-tls` keeps us off system OpenSSL (no Windows ssl headers
+# needed). `json` enables ergonomic body construction but we mostly hand
+# over raw bytes for parity with http.client output.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Cross-platform home-dir resolution for the OSV cache file at
+# `~/.arcis/osv-cache.json`. cli-sca.md Phase B (designed 2026-05-07).
+dirs = "5.0"
+# SHA-256 for deterministic finding IDs in `arcis audit`. Inputs are
+# `(rule_id, relpath, line, snippet)`; first 8 bytes (16 hex chars) form
+# the fingerprint. cli-audit.md Phase B item 10.
+sha2 = "0.10"
+# `.arcisignore` + `.gitignore` path exclusion for `arcis audit`
+# (cli-audit.md Phase B item 7). BurntSushi's crate, the same one
+# ripgrep uses; gives us native gitignore stacking semantics including
+# `**`, negation (`!important.js`), nested per-directory files, and
+# `.git/info/exclude`. `walkdir` stays in the manifest unused for now
+# per the cross-track ADD-ONLY rule; will be GC'd when all tracks merge.
+ignore = "0.4"
+# YAML deserialization for `pnpm-lock.yaml` graph reconstruction
+# (cli-sca.md Phase C item 5). `serde_yml` is the actively-maintained
+# fork of the deprecated `serde_yaml` crate (David Tolnay archived
+# `serde_yaml` in 2024). Drop-in API for our use case (decode a stable
+# YAML schema). Declared in workspace dependencies in commit 1 so the
+# pnpm builder in commit 2 doesn't churn Cargo.lock again.
+serde_yml = "0.0.12"
+
+[profile.release]
+# Smaller, faster binary. The tradeoffs (longer compile, no incremental in
+# release) are fine for a tool we ship.
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

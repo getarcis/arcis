@@ -1,6 +1,5 @@
 """Tests for context-aware encoding functions."""
 
-import pytest
 from arcis.sanitizers.encode import (
     encode_for_html,
     encode_for_attribute,

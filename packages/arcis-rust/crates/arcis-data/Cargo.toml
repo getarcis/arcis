@@ -1,0 +1,13 @@
+[package]
+name = "arcis-data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Embedded JSON data for the Arcis CLI: threat DB, audit rules, attack vectors. Same files the Python CLI ships with."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

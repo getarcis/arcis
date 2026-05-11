@@ -14,8 +14,8 @@ func TestSecurityHeaders_DefaultHeaders(t *testing.T) {
 
 	required := map[string]string{
 		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":       "DENY",
-		"X-XSS-Protection":      "0",
+		"X-Frame-Options":        "DENY",
+		"X-XSS-Protection":       "0",
 	}
 
 	for header, expected := range required {

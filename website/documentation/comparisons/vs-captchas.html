@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+
+  <title>Arcis vs CAPTCHAs · Arcis Docs</title>
+  <meta name="description" content="An honest, side-by-side comparison of Arcis and CAPTCHA-based bot defense. Friction-on-everyone vs pattern-based filtering: when each one fits.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../../#how-it-works">How It Works</a></li>
+        <li><a href="../../#languages">Languages</a></li>
+        <li><a href="../../#threats">Threats</a></li>
+        <li><a href="../../#comparison">Compare</a></li>
+        <li><a href="../">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="../getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="../">Introduction</a></li>
+        <li><a href="../getting-started.html">Getting Started</a></li>
+      </ul>
+
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="../frameworks.html">Framework Adapters</a></li>
+        <li><a href="../configuration.html">Configuration</a></li>
+        <li><a href="../attack-vectors.html">Attack Vectors</a></li>
+      </ul>
+
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="../api-reference.html">API Reference</a></li>
+        <li><a href="../cli.html">CLI Tools</a></li>
+      </ul>
+
+      <h3>Comparisons</h3>
+      <ul>
+        <li><a href="./vs-arcjet.html">vs Arcjet</a></li>
+        <li><a href="./vs-aikido.html">vs Aikido Zen</a></li>
+        <li><a href="./vs-snyk.html">vs Snyk</a></li>
+        <li><a href="./vs-cloudflare-waf.html">vs Cloudflare WAF</a></li>
+        <li><a href="./vs-captchas.html" class="active">vs CAPTCHAs</a></li>
+      </ul>
+
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb">Docs / Comparisons</div>
+      <h1>Arcis vs CAPTCHAs</h1>
+      <p class="lead">
+        CAPTCHAs make every visitor prove they're human before reaching your form. Arcis identifies bots from the request itself and only blocks the ones that match. The first taxes your users; the second filters silently.
+      </p>
+
+      <h2 id="tldr">TL;DR</h2>
+      <p>CAPTCHAs (reCAPTCHA, hCaptcha, Cloudflare Turnstile, Friendly Captcha, etc.) charge a friction tax to every user to filter out bots. Arcis uses request signals (User-Agent corpus, header consistency, behavioral signals) to identify bots without a challenge. CAPTCHAs catch sophisticated headless browsers that mimic human request patterns; Arcis catches the long tail of automated traffic without burdening real users. Most signup, login, and high-value forms benefit from both.</p>
+
+      <h2 id="where-they-win">Where CAPTCHAs win</h2>
+      <ul>
+        <li><strong>Defense against high-effort attackers.</strong> A determined bot operator can spoof a Chrome User-Agent, send realistic headers, and rotate residential IPs. Pattern-based detection misses them. A solved CAPTCHA challenge proves a human (or a CAPTCHA-solving service) was in the loop.</li>
+        <li><strong>Risk-scoring on close calls.</strong> Modern CAPTCHAs (reCAPTCHA v3, Turnstile, hCaptcha) blend behavioral signals into a risk score even before the explicit challenge. For ambiguous traffic, that score is a strong signal.</li>
+        <li><strong>Plug-and-play across stacks.</strong> Drop in a script tag and a backend verification call; works the same regardless of language or framework.</li>
+      </ul>
+
+      <h2 id="where-we-win">Where Arcis wins</h2>
+      <ul>
+        <li><strong>Zero user friction.</strong> CAPTCHAs make every visitor pause to prove humanity. That cost shows up in measurable conversion drops on signup and checkout flows. Arcis runs invisibly: real users never see a challenge, bots get blocked silently.</li>
+        <li><strong>No third-party dependency on the request path.</strong> CAPTCHAs introduce a script load and a verification round trip to a vendor (Google, Cloudflare, hCaptcha). Arcis runs in your process. No external dependency, no vendor downtime affecting your form, no privacy posture to defend (CAPTCHAs are tracking pixels in disguise; Friendly Captcha is the GDPR-friendly counter-example).</li>
+        <li><strong>Catches bots beyond the form.</strong> CAPTCHAs only protect endpoints where you explicitly drop a challenge. API endpoints, RSS feeds, search, scraping targets: those rarely get CAPTCHAs because the friction is unacceptable. Arcis covers every request.</li>
+        <li><strong>646 patterns + behavioral signals included.</strong> The bot corpus catches search engines, scrapers, headless browsers, AI crawlers, and CLI tools without configuration. Behavioral signals (missing browser headers) catch unknown bots that don't bother spoofing properly.</li>
+      </ul>
+
+      <h2 id="capability-matrix">Capability matrix</h2>
+      <p>Comparison reflects current public state of both approaches as of 2026-05-10.</p>
+
+      <div class="comparison-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>CAPTCHAs (reCAPTCHA, hCaptcha, Turnstile)</th>
+              <th>Arcis</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>User friction</td><td>Yes (visible challenge or invisible round trip)</td><td>None</td></tr>
+            <tr><td>Conversion impact</td><td>Measurable drop on signup / checkout</td><td>None</td></tr>
+            <tr><td>Catches headless browsers spoofing UA</td><td>Yes (behavioral risk score)</td><td>Partial (catches obvious cases via missing-headers signals)</td></tr>
+            <tr><td>Catches well-known bots (Googlebot, scrapers, CLI)</td><td>Yes if challenged</td><td>Yes (646 patterns)</td></tr>
+            <tr><td>Coverage scope</td><td>Endpoints with explicit challenges</td><td>Every request</td></tr>
+            <tr><td>Third-party dependency</td><td>Yes (Google / Cloudflare / hCaptcha)</td><td>None</td></tr>
+            <tr><td>Privacy posture</td><td>Most are tracking pixels (Turnstile and Friendly Captcha are exceptions)</td><td>Self-contained, no external calls</td></tr>
+            <tr><td>Backend verification step</td><td>Required (per-request API call)</td><td>None</td></tr>
+            <tr><td>Other protections bundled</td><td>No (bot only)</td><td>Yes (rate limit, sanitize, headers, prompt injection, etc.)</td></tr>
+            <tr><td>License</td><td>Commercial (free tiers with usage limits, paid plans for high volume)</td><td>MIT, open source</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="how-to-choose">How to choose</h2>
+      <p>This is a layered question, not an either-or.</p>
+
+      <p><strong>Use Arcis as the always-on baseline.</strong> Bot corpus + behavioral signals catch the 90% case (scrapers, scanners, broken clients, obvious automation) on every endpoint, with zero user friction.</p>
+
+      <p><strong>Add a CAPTCHA only on high-stakes flows.</strong> Account creation, payment, password reset, contact form. The friction tax is justified when the cost of bot abuse (fraudulent accounts, payment fraud, spam) exceeds the conversion drop. For high-volume reads, search APIs, and content endpoints, CAPTCHAs are usually the wrong call.</p>
+
+      <p><strong>If you have to pick only one:</strong></p>
+      <ul>
+        <li>Pick Arcis if you have a content-heavy site with many endpoints, an API surface, or a measurable conversion-sensitive funnel. The friction tax is worse than the residual bot traffic.</li>
+        <li>Pick a CAPTCHA if the only thing you're protecting is a single high-value form and the bot operators are sophisticated enough that pattern matching alone is insufficient.</li>
+      </ul>
+
+      <h2 id="bottom-line">Bottom line</h2>
+      <p>CAPTCHAs charge every visitor; Arcis only blocks bots. For most surfaces (APIs, content, search), Arcis is the right baseline. For the highest-value form on your site, layer in a CAPTCHA on top.</p>
+
+      <hr>
+      <p><a href="./vs-cloudflare-waf.html">← Previous: Arcis vs Cloudflare WAF</a> · <a href="./vs-arcjet.html">Back to start →</a></p>
+
+      <footer class="docs-footer">
+        <div class="docs-footer-inner">
+          <p class="footer-tagline">Inside-the-app security middleware. One install. Three languages. Fully open-source.</p>
+          <p class="footer-links">
+            <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a> ·
+            <a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm</a> ·
+            <a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI</a>
+          </p>
+        </div>
+      </footer>
+    </main>
+
+  </div>
+</body>
+</html>

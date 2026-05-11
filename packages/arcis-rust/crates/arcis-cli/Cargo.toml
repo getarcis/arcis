@@ -1,0 +1,31 @@
+[package]
+name = "arcis-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Native Rust CLI binary for Arcis security middleware. Strangler-fig replacement for the Python CLI; see documents/plans/rust-cli.md."
+
+# The crate name is `arcis-cli` for cargo, but the produced binary is named
+# `arcis` so users invoke `arcis scan` / `arcis audit` / `arcis sca`.
+[[bin]]
+name = "arcis"
+path = "src/main.rs"
+
+[dependencies]
+arcis-engine = { workspace = true }
+arcis-data = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+# Async runtime for `arcis scan`. Runtime is constructed once in scan.rs
+# and dropped after the run; the rest of the CLI stays synchronous.
+tokio = { workspace = true }
+
+[dev-dependencies]
+# End-to-end CLI tests under `tests/` need scratch dirs for fixtures
+# and baseline files. Already present in `arcis-engine`'s dev-deps;
+# adding here for the new `tests/audit_baseline.rs` integration suite
+# (cli-audit.md item 9b).
+tempfile = "3.10"

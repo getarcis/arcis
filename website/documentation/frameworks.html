@@ -11,7 +11,7 @@
     gtag('config', 'G-TGPW4N5TR2');
   </script>
   <title>Framework Adapters · Arcis Docs</title>
-  <meta name="description" content="Use Arcis with Express, FastAPI, Flask, Django, Gin, Echo, and net/http.">
+  <meta name="description" content="Use Arcis with Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono, FastAPI, Flask, Django, Gin, Echo, and net/http.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -61,6 +61,14 @@
         <li><a href="./api-reference.html">API Reference</a></li>
         <li><a href="./cli.html">CLI Tools</a></li>
       </ul>
+      <h3>Comparisons</h3>
+      <ul>
+        <li><a href="./comparisons/vs-arcjet.html">vs Arcjet</a></li>
+        <li><a href="./comparisons/vs-aikido.html">vs Aikido Zen</a></li>
+        <li><a href="./comparisons/vs-snyk.html">vs Snyk</a></li>
+        <li><a href="./comparisons/vs-cloudflare-waf.html">vs Cloudflare WAF</a></li>
+        <li><a href="./comparisons/vs-captchas.html">vs CAPTCHAs</a></li>
+      </ul>
       <h3>Resources</h3>
       <ul>
         <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
@@ -78,31 +86,145 @@
         Arcis has built-in adapters for the most popular web frameworks. The core functions are framework-agnostic, so Arcis also works with any framework that isn't listed here.
       </p>
 
+      <div class="adapter-index">
+        <h3 style="margin-top: 0;">Jump to a framework</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem;">
+          <a href="#express" class="btn-outline" style="font-size: 0.85rem;">Express</a>
+          <a href="#fastify" class="btn-outline" style="font-size: 0.85rem;">Fastify</a>
+          <a href="#koa" class="btn-outline" style="font-size: 0.85rem;">Koa</a>
+          <a href="#hono" class="btn-outline" style="font-size: 0.85rem;">Hono</a>
+          <a href="#nextjs" class="btn-outline" style="font-size: 0.85rem;">Next.js</a>
+          <a href="#nestjs" class="btn-outline" style="font-size: 0.85rem;">NestJS</a>
+          <a href="#sveltekit" class="btn-outline" style="font-size: 0.85rem;">SvelteKit</a>
+          <a href="#astro" class="btn-outline" style="font-size: 0.85rem;">Astro</a>
+          <a href="#nuxt" class="btn-outline" style="font-size: 0.85rem;">Nuxt</a>
+          <a href="#bun" class="btn-outline" style="font-size: 0.85rem;">Bun</a>
+          <a href="#fastapi" class="btn-outline" style="font-size: 0.85rem;">FastAPI</a>
+          <a href="#flask" class="btn-outline" style="font-size: 0.85rem;">Flask</a>
+          <a href="#django" class="btn-outline" style="font-size: 0.85rem;">Django</a>
+          <a href="#litestar" class="btn-outline" style="font-size: 0.85rem;">Litestar</a>
+          <a href="#gin" class="btn-outline" style="font-size: 0.85rem;">Gin</a>
+          <a href="#echo" class="btn-outline" style="font-size: 0.85rem;">Echo</a>
+          <a href="#chi" class="btn-outline" style="font-size: 0.85rem;">chi</a>
+          <a href="#fiber" class="btn-outline" style="font-size: 0.85rem;">Fiber</a>
+          <a href="#net-http" class="btn-outline" style="font-size: 0.85rem;">net/http</a>
+        </div>
+      </div>
+
+      <div class="callout note">
+        <p><strong>Install in your backend project, not the frontend.</strong> All the snippets below are server-side. The <code>.env</code> with <code>ARCIS_KEY</code> goes next to the server entry point. Do not prefix the key with <code>NEXT_PUBLIC_</code>, <code>VITE_</code>, or <code>REACT_APP_</code>. Those bundle into client JS.</p>
+      </div>
+
       <h2 id="express">Express (Node.js)</h2>
       <p>The primary Node.js adapter. Works with Express 4 and 5.</p>
 <pre><code><span class="k">import</span> express <span class="k">from</span> <span class="s">'express'</span><span class="p">;</span>
 <span class="k">import</span> <span class="p">{</span> arcis <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+<span class="k">import</span> <span class="s">'dotenv/config'</span><span class="p">;</span>
 
 <span class="k">const</span> app = <span class="f">express</span><span class="p">();</span>
 app.<span class="f">use</span><span class="p">(</span>express.<span class="f">json</span><span class="p">());</span>
-app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">());</span></code></pre>
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcis</span><span class="p">({</span> block<span class="p">:</span> <span class="k">true</span> <span class="p">}));</span></code></pre>
 
-      <h2 id="fastify-koa-hono">Fastify / Koa / Hono (Node.js)</h2>
-      <p>Built-in adapters are on the roadmap. Today, use the core sanitize functions directly:</p>
-<pre><code><span class="c">// Fastify</span>
-<span class="k">import</span> <span class="p">{</span> sanitizeObject <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+      <h2 id="nestjs">NestJS (Node.js)</h2>
+      <p>First-party adapter at <code>@arcis/node/nestjs</code>. <code>@nestjs/common</code> is type-only, so non-NestJS users pay nothing.</p>
+<pre><code><span class="c">// app.module.ts</span>
+<span class="k">import</span> <span class="p">{</span> Module<span class="p">,</span> MiddlewareConsumer<span class="p">,</span> NestModule <span class="p">}</span> <span class="k">from</span> <span class="s">'@nestjs/common'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> ArcisModule<span class="p">,</span> ArcisMiddleware <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/nestjs'</span><span class="p">;</span>
 
-fastify.<span class="f">addHook</span><span class="p">(</span><span class="s">'preHandler'</span><span class="p">,</span> <span class="k">async</span> <span class="p">(</span>req<span class="p">,</span> reply<span class="p">)</span> <span class="k">=></span> <span class="p">{</span>
-  <span class="k">if</span> <span class="p">(</span>req.body<span class="p">)</span> req.body = <span class="f">sanitizeObject</span><span class="p">(</span>req.body<span class="p">);</span>
-  <span class="k">if</span> <span class="p">(</span>req.query<span class="p">)</span> req.query = <span class="f">sanitizeObject</span><span class="p">(</span>req.query<span class="p">);</span>
+@<span class="f">Module</span><span class="p">({</span> imports<span class="p">:</span> <span class="p">[</span>ArcisModule.<span class="f">forRoot</span><span class="p">({</span> block<span class="p">:</span> <span class="k">true</span> <span class="p">})]</span> <span class="p">})</span>
+<span class="k">export class</span> AppModule <span class="k">implements</span> NestModule <span class="p">{</span>
+  <span class="f">configure</span><span class="p">(</span>consumer<span class="p">:</span> MiddlewareConsumer<span class="p">)</span> <span class="p">{</span>
+    consumer.<span class="f">apply</span><span class="p">(</span>ArcisMiddleware<span class="p">).</span><span class="f">forRoutes</span><span class="p">(</span><span class="s">'*'</span><span class="p">);</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre>
+
+      <h2 id="sveltekit">SvelteKit (Node.js)</h2>
+      <p>First-party adapter at <code>@arcis/node/sveltekit</code>. Returns a SvelteKit <code>Handle</code> for <code>src/hooks.server.ts</code>.</p>
+<pre><code><span class="c">// src/hooks.server.ts</span>
+<span class="k">import</span> <span class="p">{</span> arcisHandle <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/sveltekit'</span><span class="p">;</span>
+
+<span class="k">export const</span> handle = <span class="f">arcisHandle</span><span class="p">({</span>
+  rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span>
+  bot<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+<span class="p">});</span>
+
+<span class="c">// Or compose with other handles via SvelteKit's `sequence` helper:</span>
+<span class="c">// import { sequence } from '@sveltejs/kit/hooks';</span>
+<span class="c">// export const handle = sequence(arcisHandle(), authHandle);</span></code></pre>
+
+      <h2 id="astro">Astro (Node.js)</h2>
+      <p>First-party adapter at <code>@arcis/node/astro</code>. Returns an Astro <code>MiddlewareHandler</code> for <code>src/middleware.ts</code>.</p>
+<pre><code><span class="c">// src/middleware.ts</span>
+<span class="k">import</span> <span class="p">{</span> onRequest <span class="k">as</span> arcisOnRequest <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/astro'</span><span class="p">;</span>
+
+<span class="k">export const</span> onRequest = <span class="f">arcisOnRequest</span><span class="p">({</span>
+  rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span>
+  bot<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+<span class="p">});</span></code></pre>
+
+      <h2 id="nuxt">Nuxt (Node.js, h3)</h2>
+      <p>First-party adapter at <code>@arcis/node/nuxt</code>. Wrap with <code>defineEventHandler</code> in a Nitro server middleware.</p>
+<pre><code><span class="c">// server/middleware/arcis.ts</span>
+<span class="k">import</span> <span class="p">{</span> defineEventHandler <span class="p">}</span> <span class="k">from</span> <span class="s">'h3'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> arcisHandler <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/nuxt'</span><span class="p">;</span>
+
+<span class="k">export default</span> <span class="f">defineEventHandler</span><span class="p">(</span><span class="f">arcisHandler</span><span class="p">({</span>
+  rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span>
+<span class="p">}));</span></code></pre>
+
+      <h2 id="fastify">Fastify (Node.js)</h2>
+      <p>First-party async plugin at <code>@arcis/node/fastify</code>. Registers <code>onRequest</code> (rate-limit + bot) and <code>onSend</code> (security headers).</p>
+<pre><code><span class="k">import</span> Fastify <span class="k">from</span> <span class="s">'fastify'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> arcisFastify <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/fastify'</span><span class="p">;</span>
+
+<span class="k">const</span> app = <span class="f">Fastify</span><span class="p">();</span>
+<span class="k">await</span> app.<span class="f">register</span><span class="p">(</span>arcisFastify<span class="p">,</span> <span class="p">{</span> rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span> bot<span class="p">:</span> <span class="k">true</span> <span class="p">});</span></code></pre>
+
+      <h2 id="koa">Koa (Node.js)</h2>
+      <p>First-party adapter at <code>@arcis/node/koa</code>. <code>(ctx, next)</code> middleware shape: rate-limit + bot before <code>next()</code>; security headers after.</p>
+<pre><code><span class="k">import</span> Koa <span class="k">from</span> <span class="s">'koa'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> arcisKoa <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/koa'</span><span class="p">;</span>
+
+<span class="k">const</span> app = <span class="k">new</span> <span class="f">Koa</span><span class="p">();</span>
+app.<span class="f">use</span><span class="p">(</span><span class="f">arcisKoa</span><span class="p">({</span> rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span> bot<span class="p">:</span> <span class="k">true</span> <span class="p">}));</span></code></pre>
+
+      <h2 id="hono">Hono (Node.js, Workers, Deno, Bun)</h2>
+      <p>First-party adapter at <code>@arcis/node/hono</code>. Web Fetch native, type-only <code>hono</code> import — runs on any runtime Hono targets (Cloudflare Workers, Deno Deploy, Bun, AWS Lambda, Node).</p>
+<pre><code><span class="k">import</span> <span class="p">{</span> Hono <span class="p">}</span> <span class="k">from</span> <span class="s">'hono'</span><span class="p">;</span>
+<span class="k">import</span> <span class="p">{</span> arcisHono <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/hono'</span><span class="p">;</span>
+
+<span class="k">const</span> app = <span class="k">new</span> <span class="f">Hono</span><span class="p">();</span>
+app.<span class="f">use</span><span class="p">(</span><span class="s">'*'</span><span class="p">,</span> <span class="f">arcisHono</span><span class="p">({</span> rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span> bot<span class="p">:</span> <span class="k">true</span> <span class="p">}));</span>
+app.<span class="f">get</span><span class="p">(</span><span class="s">'/'</span><span class="p">,</span> <span class="p">(</span>c<span class="p">)</span> <span class="k">=></span> c.<span class="f">text</span><span class="p">(</span><span class="s">'Hello'</span><span class="p">));</span></code></pre>
+
+      <h2 id="nextjs">Next.js (Node.js)</h2>
+      <p>First-party adapter at <code>@arcis/node/nextjs</code>. <code>arcisMiddleware</code> is Edge Middleware (Web Fetch native, returns <code>Response | undefined</code>). <code>arcisProtect</code> wraps an App Router route handler with a security-headers post-pass.</p>
+<pre><code><span class="c">// middleware.ts (Edge runtime)</span>
+<span class="k">import</span> <span class="p">{</span> arcisMiddleware <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/nextjs'</span><span class="p">;</span>
+
+<span class="k">export const</span> middleware = <span class="f">arcisMiddleware</span><span class="p">({</span>
+  rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span>
+  bot<span class="p">:</span> <span class="k">true</span><span class="p">,</span>
+<span class="p">});</span></code></pre>
+
+      <h2 id="bun">Bun (Node.js)</h2>
+      <p>First-party adapter at <code>@arcis/node/bun</code>. <code>arcisBun</code> wraps a Bun.serve fetch handler. (For Bun + Hono, use <code>@arcis/node/hono</code> above — it runs on Bun unchanged.)</p>
+<pre><code><span class="k">import</span> <span class="p">{</span> arcisBun <span class="p">}</span> <span class="k">from</span> <span class="s">'@arcis/node/bun'</span><span class="p">;</span>
+
+Bun.<span class="f">serve</span><span class="p">({</span>
+  fetch<span class="p">:</span> <span class="f">arcisBun</span><span class="p">({</span> rateLimit<span class="p">:</span> <span class="p">{</span> max<span class="p">:</span> <span class="n">100</span> <span class="p">},</span> bot<span class="p">:</span> <span class="k">true</span> <span class="p">},</span> <span class="k">async</span> <span class="p">(</span>req<span class="p">)</span> <span class="k">=></span> <span class="p">{</span>
+    <span class="k">return new</span> <span class="f">Response</span><span class="p">(</span><span class="s">'Hello'</span><span class="p">);</span>
+  <span class="p">}),</span>
 <span class="p">});</span></code></pre>
 
       <h2 id="fastapi">FastAPI (Python)</h2>
 <pre><code><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
 <span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware
+<span class="k">from</span> dotenv <span class="k">import</span> load_dotenv
 
+<span class="f">load_dotenv</span><span class="p">()</span>
 app = <span class="f">FastAPI</span><span class="p">()</span>
-app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">)</span></code></pre>
+app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)</span></code></pre>
       <p>For custom config:</p>
 <pre><code><span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware<span class="p">,</span> Config
 
@@ -117,9 +239,11 @@ app.<span class="f">add_middleware</span><span class="p">(</span>
       <h2 id="flask">Flask (Python)</h2>
 <pre><code><span class="k">from</span> flask <span class="k">import</span> Flask
 <span class="k">from</span> arcis <span class="k">import</span> Arcis
+<span class="k">from</span> dotenv <span class="k">import</span> load_dotenv
 
+<span class="f">load_dotenv</span><span class="p">()</span>
 app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p">)</span>
-<span class="f">Arcis</span><span class="p">(</span>app<span class="p">)</span></code></pre>
+<span class="f">Arcis</span><span class="p">(</span>app<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)</span></code></pre>
 
       <h2 id="django">Django (Python)</h2>
       <p>Add to <code>MIDDLEWARE</code> in <code>settings.py</code>:</p>
@@ -129,6 +253,16 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
     <span class="s">'django.middleware.common.CommonMiddleware'</span><span class="p">,</span>
     <span class="c"># ... rest of your middleware</span>
 <span class="p">]</span></code></pre>
+
+      <h2 id="litestar">Litestar (Python)</h2>
+      <p>First-party adapter at <code>arcis.litestar.ArcisMiddleware</code>. Pure-ASGI middleware, type-only <code>litestar</code> import — composes with Litestar via <code>DefineMiddleware</code> and with any other ASGI host (Starlette, Quart, Hypercorn) via direct instantiation.</p>
+<pre><code><span class="k">from</span> litestar <span class="k">import</span> Litestar
+<span class="k">from</span> litestar.middleware.base <span class="k">import</span> DefineMiddleware
+<span class="k">from</span> arcis.litestar <span class="k">import</span> ArcisMiddleware
+
+app = <span class="f">Litestar</span><span class="p">(</span>
+    middleware<span class="o">=</span><span class="p">[</span><span class="f">DefineMiddleware</span><span class="p">(</span>ArcisMiddleware<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)],</span>
+<span class="p">)</span></code></pre>
 
       <h2 id="gin">Gin (Go)</h2>
 <pre><code><span class="k">package</span> main
@@ -140,7 +274,7 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
 
 <span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
     r := gin.<span class="f">Default</span><span class="p">()</span>
-    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">())</span>
+    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">(</span>arcis.Config<span class="p">{</span>Block<span class="p">:</span> <span class="k">true</span><span class="p">}))</span>
     r.<span class="f">Run</span><span class="p">()</span>
 <span class="p">}</span></code></pre>
 
@@ -158,13 +292,46 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
     e.<span class="f">Start</span><span class="p">(</span><span class="s">":8080"</span><span class="p">)</span>
 <span class="p">}</span></code></pre>
 
-      <h2 id="net-http">net/http (Go)</h2>
-      <p>Use the core Arcis middleware with the standard library:</p>
+      <h2 id="chi">chi (Go)</h2>
+      <p>First-party adapter at <code>github.com/GagancM/arcis/chi</code>. Granular helpers (Headers / Sanitizer / Validate / Csrf / SecureCookies / Cors / ErrorHandler) plus the bundle middleware. Stdlib-only at runtime — composes with any router accepting <code>func(http.Handler) http.Handler</code>.</p>
 <pre><code><span class="k">package</span> main
 
 <span class="k">import</span> <span class="p">(</span>
     <span class="s">"net/http"</span>
-    <span class="s">"github.com/GagancM/arcis"</span>
+    <span class="s">"github.com/go-chi/chi/v5"</span>
+    arcischi <span class="s">"github.com/GagancM/arcis/chi"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    r := chi.<span class="f">NewRouter</span><span class="p">()</span>
+    r.<span class="f">Use</span><span class="p">(</span>arcischi.<span class="f">MiddlewareWithConfig</span><span class="p">(</span>arcischi.Config<span class="p">{</span>Block<span class="p">:</span> <span class="k">true</span><span class="p">}))</span>
+    http.<span class="f">ListenAndServe</span><span class="p">(</span><span class="s">":8080"</span><span class="p">,</span> r<span class="p">)</span>
+<span class="p">}</span></code></pre>
+
+      <h2 id="fiber">Fiber (Go)</h2>
+      <p>First-party adapter at <code>github.com/GagancM/arcis/fiber</code>. Bundle middleware + standalone <code>RateLimit</code> helpers + <code>WithTelemetry</code> option, mirroring the gin/echo/chi shape.</p>
+<pre><code><span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"github.com/gofiber/fiber/v2"</span>
+    arcisfiber <span class="s">"github.com/GagancM/arcis/fiber"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
+    app := fiber.<span class="f">New</span><span class="p">()</span>
+    cfg := arcisfiber.<span class="f">DefaultConfig</span><span class="p">()</span>
+    cfg.Block = <span class="k">true</span>
+    app.<span class="f">Use</span><span class="p">(</span>arcisfiber.<span class="f">MiddlewareWithConfig</span><span class="p">(</span>cfg<span class="p">))</span>
+    app.<span class="f">Listen</span><span class="p">(</span><span class="s">":8080"</span><span class="p">)</span>
+<span class="p">}</span></code></pre>
+
+      <h2 id="net-http">net/http (Go)</h2>
+      <p>For users without a third-party router, the <code>nethttp</code> subpackage exposes the same middleware shape as a <code>func(http.Handler) http.Handler</code> decorator. Pure stdlib — no chi or fiber dep needed.</p>
+<pre><code><span class="k">package</span> main
+
+<span class="k">import</span> <span class="p">(</span>
+    <span class="s">"net/http"</span>
+    archttp <span class="s">"github.com/GagancM/arcis/nethttp"</span>
 <span class="p">)</span>
 
 <span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
@@ -173,8 +340,11 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
         w.<span class="f">Write</span><span class="p">([]</span><span class="k">byte</span><span class="p">(</span><span class="s">"ok"</span><span class="p">))</span>
     <span class="p">})</span>
 
-    handler := arcis.<span class="f">Wrap</span><span class="p">(</span>mux<span class="p">)</span>
-    http.<span class="f">ListenAndServe</span><span class="p">(</span><span class="s">":8080"</span><span class="p">,</span> handler<span class="p">)</span>
+    cfg := archttp.<span class="f">DefaultConfig</span><span class="p">()</span>
+    cfg.Block = <span class="k">true</span>
+    <span class="k">var</span> h http.Handler = mux
+    h = archttp.<span class="f">MiddlewareWithConfig</span><span class="p">(</span>cfg<span class="p">)(</span>h<span class="p">)</span>
+    http.<span class="f">ListenAndServe</span><span class="p">(</span><span class="s">":8080"</span><span class="p">,</span> h<span class="p">)</span>
 <span class="p">}</span></code></pre>
 
       <div class="docs-pagination">
@@ -195,7 +365,7 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
       <div class="footer-inner">
         <div class="footer-brand">
           <div class="footer-logo">Arcis<span>.</span></div>
-          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, zero dependencies.</p>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, lean dependency footprint.</p>
           <div class="footer-badges">
             <span class="footer-badge">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
@@ -218,8 +388,8 @@ app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p
           <div class="footer-col">
             <h4>SDKs</h4>
             <ul>
-              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm &mdash; @arcis/node</a></li>
-              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI &mdash; arcis</a></li>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li>
               <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
             </ul>
           </div>

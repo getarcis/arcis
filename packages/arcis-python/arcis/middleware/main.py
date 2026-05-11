@@ -7,7 +7,6 @@ Flask/WSGI integration — the primary entry point for framework integration.
 from typing import Optional
 
 from ..sanitizers.sanitize import Sanitizer
-from ..stores.memory import InMemoryStore
 from ..core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS
 from .rate_limit import RateLimiter, RateLimitExceeded
 from .headers import SecurityHeaders

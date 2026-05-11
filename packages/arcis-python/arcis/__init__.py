@@ -134,18 +134,30 @@ from .sanitizers import (
     encode_for_js,
     encode_for_url,
     encode_for_css,
+    detect_prompt_injection,
+    sanitize_prompt_injection,
+    PromptInjectionMatch,
+    DetectPromptInjectionResult,
 )
 
 from .validation.email import (
     validate_email_address,
     verify_email_mx,
+    verify_email_mx_async,
     is_valid_email_syntax,
     EmailValidationResult,
 )
 
+# Litestar adapter (and any ASGI host) — pure ASGI middleware, type-only
+# litestar import. Lazy via attribute access to avoid a hard import on
+# package load when the user is on the FastAPI / Flask / Django path.
+from .litestar import ArcisMiddleware as ArcisLitestarMiddleware
+
 from .middleware.rate_limit_sliding import SlidingWindowLimiter
 from .middleware.rate_limit_token import TokenBucketLimiter
 from .middleware.bot_detection import BotProtection, BotDenied, BotDetectionResult, detect_bot
+from .middleware.token_budget import TokenBudget, TokenBudgetExceeded, token_budget
+from .guards import Guards, GuardsDecision
 from .middleware.hpp import HppProtection, create_hpp
 from .middleware.csrf import CsrfProtection, create_csrf, generate_csrf_token, validate_csrf_token
 from .middleware.signup_protection import SignupProtection, SignupCheckResult, check_signup
@@ -171,7 +183,7 @@ try:
 except ImportError:
     _HAS_ASYNC = False
 
-__version__ = "1.4.4"
+__version__ = "1.5.0"
 __all__ = [
     # Main class
     "Arcis",
@@ -227,8 +239,10 @@ __all__ = [
     # Email validation (advanced)
     "validate_email_address",
     "verify_email_mx",
+    "verify_email_mx_async",
     "is_valid_email_syntax",
     "EmailValidationResult",
+    "ArcisLitestarMiddleware",
     # Rate limiters
     "SlidingWindowLimiter",
     "TokenBucketLimiter",
@@ -237,6 +251,13 @@ __all__ = [
     "BotDenied",
     "BotDetectionResult",
     "detect_bot",
+    # LLM token-budget protection
+    "TokenBudget",
+    "TokenBudgetExceeded",
+    "token_budget",
+    # Guards API (non-HTTP contexts)
+    "Guards",
+    "GuardsDecision",
     # Signup protection (composite: email + bot + rate-limit)
     "SignupProtection",
     "SignupCheckResult",

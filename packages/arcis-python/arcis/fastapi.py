@@ -28,6 +28,7 @@ from .core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS, DEFAULT_RAT
 from .telemetry.client import AsyncTelemetryClient
 from .telemetry.types import TelemetryOptions
 from .middleware.telemetry import telemetry_options_from_env as _telemetry_options_from_env
+from .utils.ip import detect_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -195,21 +196,21 @@ class AsyncRateLimiter:
         self._cleanup_lock: Optional[asyncio.Lock] = None
 
     def _default_key_func(self, request: Request) -> str:
-        """Default key function - uses client IP address."""
-        # FastAPI/Starlette
+        """Default key function. Uses the real client IP.
+
+        SECURITY: delegates to ``detect_client_ip`` which parses
+        ``X-Forwarded-For`` from the right (proxy-appended end) and prefers
+        platform-specific spoofproof headers (Cloudflare, Vercel, Fly.io,
+        etc.). Reading XFF from the left is spoofable: an attacker can
+        prepend an arbitrary value and be rate-limited under that key.
+        """
+        # FastAPI/Starlette: socket peer address is always trustworthy
         if hasattr(request, 'client') and request.client:
-            return request.client.host or "unknown"
-        
-        # Check forwarded headers
-        forwarded = request.headers.get('x-forwarded-for')
-        if forwarded:
-            return forwarded.split(',')[0].strip()
-        
-        real_ip = request.headers.get('x-real-ip')
-        if real_ip:
-            return real_ip
-        
-        return "unknown"
+            host = request.client.host
+            if host:
+                return host
+
+        return detect_client_ip(request) or "unknown"
     
     async def _start_cleanup(self) -> None:
         """Start background cleanup task for in-memory store.
@@ -272,22 +273,29 @@ class AsyncRateLimiter:
                 return {"allowed": True, "limit": self.max_requests, "remaining": self.max_requests, "reset": 0}
         
         key = self.key_func(request)
+        # Mirror the skip_func async-handling pattern: if the user passed
+        # an async key_func, await it. Without this, the returned coroutine
+        # would silently be used as the rate-limit key, breaking per-IP
+        # isolation entirely.
+        if asyncio.iscoroutine(key):
+            key = await key
         now = time.time()
-        now_ms = now * 1000
-        
+
         entry = await self.store.get(key)
         
         if not entry or entry.reset_time < now:
-            # New window
+            # New window. Compute reset as the same `reset_time - now`
+            # delta that the subsequent-request branch uses so clients
+            # see a consistent representation across the whole window.
             reset_time = now + self.window_seconds
             await self.store.set(key, 1, reset_time)
             return {
                 "allowed": True,
                 "limit": self.max_requests,
                 "remaining": self.max_requests - 1,
-                "reset": int(self.window_seconds),
+                "reset": int(reset_time - now),
             }
-        
+
         count = await self.store.increment(key)
         remaining = max(0, self.max_requests - count)
         reset = int(entry.reset_time - now)

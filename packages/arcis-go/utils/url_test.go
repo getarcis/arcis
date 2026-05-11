@@ -71,10 +71,10 @@ func TestValidateURL(t *testing.T) {
 
 func TestValidateURL_DecimalIP(t *testing.T) {
 	tests := []struct {
-		name       string
-		url        string
-		safe       bool
-		reasonHas  string
+		name      string
+		url       string
+		safe      bool
+		reasonHas string
 	}{
 		{"blocks decimal 127.0.0.1 (2130706433)", "http://2130706433/", false, "loopback"},
 		{"blocks decimal 10.0.0.1 (167772161)", "http://167772161/", false, "private"},
@@ -98,10 +98,10 @@ func TestValidateURL_DecimalIP(t *testing.T) {
 
 func TestValidateURL_OctalHexIP(t *testing.T) {
 	tests := []struct {
-		name       string
-		url        string
-		safe       bool
-		reasonHas  string
+		name      string
+		url       string
+		safe      bool
+		reasonHas string
 	}{
 		{"blocks octal 127.0.0.1 (0177.0.0.1)", "http://0177.0.0.1/", false, "loopback"},
 		{"blocks octal 10.0.0.1 (012.0.0.1)", "http://012.0.0.1/", false, "private"},

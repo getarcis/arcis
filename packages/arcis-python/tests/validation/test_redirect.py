@@ -3,7 +3,6 @@ Open Redirect Prevention Tests
 Tests for arcis/validation/redirect.py
 """
 
-import pytest
 from arcis.validation.redirect import (
     validate_redirect,
     is_redirect_safe,

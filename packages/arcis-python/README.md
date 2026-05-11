@@ -2,27 +2,30 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/arcis.svg?label=pypi&color=00996D)](https://pypi.org/project/arcis/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/arcis.svg?label=downloads&color=00996D)](https://pypi.org/project/arcis/)
-[![GitHub stars](https://img.shields.io/github/stars/GagancM/arcis?style=flat&color=00996D)](https://github.com/GagancM/arcis/stargazers)
 [![Python 3.9+](https://img.shields.io/pypi/pyversions/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**One-line security for Python web applications + the canonical `arcis` CLI for scan / audit / supply-chain analysis.**
+**One-line security middleware for Python web applications. Zero runtime dependencies.**
 
 Arcis is a cross-platform security library that provides drop-in protection against common web vulnerabilities. Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
 
-## What's new in v1.4.4
+**1,219+ tests passing.**
 
-- **Detect-and-block middleware** — opt in with `app.add_middleware(ArcisMiddleware, block=True)`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
-- **6 new standalone detectors** — `detect_xss / detect_sql / detect_nosql / detect_path_traversal / detect_command_injection / detect_prototype_pollution`.
-- **CLI overhaul** — `arcis --list` discovery, live progress bars, summary blocks, `arcis update` command, optional interactive picker (`pip install "arcis[interactive]"`).
-- **End-to-end CLI → dashboard wiring** — `arcis scan/audit/sca` POST results to the dashboard when `ARCIS_ENDPOINT` is set.
+## What's new in v1.5.0
+
+- **SDK-only release.** `pip install arcis` ships the runtime middleware with zero runtime dependencies. The CLI moved to its own package: `npm install -g @arcis/cli`.
+- **Litestar adapter** (`arcis.litestar.ArcisMiddleware`) — pure-ASGI, type-only `litestar` import. Composes with Litestar via `DefineMiddleware` and with any other ASGI host (Starlette, Quart, Hypercorn) via direct instantiation.
+- **`verify_email_mx_async`** — async-safe MX verification. The sync `verify_email_mx` was the one user-facing call that blocked the event loop on FastAPI handlers; the async variant uses `dns.asyncresolver` natively (or threads to `asyncio.to_thread` as fallback).
+- **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 646-pattern bot corpus, `Guards` API for non-HTTP contexts.
+- **Composite helpers**: `signup_protection` (rate-limit + bot + email-MX) — full recipe for protecting account creation.
+- The middleware API is unchanged. Existing `Arcis(app)` / `app.add_middleware(ArcisMiddleware, ...)` code keeps working.
 - See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
 
 ## Installation
 
 ```bash
-# Core library (no dependencies)
-pip install arcis
+# Core middleware (zero runtime deps)
+pip install arcis python-dotenv
 
 # With framework integrations
 pip install arcis[flask]
@@ -33,6 +36,23 @@ pip install arcis[django]
 pip install arcis[dev]
 ```
 
+> **Install in your backend project, not the frontend.** Arcis is server-side middleware. Bundling it into a frontend build would leak the API key into client JS and the middleware never runs there.
+>
+> **`.env` lives next to your server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...` and call `load_dotenv()` at startup. Add `.env` to `.gitignore`.
+
+## CLI
+
+The Arcis scanner (`arcis audit`, `arcis scan`, `arcis sca`) is now a standalone native binary distributed via npm:
+
+```bash
+npm install -g @arcis/cli
+arcis --help
+```
+
+This works regardless of whether your app is Node, Python, or Go. The CLI is a single static binary with the threat database embedded. No Python required.
+
+If you previously relied on `pip install arcis` shipping the `arcis` command, switch to the npm install above.
+
 ## Quick Start
 
 ### Flask
@@ -40,9 +60,11 @@ pip install arcis[dev]
 ```python
 from flask import Flask
 from arcis import Arcis
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
-Arcis(app)  # That's it! Your app is now protected.
+Arcis(app, block=True)  # block=True returns 403 on detected attacks.
 
 @app.route('/')
 def hello():
@@ -54,9 +76,13 @@ def hello():
 ```python
 from fastapi import FastAPI
 from arcis.fastapi import ArcisMiddleware
+from dotenv import load_dotenv
 
+load_dotenv()
 app = FastAPI()
-app.add_middleware(ArcisMiddleware)
+# block=True returns 403 on detected attacks. Default is False
+# (sanitize + observe) so existing apps don't break on rollout.
+app.add_middleware(ArcisMiddleware, block=True)
 
 @app.get('/')
 async def hello():

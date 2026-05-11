@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "arcis"
-version = "1.4.4"
-description = "Zero-dependency security middleware for Python. Protects against XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and 15+ more attack types. Works with Flask, FastAPI, and Django."
+version = "1.5.0"
+description = "Inside-the-app security middleware for Python. One install protects FastAPI, Flask, and Django against XSS, SQL injection, CSRF, SSRF, HPP, prompt injection, bot traffic, rate limiting, and 20+ more attack types. Includes prompt-injection signature library, LLM token-budget middleware, and a 646-pattern bot corpus with consistent API across the Node and Go SDKs. The CLI ships separately at npm install -g @arcis/cli."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Gagan CM", email = "gagancm@users.noreply.github.com"}
 ]
@@ -15,7 +16,6 @@ keywords = ["security", "xss", "sql-injection", "nosql-injection", "rate-limitin
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -51,9 +51,6 @@ dev = [
     "httpx>=0.24.0",
 ]
 
-[project.scripts]
-arcis = "arcis.cli:main"
-
 [project.urls]
 Homepage = "https://github.com/GagancM/arcis"
 Documentation = "https://github.com/Gagancm/arcis/wiki"
@@ -74,6 +71,23 @@ asyncio_mode = "auto"
 [tool.black]
 line-length = 100
 target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py and explicit re-export shims expose the public API by
+# importing names from internal modules. Ruff cannot tell those imports
+# from genuine unused ones, so silence F401 on those files.
+"**/__init__.py" = ["F401"]
+"arcis/sanitizer.py" = ["F401"]
+"arcis/django.py" = ["F401"]
+"arcis/fastapi.py" = ["F401"]
+# Test files commonly use lambdas as throwaway hooks, leave a captured
+# response object for a planned later assertion, and conditionally import
+# inside a try/except guard — those forms aren't worth rewriting.
+"tests/**" = ["E731", "F841", "E402"]
 
 [tool.mypy]
 python_version = "3.9"

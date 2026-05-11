@@ -3,7 +3,6 @@ JSONP Callback sanitizer tests.
 Tests for arcis/sanitizers/jsonp.py
 """
 
-import pytest
 from arcis.sanitizers.jsonp import sanitize_jsonp_callback, detect_jsonp_injection
 
 

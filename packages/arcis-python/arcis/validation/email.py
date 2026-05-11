@@ -16,9 +16,10 @@ Examples:
     EmailValidationResult(valid=True, reason='typo', suggestion='user@gmail.com')
 """
 
+import asyncio
 import re
 import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 # RFC 5321 limits
@@ -257,6 +258,46 @@ def verify_email_mx(email: str) -> bool:
             return False
     except Exception:
         return False
+
+
+async def verify_email_mx_async(email: str) -> bool:
+    """
+    Async-safe variant of :func:`verify_email_mx`. The sync version does
+    a blocking DNS lookup; calling it from an async handler holds the
+    event loop for as long as the resolver takes (often hundreds of
+    milliseconds for a slow / failing query).
+
+    This variant uses ``dns.asyncresolver.Resolver`` when ``dnspython``
+    is installed (native async, no thread). When it isn't, it offloads
+    the existing sync path to a thread via ``asyncio.to_thread`` so the
+    loop stays free.
+
+    Either way the contract is identical to :func:`verify_email_mx`:
+    returns ``True`` if the domain has at least one MX record (or
+    fallback A-record reachable via getaddrinfo).
+    """
+    if not is_valid_email_syntax(email):
+        return False
+
+    at_index = email.rfind('@')
+    domain = email[at_index + 1:].strip().lower()
+    if not domain:
+        return False
+
+    try:
+        import dns.asyncresolver  # type: ignore[import-not-found]
+        try:
+            answers = await dns.asyncresolver.resolve(domain, 'MX')
+            return len(answers) > 0
+        except Exception:
+            return False
+    except ImportError:
+        # No dnspython available. Fall back to the sync getaddrinfo
+        # path but offload it so we don't block the loop.
+        try:
+            return await asyncio.to_thread(verify_email_mx, email)
+        except Exception:
+            return False
 
 
 def is_valid_email_syntax(email: str) -> bool:

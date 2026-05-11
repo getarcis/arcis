@@ -122,11 +122,11 @@
       .version-nav { position: static; max-height: none; padding-right: 0; }
       .version-nav-title { margin-top: 1rem; }
     }
-    /* Anchor offset — when jumping via #v1-4-4 the release card must
+    /* Anchor offset. when jumping via #v1-4-4 the release card must
        sit below the fixed nav, not under it. */
     .release { scroll-margin-top: 96px; }
 
-    /* ─── Navigation — mirrors index.html so the navbar feels
+    /* ─── Navigation. mirrors index.html so the navbar feels
        continuous across pages. Same vars, same heights, same
        Try/Star CTA on the right. */
     .nav {
@@ -321,7 +321,7 @@
       border: 1px solid var(--border);
     }
 
-    /* ─── Footer — same dark surface as index.html so the bottom of
+    /* ─── Footer. same dark surface as index.html so the bottom of
        every page on the site reads as one continuous brand. Vars are
        declared inline since changelog.html doesn't pull in docs.css. */
     .footer {
@@ -471,7 +471,7 @@
       <div class="footer-inner">
         <div class="footer-brand">
           <div class="footer-logo">Arcis<span>.</span></div>
-          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, zero dependencies.</p>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, lean dependency footprint.</p>
           <div class="footer-badges">
             <span class="footer-badge">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
@@ -494,8 +494,8 @@
           <div class="footer-col">
             <h4>SDKs</h4>
             <ul>
-              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm &mdash; @arcis/node</a></li>
-              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI &mdash; arcis</a></li>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li>
               <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
             </ul>
           </div>
@@ -648,7 +648,7 @@
           `<a href="https://github.com/GagancM/arcis/releases">View on GitHub</a></div>`;
       });
 
-    // Populate the navbar star count from GitHub. Fails silently — the
+    // Populate the navbar star count from GitHub. Fails silently. the
     // button still works as a plain link if the API is rate-limited.
     fetch('https://api.github.com/repos/Gagancm/arcis')
       .then(r => r.json())
@@ -661,7 +661,7 @@
       .catch(() => {});
 
     // Add the .scrolled state to the nav once the user scrolls past the
-    // hero so the shadow lifts in — same behaviour as index.html.
+    // hero so the shadow lifts in. same behaviour as index.html.
     const nav = document.getElementById('nav');
     if (nav) {
       const onScroll = () => {

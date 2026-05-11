@@ -4,7 +4,6 @@ Tests for arcis/utils/fingerprint.py
 """
 
 import hashlib
-import pytest
 from arcis.utils.fingerprint import fingerprint
 
 

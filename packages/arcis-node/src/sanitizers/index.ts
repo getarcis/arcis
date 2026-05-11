@@ -29,7 +29,13 @@ export { sanitizeXxe, detectXxe } from './xxe';
 export { sanitizeJsonpCallback, detectJsonpInjection } from './jsonp';
 
 // HTTP Header Injection protection
-export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './headers';
+export {
+  sanitizeHeaderValue,
+  sanitizeHeaders,
+  detectHeaderInjection,
+  sanitizeEmailHeader,
+  detectEmailHeaderInjection,
+} from './headers';
 
 // PII detection and redaction
 export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from './pii';
@@ -39,6 +45,20 @@ export { encodeForHtml, encodeForAttribute, encodeForJs, encodeForUrl, encodeFor
 
 // LDAP injection prevention
 export { sanitizeLdapFilter, sanitizeLdapDn, detectLdapInjection } from './ldap';
+
+// XPath injection prevention
+export { sanitizeXpath, detectXpathInjection } from './xpath';
+
+// GraphQL injection / depth-bomb prevention
+export {
+  inspectGraphqlQuery,
+  detectGraphqlAbuse,
+} from './graphql';
+export type {
+  GraphqlGuardOptions,
+  GraphqlGuardResult,
+  GraphqlViolation,
+} from './graphql';
 
 // Utilities
 export { encodeHtmlEntities, isPlainObject } from './utils';

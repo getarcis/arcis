@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+
+  <title>Arcis vs Arcjet · Arcis Docs</title>
+  <meta name="description" content="An honest, side-by-side comparison of Arcis and Arcjet. Where each one wins, where they overlap, and how to choose between them.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+
+  <!-- ─── Top Nav ─────────────────────────────────── -->
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../../#how-it-works">How It Works</a></li>
+        <li><a href="../../#languages">Languages</a></li>
+        <li><a href="../../#threats">Threats</a></li>
+        <li><a href="../../#comparison">Compare</a></li>
+        <li><a href="../">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="../getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ─── Layout ─────────────────────────────────── -->
+  <div class="docs-layout">
+
+    <!-- Sidebar -->
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="../">Introduction</a></li>
+        <li><a href="../getting-started.html">Getting Started</a></li>
+      </ul>
+
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="../frameworks.html">Framework Adapters</a></li>
+        <li><a href="../configuration.html">Configuration</a></li>
+        <li><a href="../attack-vectors.html">Attack Vectors</a></li>
+      </ul>
+
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="../api-reference.html">API Reference</a></li>
+        <li><a href="../cli.html">CLI Tools</a></li>
+      </ul>
+
+      <h3>Comparisons</h3>
+      <ul>
+        <li><a href="./vs-arcjet.html" class="active">vs Arcjet</a></li>
+        <li><a href="./vs-aikido.html">vs Aikido Zen</a></li>
+        <li><a href="./vs-snyk.html">vs Snyk</a></li>
+        <li><a href="./vs-cloudflare-waf.html">vs Cloudflare WAF</a></li>
+        <li><a href="./vs-captchas.html">vs CAPTCHAs</a></li>
+      </ul>
+
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb">Docs / Comparisons</div>
+      <h1>Arcis vs Arcjet</h1>
+      <p class="lead">
+        Arcjet pioneered application-layer security at the API edge with cloud-decisioned middleware. Arcis is the open-source, in-process alternative for teams who don't want a SaaS layer in their security stack.
+      </p>
+
+      <h2 id="tldr">TL;DR</h2>
+      <p>Both tools sit between incoming requests and your handler. Both block bots, sanitize input, and rate-limit. The hard difference is architecture: Arcjet's value-adding decisions (bot scoring, AI rule evaluation) run on their cloud after a per-request round trip. Arcis's decisions all run inside your process, with the same regex patterns and bot corpus public on GitHub. If you want a hosted control plane that takes the decisions for you, pick Arcjet. If you want everything visible, auditable, and running on your own metal, pick Arcis.</p>
+
+      <h2 id="where-they-win">Where Arcjet wins</h2>
+      <ul>
+        <li><strong>Wasm-based local ML for AI rules.</strong> Arcjet ships a closed Wasm blob that runs locally and evaluates richer signals than pattern matching. For prompt-injection detection at the highest accuracy bar, that's a real edge over a signature library.</li>
+        <li><strong>Mature distribution.</strong> Polished editor plugins (Cursor, Claude Code), longer track record, and a paid managed control plane that some teams prefer not to operate themselves. They started in 2023 and have had time to build the ecosystem.</li>
+        <li><strong>Funded team.</strong> $12M raised across Seed and Series A. They will keep shipping. If you're picking a vendor for a five-year procurement window, that matters.</li>
+      </ul>
+
+      <h2 id="where-we-win">Where Arcis wins</h2>
+      <ul>
+        <li><strong>Fully open source under MIT.</strong> Every signature, every regex, every bot pattern, every CLI rule is in public files on GitHub. No closed binaries. No telemetry by default. You can fork it, vendor it, or audit it line by line.</li>
+        <li><strong>Three SDKs at full parity.</strong> Node, Python, and Go all implement the same contract from a shared spec. Arcjet's Python SDK is newer than the Node one and parity is still in flight.</li>
+        <li><strong>No cloud dependency.</strong> Arcis decisions run in your process. Bot detection, rate limiting, sanitization, prompt-injection guards: all local. Optional self-hosted dashboard for telemetry, but the runtime never phones home.</li>
+        <li><strong>Includes a CLI scanner.</strong> <code>arcis sca</code> catches compromised packages. <code>arcis audit</code> + <code>arcis scan</code> flag unsafe code patterns and discover dynamic endpoints. Arcjet is runtime-only.</li>
+      </ul>
+
+      <h2 id="capability-matrix">Capability matrix</h2>
+      <p>Comparison reflects public state of both projects as of 2026-05-10.</p>
+
+      <div class="comparison-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Arcjet</th>
+              <th>Arcis</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>License</td><td>Apache-2.0 SDK + closed Wasm rules</td><td>MIT, fully open including all rules</td></tr>
+            <tr><td>Architecture</td><td>SDK + cloud decisioning</td><td>SDK only (in-process)</td></tr>
+            <tr><td>Cloud dependency</td><td>Required for value-add features</td><td>None (optional self-hosted dashboard)</td></tr>
+            <tr><td>Languages</td><td>Node (mature), Python (newer), Go (newer)</td><td>Node, Python, Go (all parity)</td></tr>
+            <tr><td>Node framework adapters</td><td>~11 first-party</td><td>10 first-party (Express, Fastify, Koa, Hono, Next.js, NestJS, SvelteKit, Astro, Nuxt, Bun)</td></tr>
+            <tr><td>Python framework adapters</td><td>FastAPI, generic</td><td>FastAPI, Flask, Django, Litestar</td></tr>
+            <tr><td>Go framework adapters</td><td>Generic</td><td>Gin, Echo, chi, Fiber, net/http</td></tr>
+            <tr><td>Bot corpus</td><td>Their MIT well-known-bots + cloud scoring</td><td>646 patterns sourced from the same MIT corpus + supplementary entries, all local</td></tr>
+            <tr><td>AI/LLM defenses</td><td>Wasm ML model for prompt-injection scoring</td><td>~28 signature patterns across HIGH/MEDIUM/LOW tiers + tokenBudget middleware</td></tr>
+            <tr><td>Rate limiting</td><td>Cloud-decisioned</td><td>In-process, fixed/sliding/token-bucket, optional Redis</td></tr>
+            <tr><td>Supply chain scanner</td><td>No</td><td>Yes (<code>arcis sca</code>)</td></tr>
+            <tr><td>Static analysis CLI</td><td>No</td><td>Yes (<code>arcis audit</code> + <code>arcis scan</code>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="how-to-choose">How to choose</h2>
+      <p><strong>Pick Arcjet if:</strong></p>
+      <ul>
+        <li>You want a hosted control plane and are comfortable with per-request cloud calls.</li>
+        <li>You're Node-first and need the highest-accuracy ML-based AI rule evaluation today.</li>
+        <li>You want the existing MCP server + Cursor integration and don't want to wait.</li>
+      </ul>
+
+      <p><strong>Pick Arcis if:</strong></p>
+      <ul>
+        <li>You want every line of your security stack to be open and auditable.</li>
+        <li>You run Python or Go services and need real parity with your Node services.</li>
+        <li>You can't or won't add a SaaS dependency to your request path (regulated environments, on-prem deployments, edge runtimes).</li>
+        <li>You want CLI scanning + supply-chain protection bundled with the runtime middleware.</li>
+      </ul>
+
+      <h2 id="bottom-line">Bottom line</h2>
+      <p>Arcjet is <code>git push</code> security on someone else's cloud. Arcis is <code>git push</code> security in your own repo. Both work; the choice is whether you want a SaaS layer in your security stack or not.</p>
+
+      <hr>
+      <p><a href="./vs-aikido.html">Next: Arcis vs Aikido Zen →</a></p>
+
+      <!-- ─── Footer ─────────────────────────────────── -->
+      <footer class="docs-footer">
+        <div class="docs-footer-inner">
+          <p class="footer-tagline">Inside-the-app security middleware. One install. Three languages. Fully open-source.</p>
+          <p class="footer-links">
+            <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a> ·
+            <a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm</a> ·
+            <a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI</a>
+          </p>
+        </div>
+      </footer>
+    </main>
+
+  </div>
+</body>
+</html>

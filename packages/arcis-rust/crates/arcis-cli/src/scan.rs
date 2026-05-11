@@ -1,0 +1,2395 @@
+//! `arcis scan` - HTTP security scanner CLI subcommand.
+//!
+//! The catalog (`--list` / `-l` output) mirrors `_print_payload_catalog`
+//! in `packages/arcis-python/arcis/cli/scan.py` byte-for-byte under
+//! `--no-color`. Other modes (real network scans) are not pinned by the
+//! current parity harness; a follow-up wires per-route mock-server
+//! fixtures.
+
+use std::env;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::time::{Duration, Instant};
+
+use arcis_engine::scan::{
+    attack_categories, discover_routes, execute_login, fetch_csrf, format_curl, parse_csrf_spec,
+    payloads::slug, scan_route, AuthConfig, CancelMode, CsrfSpec, DiscoveredRoute, LoginConfig,
+    RouteResult, ScanOptions, DEFAULT_FIELDS,
+};
+
+const RESET: &str = "\x1b[0m";
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+const CYAN: &str = "\x1b[36m";
+const YELLOW: &str = "\x1b[33m";
+
+#[derive(Debug, Clone)]
+struct Args {
+    url: Option<String>,
+    routes: Vec<String>,
+    fields: Vec<String>,
+    categories: Option<Vec<String>>,
+    timeout: u64,
+    thorough: bool,
+    no_color: bool,
+    list: bool,
+    quiet: bool,
+    yes: bool,
+    no_discovery: bool,
+    no_control_plane: bool,
+    json_output: bool,
+    bearer: Option<String>,
+    cookie: Option<String>,
+    login_url: Option<String>,
+    login_form: Vec<(String, String)>,
+    login_json: bool,
+    cancel_on: CancelMode,
+    csrf_spec: Option<CsrfSpec>,
+    csrf_header: Option<String>,
+}
+
+#[derive(Debug)]
+enum ParseOutcome {
+    Args(Box<Args>),
+    Help,
+    Err(String),
+}
+
+fn parse_args(argv: &[String]) -> ParseOutcome {
+    let mut args = Args {
+        url: None,
+        routes: Vec::new(),
+        fields: Vec::new(),
+        categories: None,
+        timeout: 5,
+        thorough: false,
+        no_color: false,
+        list: false,
+        quiet: false,
+        yes: false,
+        no_discovery: false,
+        no_control_plane: false,
+        json_output: false,
+        bearer: None,
+        cookie: None,
+        login_url: None,
+        login_form: Vec::new(),
+        login_json: false,
+        cancel_on: CancelMode::default(),
+        csrf_spec: None,
+        csrf_header: None,
+    };
+
+    let mut i = 0;
+    while i < argv.len() {
+        let arg = &argv[i];
+        match arg.as_str() {
+            "-h" | "--help" => return ParseOutcome::Help,
+            "--list" => {
+                args.list = true;
+            }
+            "--thorough" => args.thorough = true,
+            "--no-color" => args.no_color = true,
+            "--quiet" | "-q" => args.quiet = true,
+            "--yes" | "-y" => args.yes = true,
+            "--no-discovery" => args.no_discovery = true,
+            "--no-control-plane" => args.no_control_plane = true,
+            "--json" => args.json_output = true,
+            "--route" | "-r" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --route needs a value".into());
+                };
+                args.routes.push(v.clone());
+            }
+            "--field" | "-f" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --field needs a value".into());
+                };
+                args.fields.push(v.clone());
+            }
+            "--timeout" | "-t" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --timeout needs a value".into());
+                };
+                let Ok(n) = v.parse::<u64>() else {
+                    return ParseOutcome::Err(format!(
+                        "arcis scan: --timeout expected an integer, got: {v}"
+                    ));
+                };
+                args.timeout = n;
+            }
+            "--categories" | "-c" => {
+                // Accept either nargs+ (space-separated, `--categories xss
+                // sql path`) or comma-separated (`--categories xss,sql,path`)
+                // or a mix of both. Each consumed token is split on `,`,
+                // trimmed, and empty pieces (from a stray comma) are dropped.
+                let mut cats: Vec<String> = Vec::new();
+                while i + 1 < argv.len() && !argv[i + 1].starts_with('-') {
+                    i += 1;
+                    for piece in argv[i].split(',') {
+                        let p = piece.trim();
+                        if !p.is_empty() {
+                            cats.push(p.to_string());
+                        }
+                    }
+                }
+                if cats.is_empty() {
+                    return ParseOutcome::Err(
+                        "arcis scan: --categories needs at least one value".into(),
+                    );
+                }
+                args.categories = Some(cats);
+            }
+            "-l" => {
+                args.list = true;
+            }
+            "--bearer" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --bearer needs a value".into());
+                };
+                match validate_bearer_value(v) {
+                    Ok(t) => args.bearer = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--bearer=") => {
+                let v = &arg["--bearer=".len()..];
+                match validate_bearer_value(v) {
+                    Ok(t) => args.bearer = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--cookie" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --cookie needs a value".into());
+                };
+                match validate_cookie_value(v) {
+                    Ok(t) => args.cookie = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--cookie=") => {
+                let v = &arg["--cookie=".len()..];
+                match validate_cookie_value(v) {
+                    Ok(t) => args.cookie = Some(t),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--login" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --login needs a value".into());
+                };
+                match validate_login_url(v) {
+                    Ok(u) => args.login_url = Some(u),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--login=") => {
+                let v = &arg["--login=".len()..];
+                match validate_login_url(v) {
+                    Ok(u) => args.login_url = Some(u),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--login-form" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --login-form needs a value".into());
+                };
+                match parse_login_form_pair(v) {
+                    Ok(pair) => args.login_form.push(pair),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--login-form=") => {
+                let v = &arg["--login-form=".len()..];
+                match parse_login_form_pair(v) {
+                    Ok(pair) => args.login_form.push(pair),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--login-json" => args.login_json = true,
+            "--csrf-from" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --csrf-from needs a value".into());
+                };
+                match parse_csrf_spec(v) {
+                    Ok(spec) => args.csrf_spec = Some(spec),
+                    Err(e) => return ParseOutcome::Err(format!("arcis scan: {e}")),
+                }
+            }
+            arg if arg.starts_with("--csrf-from=") => {
+                let v = &arg["--csrf-from=".len()..];
+                match parse_csrf_spec(v) {
+                    Ok(spec) => args.csrf_spec = Some(spec),
+                    Err(e) => return ParseOutcome::Err(format!("arcis scan: {e}")),
+                }
+            }
+            "--csrf-header" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --csrf-header needs a value".into());
+                };
+                match validate_csrf_header_name(v) {
+                    Ok(n) => args.csrf_header = Some(n),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--csrf-header=") => {
+                let v = &arg["--csrf-header=".len()..];
+                match validate_csrf_header_name(v) {
+                    Ok(n) => args.csrf_header = Some(n),
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            "--cancel-on" => {
+                i += 1;
+                let Some(v) = argv.get(i) else {
+                    return ParseOutcome::Err("arcis scan: --cancel-on needs a value".into());
+                };
+                match parse_cancel_on(v) {
+                    Ok(m) => args.cancel_on = m,
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            arg if arg.starts_with("--cancel-on=") => {
+                let v = &arg["--cancel-on=".len()..];
+                match parse_cancel_on(v) {
+                    Ok(m) => args.cancel_on = m,
+                    Err(e) => return ParseOutcome::Err(e),
+                }
+            }
+            other if other.starts_with("--") || (other.starts_with('-') && other.len() > 1) => {
+                return ParseOutcome::Err(format!("arcis scan: unknown flag: {other}"));
+            }
+            other => {
+                if args.url.is_some() {
+                    return ParseOutcome::Err(format!(
+                        "arcis scan: unexpected positional argument: {other}"
+                    ));
+                }
+                args.url = Some(other.to_string());
+            }
+        }
+        i += 1;
+    }
+
+    // Cross-flag validation. Run after the per-arg parse loop so the
+    // user sees the most relevant error first (mutex / orphan-flag
+    // checks fire only when the individual flags parsed cleanly).
+    if args.login_url.is_some() && (args.bearer.is_some() || args.cookie.is_some()) {
+        return ParseOutcome::Err(
+            "arcis scan: --login is mutually exclusive with --bearer / --cookie. \
+             Use --login OR manual flags, not both."
+                .into(),
+        );
+    }
+    if args.login_url.is_none() && !args.login_form.is_empty() {
+        return ParseOutcome::Err("arcis scan: --login-form requires --login".into());
+    }
+    if args.login_url.is_none() && args.login_json {
+        return ParseOutcome::Err("arcis scan: --login-json requires --login".into());
+    }
+    // --csrf-header is meaningless without --csrf-from. Pinned by tests
+    // so the orphan-flag UX stays consistent with the --login family.
+    if args.csrf_spec.is_none() && args.csrf_header.is_some() {
+        return ParseOutcome::Err("arcis scan: --csrf-header requires --csrf-from".into());
+    }
+
+    ParseOutcome::Args(Box::new(args))
+}
+
+fn validate_bearer_value(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("arcis scan: --bearer cannot be empty or whitespace-only".into())
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+fn validate_cookie_value(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("arcis scan: --cookie cannot be empty or whitespace-only".into())
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+fn validate_login_url(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        return Err("arcis scan: --login cannot be empty or whitespace-only".into());
+    }
+    if !(value.starts_with("http://") || value.starts_with("https://")) {
+        return Err(format!(
+            "arcis scan: invalid --login URL scheme: {value}\n  Only http:// and https:// are supported."
+        ));
+    }
+    Ok(value.to_string())
+}
+
+/// Parse the `--cancel-on` value. Two valid values, locked in help text
+/// and pinned by tests. Empty / unknown / cased-differently are rejected
+/// with a message that lists both literal options.
+fn parse_cancel_on(value: &str) -> Result<CancelMode, String> {
+    match value {
+        "first-vuln" => Ok(CancelMode::FirstVuln),
+        "never" => Ok(CancelMode::Never),
+        other => Err(format!(
+            "arcis scan: invalid --cancel-on value: {other}\n  Valid values: first-vuln, never"
+        )),
+    }
+}
+
+/// Validate the `--csrf-header` value. Non-empty (after trim) and free
+/// of control bytes (anything `< 0x20` or `0x7F`). The engine's
+/// [`reqwest::header::HeaderName::from_bytes`] would silently skip an
+/// invalid name; the CLI surfaces the error at parse time so the user
+/// gets a clear `exit 2` rather than a silent missing header at runtime.
+fn validate_csrf_header_name(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        return Err("arcis scan: --csrf-header cannot be empty or whitespace-only".into());
+    }
+    if value.bytes().any(|b| b < 0x20 || b == 0x7F) {
+        return Err(format!(
+            "arcis scan: invalid --csrf-header name: must be a token (no control bytes), got: {value:?}"
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn parse_login_form_pair(value: &str) -> Result<(String, String), String> {
+    let Some((key, val)) = value.split_once('=') else {
+        return Err(format!(
+            "arcis scan: --login-form expects key=value, got: {value}"
+        ));
+    };
+    if key.is_empty() {
+        return Err(format!(
+            "arcis scan: --login-form expects key=value with non-empty key, got: {value}"
+        ));
+    }
+    Ok((key.to_string(), val.to_string()))
+}
+
+fn ansi(no_color: bool, code: &str) -> &str {
+    if no_color {
+        ""
+    } else {
+        code
+    }
+}
+
+/// Render the attack catalog. Matches Python `_print_payload_catalog`
+/// byte-for-byte under `--no-color`. Em-dash kept verbatim for byte
+/// parity with Python's source string; cleanup is a separate Python-side
+/// task once we control both versions.
+fn print_catalog(out: &mut dyn Write, no_color: bool) -> io::Result<()> {
+    let bold = ansi(no_color, BOLD);
+    let dim = ansi(no_color, DIM);
+    let cyan = ansi(no_color, CYAN);
+    let reset = ansi(no_color, RESET);
+
+    let categories = attack_categories();
+    let total: usize = categories.iter().map(|c| c.vectors.len()).sum();
+
+    writeln!(out)?;
+    writeln!(
+        out,
+        "  {bold}arcis scan \u{2014} attack catalog ({} categories, {total} payloads){reset}",
+        categories.len(),
+    )?;
+    writeln!(
+        out,
+        "  {dim}Pass --categories to narrow scope, e.g. --categories xss sql{reset}",
+    )?;
+    writeln!(out)?;
+    for cat in categories {
+        let s = slug(cat.name);
+        writeln!(out, "  {bold}{}{reset}  {dim}({s}){reset}", cat.name)?;
+        for v in cat.vectors {
+            let preview = if v.payload.chars().count() <= 60 {
+                v.payload.to_string()
+            } else {
+                let head: String = v.payload.chars().take(57).collect();
+                format!("{head}...")
+            };
+            // Python `label.ljust(18)`: pad to width 18 with spaces, no
+            // truncation if longer. Use char-count for codepoint correctness.
+            let pad = 18usize.saturating_sub(v.label.chars().count());
+            writeln!(
+                out,
+                "    {cyan}{}{}{reset} {preview}",
+                v.label,
+                " ".repeat(pad)
+            )?;
+        }
+        writeln!(out)?;
+    }
+    writeln!(
+        out,
+        "  {bold}Default fields tried (--field overrides){reset}"
+    )?;
+    writeln!(out, "    {}", DEFAULT_FIELDS.join(", "))?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn print_help(out: &mut dyn Write) -> io::Result<()> {
+    let categories = attack_categories();
+    let names: Vec<&str> = categories.iter().map(|c| c.name).collect();
+    writeln!(out, "usage: arcis scan [URL] [options]")?;
+    writeln!(out)?;
+    writeln!(
+        out,
+        "Scan HTTP endpoints for common injection vulnerabilities."
+    )?;
+    writeln!(out)?;
+    writeln!(out, "Options:")?;
+    writeln!(
+        out,
+        "  -r, --route [METHOD:]PATH    Route to test. Repeat for multiple routes."
+    )?;
+    writeln!(
+        out,
+        "  -f, --field NAME             JSON field to inject payloads into. Repeat."
+    )?;
+    writeln!(
+        out,
+        "  -c, --categories CAT[,CAT..] Attack categories. Comma- or space-separated."
+    )?;
+    writeln!(
+        out,
+        "                               (default: all). Choices: {}",
+        names.join(", ")
+    )?;
+    writeln!(
+        out,
+        "  -t, --timeout SEC            Per-request timeout in seconds (default: 5)."
+    )?;
+    writeln!(
+        out,
+        "      --thorough               Test all payloads per category, not just primary."
+    )?;
+    writeln!(
+        out,
+        "      --no-color               Disable coloured terminal output."
+    )?;
+    writeln!(
+        out,
+        "  -l, --list                   List all attack categories and payloads."
+    )?;
+    writeln!(
+        out,
+        "  -q, --quiet                  Suppress per-route progress output."
+    )?;
+    writeln!(
+        out,
+        "  -y, --yes                    Skip the confirm prompt (CI-friendly)."
+    )?;
+    writeln!(
+        out,
+        "      --no-discovery           Skip source-aware route discovery."
+    )?;
+    writeln!(
+        out,
+        "      --no-control-plane       Skip the local control-plane probe."
+    )?;
+    writeln!(
+        out,
+        "      --json                   Print machine-readable JSON summary."
+    )?;
+    writeln!(
+        out,
+        "      --bearer <token>         Send Authorization: Bearer <token> on every request."
+    )?;
+    writeln!(
+        out,
+        "                               Token value never appears in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --cookie <value>         Send Cookie: <value> on every request. Pasted verbatim;"
+    )?;
+    writeln!(
+        out,
+        "                               join multi-cookie with `; `. Composes with --bearer."
+    )?;
+    writeln!(
+        out,
+        "                               Cookie value never appears in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --login <url>            POST credentials to <url> and capture an auth artifact."
+    )?;
+    writeln!(
+        out,
+        "                               Capture priority: Set-Cookie -> access_token -> token -> jwt."
+    )?;
+    writeln!(
+        out,
+        "                               Mutex with --bearer / --cookie."
+    )?;
+    writeln!(
+        out,
+        "      --login-form key=value   Field for the login request body. Repeatable."
+    )?;
+    writeln!(
+        out,
+        "                               Default encoding: form-urlencoded."
+    )?;
+    writeln!(
+        out,
+        "      --login-json             Send --login-form fields as JSON instead."
+    )?;
+    writeln!(
+        out,
+        "                               Form keys + values never appear in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --csrf-from SPEC         Fetch a CSRF token before scanning. SPEC = GET:/path[:STRATEGY:NAME]."
+    )?;
+    writeln!(
+        out,
+        "                               STRATEGY = json | cookie | header (auto-detect when omitted)."
+    )?;
+    writeln!(
+        out,
+        "                               Composes with --bearer / --cookie / --login. Applies token"
+    )?;
+    writeln!(
+        out,
+        "                               to subsequent POST/PUT/PATCH/DELETE requests."
+    )?;
+    writeln!(
+        out,
+        "                               Token value never appears in --json output."
+    )?;
+    writeln!(
+        out,
+        "      --csrf-header NAME       Outbound header used to thread the captured CSRF token."
+    )?;
+    writeln!(
+        out,
+        "                               X-CSRF-Token (default). Use X-XSRF-TOKEN for Angular,"
+    )?;
+    writeln!(
+        out,
+        "                               X-CSRFToken for Django. Requires --csrf-from."
+    )?;
+    writeln!(
+        out,
+        "      --cancel-on MODE         Cancel remaining vector probes after the first vulnerable"
+    )?;
+    writeln!(
+        out,
+        "                               finding lands. MODE = first-vuln (default) | never."
+    )?;
+    writeln!(
+        out,
+        "                               first-vuln cuts wall-clock on slow targets; never runs"
+    )?;
+    writeln!(
+        out,
+        "                               every vector to completion for full coverage."
+    )?;
+    writeln!(
+        out,
+        "  -h, --help                   Show this help and exit."
+    )?;
+    writeln!(out)?;
+    Ok(())
+}
+
+/// Parse `--route` arguments. Format: `METHOD:/path` or bare `/path`
+/// (defaults to POST). Mirrors Python `_parse_route_args`.
+fn parse_route_args(raw: &[String]) -> Vec<(String, String)> {
+    let mut out = Vec::with_capacity(raw.len());
+    for r in raw {
+        if let Some((m, p)) = r.split_once(':') {
+            // Don't split on a `:` that's part of an http(s):// URL.
+            if !r.starts_with("http") {
+                out.push((m.to_uppercase(), p.to_string()));
+                continue;
+            }
+        }
+        out.push(("POST".into(), r.clone()));
+    }
+    out
+}
+
+#[derive(Debug, Default)]
+struct ScanSummary {
+    routes_total: usize,
+    routes_reachable: usize,
+    total_vectors: usize,
+    total_blocked: usize,
+    total_vulnerable: usize,
+    duration_secs: f64,
+}
+
+fn summarize(results: &[RouteResult], duration: Duration) -> ScanSummary {
+    let mut s = ScanSummary {
+        routes_total: results.len(),
+        ..Default::default()
+    };
+    for rr in results {
+        if rr.reachable {
+            s.routes_reachable += 1;
+        }
+        // Cancelled vectors were never tested — they neither block nor
+        // expose a vuln. Excluding them from ALL THREE counters
+        // (`total_vectors`, `total_blocked`, `total_vulnerable`) keeps
+        // the summary an honest accounting of probed vectors AND
+        // preserves the invariant `total_vectors == total_blocked +
+        // total_vulnerable`. Day-over-day diffs of the summary stay
+        // self-consistent regardless of where cancellation lands.
+        for v in &rr.vectors {
+            if v.cancelled_kind.is_some() {
+                continue;
+            }
+            s.total_vectors += 1;
+            if v.blocked {
+                s.total_blocked += 1;
+            } else {
+                s.total_vulnerable += 1;
+            }
+        }
+    }
+    s.duration_secs = duration.as_secs_f64();
+    s
+}
+
+fn print_human_report(
+    out: &mut dyn Write,
+    target_url: &str,
+    results: &[RouteResult],
+    summary: &ScanSummary,
+    no_color: bool,
+) -> io::Result<()> {
+    let bold = ansi(no_color, BOLD);
+    let dim = ansi(no_color, DIM);
+    let yellow = ansi(no_color, YELLOW);
+    let reset = ansi(no_color, RESET);
+
+    writeln!(out)?;
+    writeln!(out, "  {bold}arcis scan \u{2014} report{reset}")?;
+    writeln!(out, "  {dim}Target:{reset} {target_url}")?;
+    writeln!(out)?;
+    for rr in results {
+        if !rr.reachable {
+            let err = rr.error.as_deref().unwrap_or("unreachable");
+            writeln!(
+                out,
+                "  {yellow}?{reset} {} {} {dim}{err}{reset}",
+                rr.method, rr.path
+            )?;
+            continue;
+        }
+        let blocked = rr.vectors.iter().filter(|v| v.blocked).count();
+        let total = rr.vectors.len();
+        writeln!(
+            out,
+            "  {bold}{} {}{reset}  {blocked}/{total} blocked",
+            rr.method, rr.path
+        )?;
+        // Honest UI: when cancellation fired, surface a one-line dim
+        // notice naming the trigger + skipped count so the user does
+        // not mistake the route for incomplete.
+        if let Some(info) = &rr.cancelled_after {
+            writeln!(
+                out,
+                "    {dim}cancelled after [{}] {} \u{2014} {} vector(s) skipped to save time{reset}",
+                info.category, info.label, info.vectors_skipped
+            )?;
+        }
+        for v in &rr.vectors {
+            let mark = if v.cancelled_kind.is_some() {
+                "--"
+            } else if v.blocked {
+                "ok"
+            } else {
+                "!!"
+            };
+            writeln!(
+                out,
+                "    {dim}{mark}{reset} [{}] {} {dim}{}{reset}",
+                v.category, v.label, v.note
+            )?;
+            // Emit a copyable curl reproducer for each vulnerable finding
+            // so the user can reproduce the probe + verify their fix
+            // without re-running the full scan. Blocked findings are
+            // intentionally skipped to keep the report scannable, and
+            // cancelled findings are skipped because the row is a slot
+            // placeholder — no probe was confirmed against the server.
+            if !v.blocked && v.cancelled_kind.is_none() {
+                let curl = format_curl(target_url, &rr.method, &rr.path, &rr.field, &v.payload);
+                writeln!(out, "       {dim}{curl}{reset}")?;
+            }
+        }
+    }
+    writeln!(out)?;
+    writeln!(
+        out,
+        "  {bold}Summary:{reset} {} route(s) scanned, {} vector(s) probed; {} blocked, {} vulnerable {dim}({:.2}s){reset}",
+        summary.routes_reachable,
+        summary.total_vectors,
+        summary.total_blocked,
+        summary.total_vulnerable,
+        summary.duration_secs,
+    )?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn print_json_report(
+    out: &mut dyn Write,
+    target_url: &str,
+    auth: Option<&AuthConfig>,
+    results: &[RouteResult],
+    summary: &ScanSummary,
+) -> io::Result<()> {
+    use serde_json::{json, Map, Value};
+
+    let routes: Vec<Value> = results
+        .iter()
+        .map(|rr| {
+            let vectors: Vec<Value> = rr
+                .vectors
+                .iter()
+                .map(|v| {
+                    let mut m = Map::new();
+                    m.insert("category".into(), Value::String(v.category.clone()));
+                    m.insert("label".into(), Value::String(v.label.clone()));
+                    m.insert("payload".into(), Value::String(v.payload.clone()));
+                    m.insert("status".into(), json!(v.status));
+                    m.insert("blocked".into(), Value::Bool(v.blocked));
+                    m.insert("note".into(), Value::String(v.note.clone()));
+                    // Include the curl reproducer for every vector (blocked
+                    // and vulnerable) so machine consumers can render or
+                    // filter as they please.
+                    m.insert(
+                        "curl".into(),
+                        Value::String(format_curl(
+                            target_url, &rr.method, &rr.path, &rr.field, &v.payload,
+                        )),
+                    );
+                    // Cancellation marker. Key is OMITTED entirely when
+                    // the vector ran normally so prior JSON output stays
+                    // byte-equal for non-cancel runs. Wire format pinned
+                    // by `CancelKind::as_str` — see VectorResult doc.
+                    if let Some(kind) = v.cancelled_kind {
+                        m.insert("cancelled_kind".into(), Value::String(kind.as_str().into()));
+                    }
+                    Value::Object(m)
+                })
+                .collect();
+            let mut m = Map::new();
+            m.insert("method".into(), Value::String(rr.method.clone()));
+            m.insert("path".into(), Value::String(rr.path.clone()));
+            m.insert("reachable".into(), Value::Bool(rr.reachable));
+            m.insert(
+                "error".into(),
+                rr.error.clone().map(Value::String).unwrap_or(Value::Null),
+            );
+            m.insert("field".into(), Value::String(rr.field.clone()));
+            m.insert("vectors".into(), Value::Array(vectors));
+            // Cancellation summary. Key is OMITTED when no cancel
+            // fired, so prior JSON output stays byte-equal for routes
+            // that completed without short-circuit. See
+            // RouteResult::cancelled_after for the locked schema.
+            if let Some(info) = &rr.cancelled_after {
+                let mut ci = Map::new();
+                ci.insert("category".into(), Value::String(info.category.clone()));
+                ci.insert("label".into(), Value::String(info.label.clone()));
+                ci.insert("vectors_skipped".into(), json!(info.vectors_skipped));
+                m.insert("cancelled_after".into(), Value::Object(ci));
+            }
+            Value::Object(m)
+        })
+        .collect();
+
+    let mut doc = Map::new();
+    doc.insert("tool".into(), Value::String("arcis-scan".into()));
+    doc.insert("target".into(), Value::String(target_url.into()));
+    // Auth metadata, redacted. Slot is between `target` and
+    // `durationMs` (run setup, before run results). Omitted entirely
+    // for unauthenticated runs so prior JSON output stays byte-equal.
+    // The redaction rule lives on `AuthConfig::redact_for_json`; see
+    // that doc-comment for the contract future flags must follow.
+    if let Some(auth) = auth {
+        if let Some(meta) = auth.redact_for_json() {
+            doc.insert("auth".into(), meta);
+        }
+    }
+    doc.insert(
+        "durationMs".into(),
+        json!((summary.duration_secs * 1000.0).round() as u64),
+    );
+    let mut sm = Map::new();
+    sm.insert("routesTotal".into(), json!(summary.routes_total));
+    sm.insert("routesReachable".into(), json!(summary.routes_reachable));
+    sm.insert("totalVectors".into(), json!(summary.total_vectors));
+    sm.insert("totalBlocked".into(), json!(summary.total_blocked));
+    sm.insert("totalVulnerable".into(), json!(summary.total_vulnerable));
+    doc.insert("summary".into(), Value::Object(sm));
+    doc.insert("routes".into(), Value::Array(routes));
+
+    let s = serde_json::to_string_pretty(&Value::Object(doc)).unwrap_or_default();
+    writeln!(out, "{s}")?;
+    Ok(())
+}
+
+fn resolve_target(args: &Args, cwd: &Path) -> Result<(String, String), String> {
+    if let Some(url) = &args.url {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            return Err(format!(
+                "arcis scan: invalid URL scheme: {url}\n  Only http:// and https:// are supported."
+            ));
+        }
+        return Ok((url.trim_end_matches('/').to_string(), "argv".into()));
+    }
+    let candidates = arcis_engine::scan::detect_target(
+        cwd,
+        !args.no_control_plane,
+        arcis_engine::scan::DEV_PORTS,
+    );
+    if let Some(first) = candidates.into_iter().next() {
+        return Ok((first.url, first.source));
+    }
+    Err("arcis scan: could not auto-detect a running server. Pass a URL explicitly.".into())
+}
+
+pub fn run(argv: &[String]) -> ExitCode {
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    let stderr = io::stderr();
+    let mut err = stderr.lock();
+
+    let parsed = parse_args(argv);
+    let args = match parsed {
+        ParseOutcome::Help => {
+            let _ = print_help(&mut out);
+            return ExitCode::from(0);
+        }
+        ParseOutcome::Err(msg) => {
+            let _ = writeln!(err, "{msg}");
+            return ExitCode::from(2);
+        }
+        ParseOutcome::Args(a) => *a,
+    };
+
+    if args.list {
+        let _ = print_catalog(&mut out, args.no_color);
+        return ExitCode::from(0);
+    }
+
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    let (target_url, _target_source) = match resolve_target(&args, &cwd) {
+        Ok(t) => t,
+        Err(msg) => {
+            let _ = writeln!(err, "{msg}");
+            return ExitCode::from(2);
+        }
+    };
+
+    // Resolve routes. Same three paths as Python.
+    let routes_user_supplied = !args.routes.is_empty();
+    let mut discovered_routes: Vec<DiscoveredRoute> = Vec::new();
+    let routes: Vec<(String, String)> = if routes_user_supplied {
+        parse_route_args(&args.routes)
+    } else if args.no_discovery {
+        vec![("POST".into(), "/".into())]
+    } else {
+        discovered_routes = discover_routes(&cwd, 1500);
+        if discovered_routes.is_empty() {
+            vec![("POST".into(), "/".into())]
+        } else {
+            discovered_routes
+                .iter()
+                .map(|r| (r.method.clone(), r.path.clone()))
+                .collect()
+        }
+    };
+
+    // Categories: pass-through; downstream uses `slug` for matching.
+    let categories = args.categories.clone();
+
+    // Default fields if user didn't pass --field.
+    let fields_owned: Vec<String> = if args.fields.is_empty() {
+        DEFAULT_FIELDS.iter().map(|s| (*s).to_string()).collect()
+    } else {
+        args.fields.clone()
+    };
+
+    let timeout = Duration::from_secs(args.timeout);
+
+    // Build the runtime first — login (--login) needs to await
+    // execute_login before we can build the AuthConfig.
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            let _ = writeln!(err, "arcis scan: tokio runtime init failed: {e}");
+            return ExitCode::from(2);
+        }
+    };
+
+    // Build the auth config. Three exclusive paths (the `--login`
+    // mutex check at parse time guarantees at most one of these
+    // branches fires):
+    //   1. `--login` set: execute the login flow on the runtime,
+    //      capture the artifact into a populated AuthConfig.
+    //   2. `--bearer` and/or `--cookie` set: compose manually.
+    //   3. Neither: no auth.
+    //
+    // `--csrf-from` is orthogonal — it augments whatever auth_config
+    // results from this block (including no-auth) with a fetched
+    // CSRF token. See the CSRF block below.
+    let mut auth_config: Option<AuthConfig> = if let Some(url) = args.login_url.as_deref() {
+        let lcfg = LoginConfig {
+            url: url.to_string(),
+            form: args.login_form.clone(),
+            json: args.login_json,
+        };
+        match runtime.block_on(execute_login(&lcfg, timeout)) {
+            Ok(cfg) => Some(cfg),
+            Err(e) => {
+                let _ = writeln!(err, "arcis scan: {e}");
+                return ExitCode::from(2);
+            }
+        }
+    } else if args.bearer.is_some() || args.cookie.is_some() {
+        let mut cfg = AuthConfig::default();
+        if let Some(token) = args.bearer.as_deref() {
+            match AuthConfig::with_bearer(token) {
+                Ok(c) => cfg.bearer = c.bearer,
+                Err(e) => {
+                    let _ = writeln!(err, "arcis scan: {e}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        if let Some(value) = args.cookie.as_deref() {
+            match AuthConfig::with_cookie(value) {
+                Ok(c) => cfg.cookie = c.cookie,
+                Err(e) => {
+                    let _ = writeln!(err, "arcis scan: {e}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        Some(cfg)
+    } else {
+        None
+    };
+
+    // CSRF fetch — runs AFTER the auth-config block (login session
+    // cookie / bearer / manual cookie all available to the GET) but
+    // BEFORE the scan begins. Order-of-operations contract: login →
+    // CSRF → scan. Composes with every auth method without mutex.
+    if let Some(mut spec) = args.csrf_spec.clone() {
+        if let Some(name) = args.csrf_header.as_deref() {
+            spec.thread_header = name.to_string();
+        }
+        let base = auth_config.clone().unwrap_or_default();
+        let outcome = match runtime.block_on(fetch_csrf(&spec, &base, &target_url, timeout)) {
+            Ok(o) => o,
+            Err(e) => {
+                let _ = writeln!(err, "arcis scan: {e}");
+                return ExitCode::from(2);
+            }
+        };
+        let mut cfg = auth_config.unwrap_or_default();
+        cfg.csrf = Some(outcome.state);
+        // Cookie-strategy double-submit: append the freshly-fetched
+        // `name=value` to whatever cookie the user / login flow already
+        // built. Verbatim no-parse policy — engine + CLI both refuse
+        // to dedupe. HTTP servers honor last-occurrence on the wire,
+        // so the fresh value wins server-side without merge logic.
+        if let Some(extra) = outcome.cookie_to_append {
+            cfg.cookie = match cfg.cookie.take() {
+                Some(existing) => Some(format!("{existing}; {extra}")),
+                None => Some(extra),
+            };
+        }
+        auth_config = Some(cfg);
+    }
+
+    let start = Instant::now();
+    let results: Vec<RouteResult> = runtime.block_on(async {
+        let mut out: Vec<RouteResult> = Vec::with_capacity(routes.len());
+        let fields_borrow: Vec<&str> = fields_owned.iter().map(String::as_str).collect();
+        for (method, path) in &routes {
+            let opts = ScanOptions {
+                fields: &fields_borrow,
+                timeout,
+                categories: categories.as_deref(),
+                thorough: args.thorough,
+                auth: auth_config.as_ref(),
+                cancel_on: args.cancel_on,
+            };
+            out.push(scan_route(&target_url, method, path, &opts).await);
+        }
+        out
+    });
+    let elapsed = start.elapsed();
+
+    let summary = summarize(&results, elapsed);
+
+    if args.json_output {
+        let _ = print_json_report(
+            &mut out,
+            &target_url,
+            auth_config.as_ref(),
+            &results,
+            &summary,
+        );
+    } else if !args.quiet {
+        let _ = print_human_report(&mut out, &target_url, &results, &summary, args.no_color);
+    }
+
+    // Discovery footnote (matches Python's tip when fallback was used).
+    if !routes_user_supplied
+        && discovered_routes.is_empty()
+        && !args.no_discovery
+        && !args.json_output
+        && !args.quiet
+    {
+        let _ = writeln!(
+            err,
+            "  Tip: pass --route POST:/api/login or run from a project root with package.json / pyproject.toml / go.mod."
+        );
+    }
+
+    if summary.total_vulnerable > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::from(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(input: &[&str]) -> Args {
+        let argv: Vec<String> = input.iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Args(a) => *a,
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn defaults() {
+        let a = args(&[]);
+        assert!(a.url.is_none());
+        assert_eq!(a.timeout, 5);
+        assert!(!a.thorough);
+        assert!(!a.list);
+        assert!(!a.json_output);
+        assert!(a.routes.is_empty());
+        assert!(a.fields.is_empty());
+        assert!(a.categories.is_none());
+    }
+
+    #[test]
+    fn parses_url_positional() {
+        let a = args(&["http://localhost:5000"]);
+        assert_eq!(a.url.as_deref(), Some("http://localhost:5000"));
+    }
+
+    #[test]
+    fn parses_route_flag_repeatable() {
+        let a = args(&["-r", "POST:/api/login", "--route", "GET:/health"]);
+        assert_eq!(a.routes, vec!["POST:/api/login", "GET:/health"]);
+    }
+
+    #[test]
+    fn parses_categories_nargs_plus() {
+        let a = args(&["-c", "xss", "sql", "nosql"]);
+        assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql", "nosql"]);
+    }
+
+    #[test]
+    fn categories_stop_at_next_flag() {
+        let a = args(&["-c", "xss", "sql", "--yes"]);
+        assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql"]);
+        assert!(a.yes);
+    }
+
+    #[test]
+    fn parses_categories_comma_separated() {
+        let a = args(&["-c", "xss,sql,path"]);
+        assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql", "path"]);
+    }
+
+    #[test]
+    fn parses_categories_mixed_comma_and_space() {
+        let a = args(&["--categories", "xss,sql", "path", "nosql, cmd"]);
+        assert_eq!(
+            a.categories.as_deref().unwrap(),
+            &["xss", "sql", "path", "nosql", "cmd"]
+        );
+    }
+
+    #[test]
+    fn categories_drops_empty_comma_pieces() {
+        let a = args(&["-c", "xss,,sql,"]);
+        assert_eq!(a.categories.as_deref().unwrap(), &["xss", "sql"]);
+    }
+
+    #[test]
+    fn parses_timeout() {
+        let a = args(&["-t", "10"]);
+        assert_eq!(a.timeout, 10);
+    }
+
+    #[test]
+    fn rejects_non_integer_timeout() {
+        let argv: Vec<String> = ["-t", "abc"].iter().map(|s| s.to_string()).collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn list_flag_short_and_long() {
+        assert!(args(&["-l"]).list);
+        assert!(args(&["--list"]).list);
+    }
+
+    #[test]
+    fn flag_only_args_compose() {
+        let a = args(&[
+            "--thorough",
+            "--no-color",
+            "--quiet",
+            "--yes",
+            "--no-discovery",
+            "--no-control-plane",
+        ]);
+        assert!(a.thorough);
+        assert!(a.no_color);
+        assert!(a.quiet);
+        assert!(a.yes);
+        assert!(a.no_discovery);
+        assert!(a.no_control_plane);
+    }
+
+    #[test]
+    fn rejects_unknown_flag() {
+        let argv: Vec<String> = ["--bogus"].iter().map(|s| s.to_string()).collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn rejects_double_positional() {
+        let argv: Vec<String> = ["http://a", "http://b"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn parse_route_args_bare_path_defaults_to_post() {
+        let r = parse_route_args(&["/api/login".into()]);
+        assert_eq!(r, vec![("POST".into(), "/api/login".into())]);
+    }
+
+    #[test]
+    fn parse_route_args_method_path() {
+        let r = parse_route_args(&["GET:/health".into(), "post:/api/users".into()]);
+        assert_eq!(
+            r,
+            vec![
+                ("GET".into(), "/health".into()),
+                ("POST".into(), "/api/users".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_route_args_full_url_kept_as_post() {
+        let r = parse_route_args(&["http://example.com/x".into()]);
+        assert_eq!(r, vec![("POST".into(), "http://example.com/x".into())]);
+    }
+
+    /// Deliberately unique sentinels for the JSON-redaction tests below.
+    /// Pinned so a substring match against the emitted JSON cannot
+    /// false-positive on a hash digest, route URL, or vector label.
+    const TEST_BEARER_TOKEN: &str = "arcis-test-bearer-DEADBEEF-9f3a2c";
+    const TEST_COOKIE_VALUE: &str = "session=arcis-test-cookie-CAFEBABE-7e1f4d; csrf=feedface";
+
+    #[test]
+    fn parses_bearer_space_separated() {
+        let a = args(&["--bearer", "foo"]);
+        assert_eq!(a.bearer.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn parses_bearer_equals_inline() {
+        let a = args(&["--bearer=foo"]);
+        assert_eq!(a.bearer.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn bearer_empty_value_rejected() {
+        let argv: Vec<String> = ["--bearer", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bearer_whitespace_only_rejected() {
+        let argv: Vec<String> = ["--bearer", "   "].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bearer_inline_equals_empty_rejected() {
+        let argv: Vec<String> = ["--bearer="].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--bearer cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn json_report_includes_auth_methods_array_for_bearer_and_redacts_token() {
+        let auth = AuthConfig::with_bearer(TEST_BEARER_TOKEN).unwrap();
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        // Schema: `methods` is always an array (even for one entry).
+        assert_eq!(v["auth"]["methods"][0], "bearer");
+        assert_eq!(v["auth"]["methods"].as_array().unwrap().len(), 1);
+        // Sentinel: the literal token string must NEVER appear anywhere
+        // in the emitted JSON. This pins the redaction contract — users
+        // pipe `--json` output to logs and CI artifacts; secrets must
+        // not leak there.
+        assert!(
+            !s.contains(TEST_BEARER_TOKEN),
+            "token leaked to JSON output: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_includes_auth_methods_array_for_cookie_and_redacts_value() {
+        let auth = AuthConfig::with_cookie(TEST_COOKIE_VALUE).unwrap();
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["auth"]["methods"][0], "cookie");
+        assert_eq!(v["auth"]["methods"].as_array().unwrap().len(), 1);
+        // Cookie value sentinel must NOT appear anywhere in JSON. The
+        // verbatim no-parse policy means we never extract names either.
+        assert!(!s.contains(TEST_COOKIE_VALUE), "cookie value leaked: {s}");
+        assert!(
+            !s.contains("session="),
+            "cookie name should not leak under no-parse policy: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_with_bearer_and_cookie_lists_both_methods_and_redacts_both() {
+        // Composite path: alphabetical order pinned, both sentinels
+        // checked absent.
+        let auth = AuthConfig {
+            bearer: Some(TEST_BEARER_TOKEN.into()),
+            cookie: Some(TEST_COOKIE_VALUE.into()),
+            ..Default::default()
+        };
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let methods = v["auth"]["methods"].as_array().unwrap();
+        assert_eq!(methods.len(), 2);
+        assert_eq!(methods[0], "bearer");
+        assert_eq!(methods[1], "cookie");
+        assert!(
+            !s.contains(TEST_BEARER_TOKEN),
+            "bearer leaked in composite: {s}"
+        );
+        assert!(
+            !s.contains(TEST_COOKIE_VALUE),
+            "cookie leaked in composite: {s}"
+        );
+    }
+
+    #[test]
+    fn json_report_omits_auth_when_unauthenticated() {
+        let summary = ScanSummary::default();
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        // No-auth runs must not emit the key at all so prior
+        // unauthenticated JSON output stays byte-equal.
+        assert!(v.get("auth").is_none(), "got: {s}");
+        assert!(!s.contains("\"auth\""), "got: {s}");
+    }
+
+    #[test]
+    fn help_text_documents_bearer_redaction() {
+        // The "never appears in --json" line is load-bearing for users
+        // running scans in CI — it tells them piping --json to logs is
+        // safe. Pin it so future help-text refactors don't drop it.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--bearer <token>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("Authorization: Bearer"),
+            "missing header description: {s}"
+        );
+        assert!(
+            s.contains("Token value never appears in --json"),
+            "missing bearer redaction note: {s}"
+        );
+    }
+
+    #[test]
+    fn help_text_documents_cookie_redaction() {
+        // Parallel to the bearer pin: the redaction promise is also
+        // load-bearing for --cookie. Future help-text refactors must
+        // not drop either line.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--cookie <value>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("Send Cookie:"),
+            "missing header description: {s}"
+        );
+        assert!(
+            s.contains("Cookie value never appears in --json"),
+            "missing cookie redaction note: {s}"
+        );
+    }
+
+    #[test]
+    fn parses_cookie_space_separated() {
+        let a = args(&["--cookie", "session=abc; csrf=xyz"]);
+        assert_eq!(a.cookie.as_deref(), Some("session=abc; csrf=xyz"));
+    }
+
+    #[test]
+    fn parses_cookie_equals_inline() {
+        let a = args(&["--cookie=session=abc"]);
+        // Verbatim including the inner `=` — no further parsing.
+        assert_eq!(a.cookie.as_deref(), Some("session=abc"));
+    }
+
+    #[test]
+    fn cookie_empty_value_rejected() {
+        let argv: Vec<String> = ["--cookie", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cookie_whitespace_only_rejected() {
+        let argv: Vec<String> = ["--cookie", "   "].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cookie_inline_equals_empty_rejected() {
+        let argv: Vec<String> = ["--cookie="].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--cookie cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bearer_and_cookie_compose() {
+        let a = args(&["--bearer", "tok", "--cookie", "session=abc"]);
+        assert_eq!(a.bearer.as_deref(), Some("tok"));
+        assert_eq!(a.cookie.as_deref(), Some("session=abc"));
+    }
+
+    // --login flag tests
+
+    #[test]
+    fn parses_login_url_space_separated() {
+        let a = args(&["--login", "http://localhost:5000/auth/login"]);
+        assert_eq!(
+            a.login_url.as_deref(),
+            Some("http://localhost:5000/auth/login")
+        );
+    }
+
+    #[test]
+    fn parses_login_url_equals_inline() {
+        let a = args(&["--login=https://example.com/login"]);
+        assert_eq!(a.login_url.as_deref(), Some("https://example.com/login"));
+    }
+
+    #[test]
+    fn login_url_invalid_scheme_rejected() {
+        let argv: Vec<String> = ["--login", "ftp://example.com/login"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("invalid --login URL scheme"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_empty_value_rejected() {
+        let argv: Vec<String> = ["--login", ""].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login cannot be empty"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_login_form_repeatable() {
+        let a = args(&[
+            "--login",
+            "http://x/auth",
+            "--login-form",
+            "user=admin",
+            "--login-form",
+            "pass=hunter2",
+        ]);
+        assert_eq!(
+            a.login_form,
+            vec![
+                ("user".into(), "admin".into()),
+                ("pass".into(), "hunter2".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_login_form_value_with_inner_equals_kept_verbatim() {
+        // Only the FIRST `=` splits key from value — useful when the
+        // value itself contains `=` (base64, JWT-ish, etc.).
+        let a = args(&["--login", "http://x/auth", "--login-form", "raw=k=v=more"]);
+        assert_eq!(a.login_form, vec![("raw".into(), "k=v=more".into())]);
+    }
+
+    #[test]
+    fn login_form_rejects_no_equals() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--login-form", "bareword"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(
+                    e.contains("--login-form expects key=value, got: bareword"),
+                    "got: {e}"
+                )
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_form_rejects_empty_key() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--login-form", "=val"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("non-empty key"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_login_json_flag() {
+        let a = args(&["--login", "http://x/auth", "--login-json"]);
+        assert!(a.login_json);
+    }
+
+    #[test]
+    fn login_form_without_login_url_rejected() {
+        let argv: Vec<String> = ["--login-form", "user=admin"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login-form requires --login"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_json_without_login_url_rejected() {
+        let argv: Vec<String> = ["--login-json"].iter().map(|s| s.to_string()).collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("--login-json requires --login"), "got: {e}")
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    /// The mutex error message is part of the documented contract.
+    /// Pin its exact wording so future refactors don't drift.
+    const MUTEX_MESSAGE: &str = "--login is mutually exclusive with --bearer / --cookie. \
+         Use --login OR manual flags, not both.";
+
+    #[test]
+    fn login_mutex_with_bearer_rejected_with_exact_message() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--bearer", "tok"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_mutex_with_cookie_rejected_with_exact_message() {
+        let argv: Vec<String> = ["--login", "http://x/auth", "--cookie", "session=abc"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn login_mutex_with_both_bearer_and_cookie_still_one_message() {
+        let argv: Vec<String> = [
+            "--login",
+            "http://x/auth",
+            "--bearer",
+            "tok",
+            "--cookie",
+            "s=a",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => assert!(e.contains(MUTEX_MESSAGE), "got: {e}"),
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn help_text_documents_login_capture_priority() {
+        // The capture priority (Set-Cookie -> access_token -> token ->
+        // jwt) is part of the documented user contract — pin it so
+        // future help-text refactors don't drop it. Users with weird
+        // login responses need a clear failure mode.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--login <url>"), "missing flag entry: {s}");
+        assert!(
+            s.contains("--login-form key=value"),
+            "missing form flag: {s}"
+        );
+        assert!(s.contains("--login-json"), "missing json flag: {s}");
+        // Capture priority — all four tokens in the documented order.
+        let priority_pos = s.find("Set-Cookie -> access_token -> token -> jwt");
+        assert!(
+            priority_pos.is_some(),
+            "missing capture-priority order line: {s}"
+        );
+        // Mutex hint.
+        assert!(
+            s.contains("Mutex with --bearer / --cookie"),
+            "missing mutex hint: {s}"
+        );
+        // Form-redaction hint.
+        assert!(
+            s.contains("Form keys + values never appear in --json"),
+            "missing form redaction note: {s}"
+        );
+    }
+
+    #[test]
+    fn catalog_output_no_color_byte_shape() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_catalog(&mut buf, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // Sanity assertions on the byte-shape — full byte-equal parity
+        // with Python is exercised in the parity harness fixture.
+        assert!(s.starts_with("\n  arcis scan \u{2014} attack catalog ("));
+        assert!(s.contains("(8 categories, 27 payloads)"));
+        assert!(s.contains("\n  XSS  (xss)\n"));
+        assert!(s.contains("\n  SQL Injection  (sqlinjection)\n"));
+        assert!(s.contains("\n  NoSQL Injection  (nosqlinjection)\n"));
+        assert!(s.contains("\n    script tag         <script>alert(1)</script>\n"));
+        assert!(s.contains("\n  Default fields tried (--field overrides)\n"));
+        assert!(s.contains(
+            "    q, query, search, input, name, username, email, data, value, text, id\n"
+        ));
+    }
+
+    #[test]
+    fn catalog_label_padding_pads_short_labels_to_18() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_catalog(&mut buf, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // "OR bypass" = 9 chars, padded to 18 = 9 trailing spaces.
+        assert!(s.contains("    OR bypass          ' OR '1'='1' --\n"));
+        // "wildcard" = 8 chars, padded to 18.
+        assert!(s.contains("    wildcard           *)(uid=*))(|(uid=*\n"));
+    }
+
+    #[test]
+    fn catalog_with_color_emits_ansi() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_catalog(&mut buf, false).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains(BOLD));
+        assert!(s.contains(RESET));
+        assert!(s.contains(DIM));
+        assert!(s.contains(CYAN));
+    }
+
+    fn fixture_route() -> RouteResult {
+        use arcis_engine::scan::VectorResult;
+        RouteResult {
+            method: "POST".into(),
+            path: "/api/login".into(),
+            reachable: true,
+            error: None,
+            field: "username".into(),
+            vectors: vec![
+                VectorResult {
+                    category: "XSS".into(),
+                    label: "script tag".into(),
+                    payload: "<script>alert(1)</script>".into(),
+                    status: 200,
+                    blocked: false,
+                    note: "reflected in response (200)".into(),
+                    cancelled_kind: None,
+                },
+                VectorResult {
+                    category: "SQL Injection".into(),
+                    label: "OR bypass".into(),
+                    payload: "' OR '1'='1' --".into(),
+                    status: 400,
+                    blocked: true,
+                    note: "rejected (400)".into(),
+                    cancelled_kind: None,
+                },
+            ],
+            cancelled_after: None,
+        }
+    }
+
+    #[test]
+    fn human_report_includes_curl_for_vulnerable_only() {
+        let rr = fixture_route();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // Vulnerable XSS finding should be followed by a curl line.
+        assert!(
+            s.contains("curl -fsSL -X POST 'http://localhost:5000/api/login'"),
+            "expected curl reproducer for vulnerable finding, got:\n{s}"
+        );
+        // Blocked SQL finding should NOT have a curl line for it.
+        // We check that the OR-bypass payload does not appear inside any
+        // curl command — it would only show up if format_curl ran.
+        assert!(
+            !s.contains("' OR '1"),
+            "blocked findings should not emit a curl line, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn json_report_includes_curl_per_vector_and_field_per_route() {
+        let rr = fixture_route();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[rr], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let route0 = &v["routes"][0];
+        assert_eq!(route0["field"], "username");
+        let vectors = route0["vectors"].as_array().unwrap();
+        // Both blocked and vulnerable vectors carry a curl reproducer in JSON.
+        assert_eq!(vectors.len(), 2);
+        for vec in vectors {
+            let curl = vec["curl"].as_str().unwrap();
+            assert!(curl.starts_with("curl -fsSL"), "curl prefix: {curl}");
+        }
+        // Vulnerable XSS payload appears URL-encoded INSIDE the JSON body
+        // of its own POST curl command (since method=POST). Confirm the
+        // method + path land correctly.
+        let xss_curl = vectors[0]["curl"].as_str().unwrap();
+        assert!(xss_curl.contains("-X POST"), "got: {xss_curl}");
+        assert!(xss_curl.contains("/api/login"), "got: {xss_curl}");
+    }
+
+    // -------- --cancel-on flag tests --------
+
+    #[test]
+    fn parses_cancel_on_first_vuln_space_separated() {
+        let a = args(&["--cancel-on", "first-vuln"]);
+        assert_eq!(a.cancel_on, CancelMode::FirstVuln);
+    }
+
+    #[test]
+    fn parses_cancel_on_never_space_separated() {
+        let a = args(&["--cancel-on", "never"]);
+        assert_eq!(a.cancel_on, CancelMode::Never);
+    }
+
+    #[test]
+    fn parses_cancel_on_inline_equals() {
+        let a = args(&["--cancel-on=never"]);
+        assert_eq!(a.cancel_on, CancelMode::Never);
+    }
+
+    #[test]
+    fn cancel_on_default_is_first_vuln() {
+        // Locked default: cancellation is on by default. This pins the
+        // CLI surface alongside `CancelMode::default` in the engine
+        // — both must agree, both are tested.
+        let a = args(&[]);
+        assert_eq!(a.cancel_on, CancelMode::FirstVuln);
+    }
+
+    #[test]
+    fn cancel_on_unknown_value_rejected() {
+        let argv: Vec<String> = ["--cancel-on", "always"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(e) => {
+                assert!(e.contains("invalid --cancel-on value"), "got: {e}");
+                // Error message MUST list both valid values so the user
+                // can self-correct without re-reading help.
+                assert!(e.contains("first-vuln"), "got: {e}");
+                assert!(e.contains("never"), "got: {e}");
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cancel_on_case_sensitive_uppercase_rejected() {
+        // Locked: `--cancel-on Never` is rejected. Same policy as the
+        // value-is-an-identifier convention used elsewhere — the user
+        // gets a clear error rather than a silently-different mode.
+        let argv: Vec<String> = ["--cancel-on", "Never"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn cancel_on_empty_value_rejected() {
+        let argv: Vec<String> = ["--cancel-on", ""].iter().map(|s| s.to_string()).collect();
+        assert!(matches!(parse_args(&argv), ParseOutcome::Err(_)));
+    }
+
+    #[test]
+    fn help_text_documents_cancel_modes() {
+        // Pin both literal mode strings + the explanatory line in the
+        // help block. If a future help-text refactor drops a mode or
+        // muddies the description, this test fails loudly. Same shape
+        // as `help_text_documents_login_capture_priority`.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("--cancel-on MODE"), "missing flag entry: {s}");
+        // Both literal mode names — pinning prevents silent rename.
+        assert!(s.contains("first-vuln"), "missing first-vuln mode: {s}");
+        assert!(s.contains("never"), "missing never mode: {s}");
+        // Default annotation — users skimming help should see which
+        // mode is active without setting the flag.
+        assert!(
+            s.contains("first-vuln (default)"),
+            "missing default annotation: {s}"
+        );
+        // Behaviour summary (load-bearing for users deciding when to
+        // opt out for full coverage).
+        assert!(
+            s.contains("Cancel remaining vector probes"),
+            "missing cancel description: {s}"
+        );
+    }
+
+    fn fixture_route_with_cancel() -> RouteResult {
+        use arcis_engine::scan::{CancelInfo, CancelKind, VectorResult};
+        RouteResult {
+            method: "POST".into(),
+            path: "/api/login".into(),
+            reachable: true,
+            error: None,
+            field: "username".into(),
+            vectors: vec![
+                // The trigger: vulnerable reflection finding.
+                VectorResult {
+                    category: "XSS".into(),
+                    label: "script tag".into(),
+                    payload: "<script>alert(1)</script>".into(),
+                    status: 200,
+                    blocked: false,
+                    note: "reflected in response (200)".into(),
+                    cancelled_kind: None,
+                },
+                // Skipped (permit-blocked) — never sent.
+                VectorResult {
+                    category: "SQL Injection".into(),
+                    label: "OR bypass".into(),
+                    payload: "' OR '1'='1' --".into(),
+                    status: 0,
+                    blocked: false,
+                    note: "skipped (cancelled)".into(),
+                    cancelled_kind: Some(CancelKind::Skipped),
+                },
+                // In-flight cancelled — request was dropped at await.
+                VectorResult {
+                    category: "Path Traversal".into(),
+                    label: "etc/passwd".into(),
+                    payload: "../../etc/passwd".into(),
+                    status: 0,
+                    blocked: false,
+                    note: "cancelled in-flight".into(),
+                    cancelled_kind: Some(CancelKind::InFlight),
+                },
+            ],
+            cancelled_after: Some(CancelInfo {
+                category: "XSS".into(),
+                label: "script tag".into(),
+                vectors_skipped: 2,
+            }),
+        }
+    }
+
+    #[test]
+    fn json_emits_cancelled_after_block_when_cancel_fires() {
+        // Sentinel-pin contains-checks against the SERIALIZED string
+        // (not just deserialized field access) so a refactor that
+        // renames the key to `cancelledAt` or drops it fails loudly.
+        // Mirrors the auth-redaction sentinel-pin pattern.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[rr], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+
+        // Literal-key pins. Locked schema — these strings must appear
+        // verbatim in any future iteration of the JSON renderer.
+        assert!(
+            s.contains("\"cancelled_after\""),
+            "missing cancelled_after key in JSON: {s}"
+        );
+        assert!(
+            s.contains("\"cancelled_kind\""),
+            "missing cancelled_kind key in JSON: {s}"
+        );
+        assert!(
+            s.contains("\"vectors_skipped\""),
+            "missing vectors_skipped key in JSON: {s}"
+        );
+        // Wire-format pins for the two CancelKind variants — must
+        // serialize as snake_case literal strings.
+        assert!(
+            s.contains("\"skipped\""),
+            "missing skipped wire literal: {s}"
+        );
+        assert!(
+            s.contains("\"in_flight\""),
+            "missing in_flight wire literal: {s}"
+        );
+
+        // Structural assertions on the parsed JSON for shape.
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let route0 = &v["routes"][0];
+        let info = &route0["cancelled_after"];
+        assert_eq!(info["category"], "XSS");
+        assert_eq!(info["label"], "script tag");
+        assert_eq!(info["vectors_skipped"], 2);
+
+        // Per-vector cancelled_kind — present only on skipped/in-flight
+        // rows, OMITTED on the trigger vector that ran normally.
+        let vectors = route0["vectors"].as_array().unwrap();
+        assert!(vectors[0].get("cancelled_kind").is_none());
+        assert_eq!(vectors[1]["cancelled_kind"], "skipped");
+        assert_eq!(vectors[2]["cancelled_kind"], "in_flight");
+    }
+
+    #[test]
+    fn json_omits_cancelled_after_when_no_cancellation() {
+        // Byte-equal-prior-output guarantee: a route that did not
+        // cancel must NOT carry the `cancelled_after` key. Same shape
+        // as the `auth` field omission for unauthenticated runs.
+        let rr = fixture_route(); // No cancellation in this fixture.
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(&mut buf, "http://localhost:5000", None, &[rr], &summary).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(
+            !s.contains("\"cancelled_after\""),
+            "cancelled_after must not appear when no cancel fired: {s}"
+        );
+        assert!(
+            !s.contains("\"cancelled_kind\""),
+            "cancelled_kind must not appear when no vectors were cancelled: {s}"
+        );
+    }
+
+    #[test]
+    fn human_report_shows_cancelled_after_line_dim() {
+        // Honest UI: the user must see the cancellation notice in the
+        // human report so they don't mistake a cancel for an
+        // incomplete scan. Pin the trigger label + skip count.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // The dim notice. Em-dash is the visual separator between the
+        // trigger and the skip count.
+        assert!(
+            s.contains("cancelled after [XSS] script tag"),
+            "missing cancellation notice: {s}"
+        );
+        assert!(s.contains("2 vector(s) skipped"), "missing skip count: {s}");
+    }
+
+    #[test]
+    fn human_report_marks_cancelled_vectors_with_dashes_not_blocks() {
+        // Cancelled rows must use a distinct mark (`--`) — not `ok`
+        // or `!!` — so users skimming the report can see at a glance
+        // which vectors actually ran.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // The two cancelled rows should each carry the `--` marker.
+        assert!(
+            s.contains("-- [SQL Injection] OR bypass"),
+            "skipped row missing -- mark: {s}"
+        );
+        assert!(
+            s.contains("-- [Path Traversal] etc/passwd"),
+            "in-flight row missing -- mark: {s}"
+        );
+    }
+
+    #[test]
+    fn human_report_does_not_emit_curl_for_cancelled_vectors() {
+        // The curl reproducer is a "go reproduce this finding" tool;
+        // emitting it for a vector that was never tested would mislead.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        let mut buf: Vec<u8> = Vec::new();
+        print_human_report(&mut buf, "http://localhost:5000", &[rr], &summary, true).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // The XSS payload (which DID land as vulnerable) should have
+        // its curl emitted; the OR-bypass and path-traversal payloads
+        // (cancelled) must NOT show in any curl line.
+        assert!(
+            s.contains("curl -fsSL"),
+            "expected at least one curl line: {s}"
+        );
+        assert!(
+            !s.contains("OR '1'='1'"),
+            "blocked OR-bypass payload leaked into curl: {s}"
+        );
+        assert!(
+            !s.contains("/etc/passwd"),
+            "cancelled path-traversal payload leaked into curl: {s}"
+        );
+    }
+
+    #[test]
+    fn summary_excludes_cancelled_vectors_from_all_counters() {
+        // Cancelled vectors didn't run; counting them anywhere in the
+        // summary is a lie. Pin the honest accounting AND the
+        // self-consistency invariant `total_vectors == total_blocked +
+        // total_vulnerable` — so day-over-day summary diffs stay
+        // internally consistent regardless of where cancel landed.
+        // Fixture has 3 slots: 1 vulnerable XSS trigger + 2 cancelled.
+        // Probed count = 1.
+        let rr = fixture_route_with_cancel();
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        assert_eq!(summary.total_vectors, 1, "should count probed only");
+        assert_eq!(summary.total_blocked, 0);
+        assert_eq!(summary.total_vulnerable, 1);
+        // Self-consistency invariant.
+        assert_eq!(
+            summary.total_vectors,
+            summary.total_blocked + summary.total_vulnerable
+        );
+    }
+
+    #[test]
+    fn summary_invariant_holds_when_no_cancellation() {
+        // Self-consistency invariant must hold regardless of cancel
+        // policy. Pin the no-cancel case so the regression bar covers
+        // both paths.
+        let rr = fixture_route(); // 1 vuln XSS, 1 blocked SQL, no cancel.
+        let summary = summarize(std::slice::from_ref(&rr), Duration::from_millis(50));
+        assert_eq!(summary.total_vectors, 2);
+        assert_eq!(summary.total_blocked, 1);
+        assert_eq!(summary.total_vulnerable, 1);
+        assert_eq!(
+            summary.total_vectors,
+            summary.total_blocked + summary.total_vulnerable
+        );
+    }
+
+    // ---- --csrf-from / --csrf-header parser + composition ----
+
+    #[test]
+    fn csrf_from_short_form_parses_as_auto_strategy() {
+        use arcis_engine::scan::CsrfStrategy;
+        let a = args(&["--csrf-from", "GET:/csrf"]);
+        let spec = a.csrf_spec.unwrap();
+        assert_eq!(spec.url, "/csrf");
+        assert_eq!(spec.strategy, CsrfStrategy::Auto);
+        // Default thread_header until --csrf-header overrides.
+        assert_eq!(spec.thread_header, "X-CSRF-Token");
+    }
+
+    #[test]
+    fn csrf_from_long_form_parses_json_strategy() {
+        use arcis_engine::scan::CsrfStrategy;
+        let a = args(&["--csrf-from", "GET:/csrf:json:csrfToken"]);
+        let spec = a.csrf_spec.unwrap();
+        assert_eq!(spec.url, "/csrf");
+        assert_eq!(spec.strategy, CsrfStrategy::Json("csrfToken".into()));
+    }
+
+    #[test]
+    fn csrf_from_inline_equals_form_parses() {
+        // Both the space-separated and inline-equals forms parse the
+        // same — mirrors the --bearer / --cookie / --login pattern.
+        let a = args(&["--csrf-from=GET:/csrf"]);
+        assert!(a.csrf_spec.is_some());
+    }
+
+    #[test]
+    fn csrf_from_rejects_invalid_spec() {
+        // Engine `parse_csrf_spec` rejects non-GET methods. CLI must
+        // surface this as exit 2 (parse error), not a runtime failure.
+        let argv: Vec<String> = ["--csrf-from", "POST:/csrf"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(msg.contains("only GET"), "got: {msg}");
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn csrf_header_overrides_default_thread_header_at_run() {
+        // Parser stores the override raw; the `run()` block rewrites
+        // `spec.thread_header` before dispatching `fetch_csrf`. The
+        // parser-level assertion: both flags coexist on `Args`.
+        let a = args(&["--csrf-from", "GET:/csrf", "--csrf-header", "X-XSRF-TOKEN"]);
+        assert!(a.csrf_spec.is_some());
+        assert_eq!(a.csrf_header.as_deref(), Some("X-XSRF-TOKEN"));
+    }
+
+    #[test]
+    fn csrf_header_inline_equals_form_parses() {
+        let a = args(&["--csrf-from=GET:/csrf", "--csrf-header=X-CSRFToken"]);
+        assert_eq!(a.csrf_header.as_deref(), Some("X-CSRFToken"));
+    }
+
+    #[test]
+    fn csrf_header_flag_rejects_empty_and_invalid_header_chars() {
+        // Empty / whitespace-only — same template as other flags.
+        for bad in &["", "   ", "\t\n"] {
+            let argv: Vec<String> = ["--csrf-from", "GET:/csrf", "--csrf-header", bad]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            match parse_args(&argv) {
+                ParseOutcome::Err(msg) => assert!(
+                    msg.contains("--csrf-header cannot be empty"),
+                    "for {bad:?}: {msg}"
+                ),
+                other => panic!("expected Err for {bad:?}, got {other:?}"),
+            }
+        }
+        // Control bytes — CR, LF, NUL, DEL. All must be rejected with
+        // the "no control bytes" error so the engine's silent-skip
+        // posture is never reached.
+        for bad in &[
+            "X-Bad\r\nHeader",
+            "X-Bad\nHeader",
+            "X-Bad\0Header",
+            "X-Bad\x7FHeader",
+        ] {
+            let argv: Vec<String> = ["--csrf-from", "GET:/csrf", "--csrf-header", bad]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            match parse_args(&argv) {
+                ParseOutcome::Err(msg) => {
+                    assert!(msg.contains("no control bytes"), "for {bad:?}: {msg}")
+                }
+                other => panic!("expected Err for {bad:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn csrf_header_without_csrf_from_is_rejected_as_orphan() {
+        // Consistency with --login-form / --login-json: a header
+        // override has no purpose without the source flag, so it must
+        // exit 2 at parse time rather than silently no-op at runtime.
+        let argv: Vec<String> = ["--csrf-header", "X-XSRF-TOKEN"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(
+                    msg.contains("--csrf-header requires --csrf-from"),
+                    "got: {msg}"
+                );
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn csrf_from_composes_with_bearer_without_mutex() {
+        // CSRF is orthogonal to the auth-method axis — no mutex with
+        // --bearer / --cookie / --login. Parses cleanly.
+        let a = args(&["--csrf-from", "GET:/csrf", "--bearer", "test-bearer-xyz"]);
+        assert!(a.csrf_spec.is_some());
+        assert_eq!(a.bearer.as_deref(), Some("test-bearer-xyz"));
+    }
+
+    #[test]
+    fn csrf_from_composes_with_cookie_without_mutex() {
+        let a = args(&["--csrf-from", "GET:/csrf", "--cookie", "session=abc"]);
+        assert!(a.csrf_spec.is_some());
+        assert_eq!(a.cookie.as_deref(), Some("session=abc"));
+    }
+
+    #[test]
+    fn csrf_from_composes_with_login_without_mutex() {
+        // The --login mutex check refers to --bearer / --cookie only.
+        // --csrf-from must coexist with --login: real CSRF endpoints
+        // (Django, Laravel sanctum) require an authenticated session,
+        // so fetching CSRF AFTER login is the load-bearing path.
+        let a = args(&[
+            "--csrf-from",
+            "GET:/csrf",
+            "--login",
+            "http://localhost:5000/auth/login",
+            "--login-form",
+            "user=admin",
+            "--login-form",
+            "pass=hunter2",
+        ]);
+        assert!(a.csrf_spec.is_some());
+        assert_eq!(
+            a.login_url.as_deref(),
+            Some("http://localhost:5000/auth/login")
+        );
+        assert_eq!(a.login_form.len(), 2);
+    }
+
+    #[test]
+    fn help_text_documents_csrf_from_strategies() {
+        // Pin every literal the help text MUST surface so docs stay
+        // load-bearing. Drift here surfaces immediately in this test.
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        for lit in [
+            "--csrf-from",
+            "--csrf-header",
+            "STRATEGY = json | cookie | header",
+            "X-CSRF-Token (default)",
+            "POST/PUT/PATCH/DELETE",
+        ] {
+            assert!(s.contains(lit), "help missing literal {lit:?}; got:\n{s}");
+        }
+    }
+
+    #[test]
+    fn json_redacts_csrf_token_value_when_csrf_state_set() {
+        // CLI-level sentinel pin: the threaded CSRF token value MUST
+        // NEVER appear in --json output, and the methods array MUST
+        // surface `csrf-from`. Mirrors the auth-layer sentinel tests
+        // but goes through the CLI's print_json_report — pins the end
+        // -to-end redaction path the user actually sees.
+        use arcis_engine::scan::CsrfState;
+        const CSRF_SENTINEL: &str = "csrf-cli-leaktest-1f9b3e-do-not-emit";
+        let auth = AuthConfig {
+            csrf: Some(CsrfState {
+                token: CSRF_SENTINEL.into(),
+                thread_header: "X-CSRF-Token".into(),
+            }),
+            ..Default::default()
+        };
+        let summary = ScanSummary {
+            routes_total: 0,
+            routes_reachable: 0,
+            total_vectors: 0,
+            total_blocked: 0,
+            total_vulnerable: 0,
+            duration_secs: 0.0,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // Pretty-printer splits the array across lines; pin the
+        // contract without coupling to whitespace.
+        let methods_pos = s.find(r#""methods""#).expect("methods key missing");
+        let csrf_pos = s.find(r#""csrf-from""#).expect("csrf-from missing");
+        assert!(
+            csrf_pos > methods_pos,
+            "csrf-from must appear inside methods array; got:\n{s}"
+        );
+        assert!(
+            !s.contains(CSRF_SENTINEL),
+            "CSRF token value leaked in CLI JSON output: {s}"
+        );
+    }
+
+    #[test]
+    fn json_emits_csrf_from_method_in_methods_array_alongside_bearer() {
+        // Pin the ordering contract at the CLI layer: alphabetical
+        // bearer < cookie < csrf-from when no login is set. Drift
+        // here would silently break downstream JSON consumers.
+        use arcis_engine::scan::CsrfState;
+        let auth = AuthConfig {
+            bearer: Some("test-bearer".into()),
+            cookie: Some("session=abc".into()),
+            csrf: Some(CsrfState {
+                token: "tok".into(),
+                thread_header: "X-CSRF-Token".into(),
+            }),
+            ..Default::default()
+        };
+        let summary = ScanSummary {
+            routes_total: 0,
+            routes_reachable: 0,
+            total_vectors: 0,
+            total_blocked: 0,
+            total_vulnerable: 0,
+            duration_secs: 0.0,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        print_json_report(
+            &mut buf,
+            "http://localhost:5000",
+            Some(&auth),
+            &[],
+            &summary,
+        )
+        .unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        // All three methods present + alphabetical positional ordering.
+        // Whitespace-agnostic — only document positions matter.
+        let bi = s.find(r#""bearer""#).expect("bearer not found");
+        let ci = s.find(r#""cookie""#).expect("cookie not found");
+        let csi = s.find(r#""csrf-from""#).expect("csrf-from not found");
+        assert!(
+            bi < ci,
+            "bearer must appear before cookie; bearer@{bi}, cookie@{ci}"
+        );
+        assert!(
+            ci < csi,
+            "cookie must appear before csrf-from; cookie@{ci}, csrf-from@{csi}"
+        );
+    }
+}

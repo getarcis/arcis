@@ -79,11 +79,16 @@ secrets.json
 *.claude
 
 # ─── Local / Personal ────────────────────────────────────────────────────────
-audit/
+/audit/
 docs/
 arcis.sln
 AUDIT_SYSTEM.md
 CLAUDE.md
 
-# ─── Dashboard (kept local; not published with the SDKs) ───────────────────
+# ─── Dashboard ─────────────────────────────────────────────────────────────
+# Dashboard moved out of this repo on 2026-05-08 into its own private repo at
+# github.com/getarcis/arcis-dashboard. Local checkout is at
+# D:/Projects/cyber-security/dashboard/, a sibling of this folder. The line
+# below stays as a safety net in case someone clones the dashboard back into
+# this tree by accident — it should not match anything in normal use.
 dashboard/

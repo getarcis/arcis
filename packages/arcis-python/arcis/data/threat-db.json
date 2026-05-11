@@ -1,34 +1,1511 @@
 {
-  "schema_version": "1",
-  "last_updated": "2026-04-01",
+  "schema_version": "2",
+  "last_updated": "2026-05-07",
   "maintained_by": "Arcis Security",
   "repository": "https://github.com/Gagancm/arcis",
   "contribute": "New supply chain attacks can be reported via GitHub Issues. Each entry is reviewed and sourced before inclusion.",
+  "curation_policy": "Two entry types: trojanized packages (specific malicious versions pushed by attackers, matched via malicious_versions) and high-severity exploitable CVEs in widely-installed packages (matched via vulnerable_ranges). Excluded: low-severity DoS, decade-old chaff, deprecated APIs.",
   "threats": [
     {
       "ecosystem": "npm",
-      "name": "axios",
-      "malicious_versions": ["1.14.1", "0.30.4"],
-      "attack_vector": "Trojanized dependency plain-crypto-js@4.2.1 deploys a remote access trojan (RAT) via postinstall script",
+      "name": "@angular/ssr",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<19.0.4"
+      ],
+      "attack_vector": "Open redirect and request steering via percent-encoded X-Forwarded-Prefix header. An attacker who controls the upstream proxy or can spoof the header makes the Angular SSR runtime emit absolute redirects to attacker-controlled domains, leaking auth state on follow-redirects.",
+      "severity": "medium",
+      "cve": "CVE-2026-44437",
+      "disclosure_date": "2026-04-22",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-69xr-m8h6-h664"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade @angular/ssr to >=19.0.4. Strip X-Forwarded-Prefix at your edge proxy unless explicitly required."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@ledgerhq/connect-kit-loader",
+      "malicious_versions": [
+        "1.1.5",
+        "1.1.6",
+        "1.1.7"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Maintainer credentials phished via fake pull-request review email; attacker pushed three versions with a wallet-drainer that swapped Wallet-Connect handlers to attacker-controlled drain endpoints. Hundreds of dApps using this loader were affected for ~2 hours before takedown.",
       "severity": "critical",
-      "cve": "CVE-2026-XXXX",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2023-12-14",
+      "source": "Ledger Security Advisory",
+      "references": [
+        "https://www.ledger.com/blog/security-incident-update-following-the-attack-on-ledger-connect-kit",
+        "https://github.com/advisories/GHSA-rhc4-fp6w-fvx8"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Pin to @ledgerhq/connect-kit-loader@1.1.8 or later.\n2. Audit any dApps that integrated this loader during the affected window.\n3. Rotate any wallet keys that signed transactions during the window."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@solana/web3.js",
+      "malicious_versions": [
+        "1.95.6",
+        "1.95.7"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Maintainer credentials compromised; two trojanized versions exfiltrated private keys and signing material from any Node process that imported the library. Detected within ~5 hours but Solana RPC dApps that updated during the window leaked keys.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2024-12-04",
+      "source": "Solana Foundation Security Advisory",
+      "references": [
+        "https://github.com/anza-xyz/solana-web3.js/security/advisories/GHSA-2gjj-4644-4982",
+        "https://socket.dev/blog/solana-web3-js-malware"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Upgrade to @solana/web3.js@1.95.8 or later.\n2. Rotate every keypair that touched the affected machine.\n3. Inspect transaction history for unauthorized transfers."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@xmldom/xmldom",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<0.8.5"
+      ],
+      "attack_vector": "Continuation of the xmldom node-injection class on the maintained fork. Same family of bugs in DocumentType / ProcessingInstruction / Comment serialization.",
+      "severity": "high",
+      "cve": "CVE-2022-39353",
+      "disclosure_date": "2022-10-31",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-crh6-fp67-6883"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade @xmldom/xmldom to >= 0.8.5."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "anchor-bn",
+      "malicious_versions": [
+        "*"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Solana ecosystem typosquat: hijacks wallet-connect calls when imported into a dApp; redirects user signatures to an attacker drain address. Caught and removed within hours.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2024-06-08",
+      "source": "Socket Security Research",
+      "references": [
+        "https://socket.dev/blog/solana-anchor-typosquat"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. `npm uninstall anchor-bn`.\n2. Audit any wallet-connect code paths that imported it."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "axios",
+      "malicious_versions": [
+        "1.14.1",
+        "0.30.4"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Trojanized dependency plain-crypto-js@4.2.1 deploys a remote access trojan (RAT) via postinstall script.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
       "disclosure_date": "2026-03-31",
       "source": "npm Security Advisory",
       "references": [
-        "https://github.com/axios/axios/security/advisories",
-        "https://github.com/advisories"
+        "https://github.com/axios/axios/security/advisories"
       ],
-      "trojanized_deps": ["plain-crypto-js"],
+      "trojanized_deps": [
+        "plain-crypto-js"
+      ],
       "persistence_artifacts": [],
-      "remediation": "1. Run: npm uninstall axios && npm install axios@1.14.0\n2. Delete node_modules and reinstall: rm -rf node_modules && npm install\n3. Search for 'plain-crypto-js' in node_modules — if present, your system may be compromised\n4. Rotate any credentials/tokens accessible from the affected machine"
+      "remediation": "1. Run: npm uninstall axios && npm install axios@1.14.0. 2. Delete node_modules and reinstall: rm -rf node_modules && npm install. 3. Search for 'plain-crypto-js' in node_modules. If present, your system may be compromised. 4. Rotate any credentials/tokens accessible from the affected machine."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "babelcli",
+      "malicious_versions": [
+        "1.0.1"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat of babel-cli. Same author as crossenv; postinstall exfiltrates env vars to the same dropoff endpoint.",
+      "severity": "critical",
+      "cve": "CVE-2017-16003",
+      "disclosure_date": "2017-08-01",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://blog.npmjs.org/post/163723642530/crossenv-malware-on-the-npm-registry"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove babelcli; replace with babel-cli. Rotate any credentials present in the affected environment."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "body-parser",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<1.20.3"
+      ],
+      "attack_vector": "DoS via crafted Content-Type header that triggers worst-case URL-encoded parser behavior. Single request hangs the worker; concurrent requests DoS.",
+      "severity": "high",
+      "cve": "CVE-2024-45590",
+      "disclosure_date": "2024-09-10",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-qwcr-r2fm-qrc7"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade body-parser to >=1.20.3."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "braces",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<3.0.3"
+      ],
+      "attack_vector": "ReDoS via deeply-nested brace expansion patterns. Exploitable wherever braces is reached with untrusted input (often via micromatch).",
+      "severity": "high",
+      "cve": "CVE-2024-4068",
+      "disclosure_date": "2024-05-14",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-grv7-fg5c-xmjg"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade braces to >=3.0.3."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "coa",
+      "malicious_versions": [
+        "2.0.3",
+        "2.0.4",
+        "2.1.1",
+        "2.1.3",
+        "3.0.1",
+        "3.1.1",
+        "3.1.3"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Same attacker chain as ua-parser-js: stolen maintainer credentials pushed seven trojanized versions over two days. Postinstall script downloads a credential stealer + crypto miner; targets Windows specifically.",
+      "severity": "critical",
+      "cve": "CVE-2021-43137",
+      "disclosure_date": "2021-11-04",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-73qr-pfmq-6rp8"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Pin coa to 2.0.2 (last known good) and lock the version.\n2. Treat any Windows machine that did `npm install` while a bad version was current as compromised; rotate credentials and audit scheduled tasks."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "colors",
+      "malicious_versions": [
+        "1.4.1",
+        "1.4.2"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Maintainer (marak) intentionally published versions that print 'LIBERTY LIBERTY LIBERTY' followed by a stream of zalgo glyphs in an infinite loop, breaking any app that depended on the package. Not malware in the strict sense, but a deliberate denial-of-service against every downstream user.",
+      "severity": "high",
+      "cve": "CVE-2022-23808",
+      "disclosure_date": "2022-01-09",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/Marak/colors.js/issues/285",
+        "https://github.com/advisories/GHSA-5854-jvxx-2cg9"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Pin colors to 1.4.0 or migrate to chalk / kleur.\n2. The package is now under new stewardship; later versions are clean."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "cookie",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<0.7.0"
+      ],
+      "attack_vector": "Cookie name/path/domain inputs were not validated, allowing CRLF injection that smuggles arbitrary Set-Cookie or response headers via untrusted input reaching cookie.serialize().",
+      "severity": "high",
+      "cve": "CVE-2024-47764",
+      "disclosure_date": "2024-10-04",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-pxg6-pf52-xh8x"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade cookie to >=0.7.0."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "crossenv",
+      "malicious_versions": [
+        "6.1.1",
+        "6.1.0",
+        "5.2.1"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat of cross-env. Postinstall script exfiltrates environment variables (frequently AWS credentials, API tokens) to a Heroku endpoint.",
+      "severity": "critical",
+      "cve": "CVE-2017-16042",
+      "disclosure_date": "2017-08-01",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://blog.npmjs.org/post/163723642530/crossenv-malware-on-the-npm-registry",
+        "https://github.com/advisories/GHSA-r74x-cvr5-x3qw"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove crossenv and replace with cross-env. Audit any environment that ran the postinstall \u00e2\u20ac\u201d assume secrets exposed."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "discord-selfbot-v14",
+      "malicious_versions": [
+        "1.0.0",
+        "1.0.1",
+        "1.0.2"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Malicious package that grabs the user's Discord token and exfiltrates it via a webhook. Marketed to Discord-bot developers.",
+      "severity": "critical",
+      "cve": "",
+      "disclosure_date": "2023-06-01",
+      "source": "Sonatype OSS Index",
+      "references": [
+        "https://blog.sonatype.com/discord-token-stealer-supply-chain"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove discord-selfbot-v14. Rotate Discord tokens. Use the official discord.js library."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "eslint-config-eslint",
+      "malicious_versions": [
+        "5.0.2"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Same eslint-scope attacker chain. Version 5.0.2 included the same npm-token exfiltration postinstall.",
+      "severity": "critical",
+      "cve": "CVE-2018-7651",
+      "disclosure_date": "2018-07-12",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://eslint.org/blog/2018/07/postmortem-for-malicious-package-publishes"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade eslint-config-eslint to >= 5.0.3 and rotate npm tokens on affected machines."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "eslint-scope",
+      "malicious_versions": [
+        "3.7.2"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Maintainer's npm credentials were stolen; attacker published 3.7.2 with a postinstall that read .npmrc and exfiltrated npm tokens to a Pastebin endpoint, enabling further package compromise.",
+      "severity": "critical",
+      "cve": "CVE-2018-7651",
+      "disclosure_date": "2018-07-12",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://eslint.org/blog/2018/07/postmortem-for-malicious-package-publishes",
+        "https://github.com/advisories/GHSA-mh3p-4f8x-2hpv"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Upgrade eslint-scope to >= 3.7.3.\n2. If the bad version was installed, rotate every npm token on the affected machine \u00e2\u20ac\u201d tokens may have been exfiltrated."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "event-stream",
+      "malicious_versions": [
+        "3.3.6"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Maintainer transferred ownership; new maintainer added flatmap-stream@0.1.1 as a dependency. flatmap-stream contained encrypted bitcoin-wallet-stealer payload that activated only inside the Copay app build chain.",
+      "severity": "critical",
+      "cve": "CVE-2018-1000620",
+      "disclosure_date": "2018-11-26",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/dominictarr/event-stream/issues/116",
+        "https://github.com/advisories/GHSA-mh6f-8j2x-4483"
+      ],
+      "trojanized_deps": [
+        "flatmap-stream"
+      ],
+      "persistence_artifacts": [],
+      "remediation": "1. npm uninstall event-stream and replace with a maintained alternative.\n2. If your build also pulled flatmap-stream, audit any wallet keys stored in the affected dev environment.\n3. Pin event-stream to <= 3.3.5 if you must keep it."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "express",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.20.0"
+      ],
+      "attack_vector": "Open redirect via `res.location()`: untrusted input is redirected to attacker-controlled destinations because the encoder did not validate scheme.",
+      "severity": "medium",
+      "cve": "CVE-2024-29041",
+      "disclosure_date": "2024-03-25",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-rv95-896h-c2vc"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade Express to >=4.20.0. Always validate redirect destinations against an allow-list."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "express-fileupload",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<1.1.10"
+      ],
+      "attack_vector": "Prototype pollution via parseNested: a crafted multipart upload with `__proto__` keys pollutes Object.prototype, escalating to RCE in many downstream code paths.",
+      "severity": "critical",
+      "cve": "CVE-2020-7699",
+      "disclosure_date": "2020-07-08",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-pmh7-x6gj-3w55"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade express-fileupload to >=1.1.10. Set `parseNested: false` if you can't upgrade."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "faker",
+      "malicious_versions": [
+        "6.6.6"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Same maintainer rage event as colors. Version 6.6.6 was published with the entire library replaced by an empty README \u00e2\u20ac\u201d every downstream consumer broke immediately.",
+      "severity": "high",
+      "cve": "CVE-2022-42003",
+      "disclosure_date": "2022-01-09",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/Marak/faker.js/issues/1046",
+        "https://github.com/advisories/GHSA-5w9c-rv96-fr7g"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Migrate to @faker-js/faker (community fork, actively maintained).\n2. Pin to the last known good version 5.5.3 if you must keep the original namespace."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "flatmap-stream",
+      "malicious_versions": [
+        "0.1.1",
+        "0.1.2"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Standalone malicious package that delivered the bitcoin-wallet stealer payload during the event-stream supply chain attack. Contains an encrypted blob that decrypts and runs only when the host app's package.json description matches Copay.",
+      "severity": "critical",
+      "cve": "CVE-2018-1000620",
+      "disclosure_date": "2018-11-26",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-mh6f-8j2x-4483"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove flatmap-stream entirely. There is no safe version; the package was published by the attacker."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "flatted",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<3.2.7"
+      ],
+      "attack_vector": "Prototype pollution via parse(). A crafted input string can set Object.prototype keys, enabling escalation in any code path that subsequently iterates a fresh object.",
+      "severity": "high",
+      "cve": "CVE-2020-7693",
+      "disclosure_date": "2022-12-21",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-vh6m-c5gm-9w62"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade flatted to >= 3.2.7."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "follow-redirects",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<1.15.6"
+      ],
+      "attack_vector": "Authorization header leakage on cross-origin redirects. The library forwarded credentials when an HTTPS request redirected to a different host, exposing bearer tokens to attacker-controlled servers.",
+      "severity": "high",
+      "cve": "CVE-2024-28849",
+      "disclosure_date": "2024-03-14",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-cxjh-pqwp-8mfp"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade follow-redirects to >= 1.15.6. If on a vulnerable version, rotate any bearer tokens used against external services."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "getcookies",
+      "malicious_versions": [
+        "1.1.0",
+        "1.2.0",
+        "1.2.1"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Backdoor package that intercepted HTTP requests on Express servers via a custom header trigger; allowed remote command execution. Pulled in transitively via http-fetch-cookies and mailparser, infecting tens of thousands of server installs before takedown.",
+      "severity": "critical",
+      "cve": "CVE-2018-1000816",
+      "disclosure_date": "2018-05-02",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-3p6m-9hjc-r3hx"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove getcookies and any transitive callers (http-fetch-cookies, older mailparser). There is no safe version."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "handlebars",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.7.7"
+      ],
+      "attack_vector": "Prototype pollution in template compiler enables RCE: a crafted template input mutates Object.prototype and injects a constructor that runs arbitrary JS during render.",
+      "severity": "critical",
+      "cve": "CVE-2019-19919",
+      "disclosure_date": "2020-01-08",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-q42p-pg8m-cqh6"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Upgrade handlebars to >=4.7.7.\n2. Never pass untrusted input to Handlebars.compile()."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "hono",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.6.10"
+      ],
+      "attack_vector": "Two simultaneous 2026 advisories: (1) bodyLimit() bypass for chunked or unknown-Content-Length requests lets an attacker exceed configured limits and DoS the worker; (2) unvalidated JSX tag names allow HTML injection in JSX-rendered responses, enabling stored XSS in any Hono route that takes user input.",
+      "severity": "high",
+      "cve": "CVE-2026-44456",
+      "disclosure_date": "2026-04-15",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-9vqf-7f2p-gf9v",
+        "https://github.com/advisories/GHSA-69xw-7hcm-h432"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade hono to >=4.6.10. Validate any user-controlled JSX tag names before rendering."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ip",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<2.0.1"
+      ],
+      "attack_vector": "isPrivate() and isPublic() returned wrong answers for IPv4-mapped IPv6 addresses, allowing SSRF defenses based on this library to be bypassed by encoding internal IPs as ::ffff:127.0.0.1 etc.",
+      "severity": "high",
+      "cve": "CVE-2024-29415",
+      "disclosure_date": "2024-02-09",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-78xj-cgh5-2h22"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade ip to >= 2.0.1. Re-test any SSRF guard that relied on isPrivate()."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "jsonpath-plus",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<10.0.0"
+      ],
+      "attack_vector": "Arbitrary remote code execution via unsafe eval() of JSONPath expressions. If user input ever reaches a JSONPath query, an attacker can run arbitrary JavaScript inside the host process.",
+      "severity": "critical",
+      "cve": "CVE-2024-21534",
+      "disclosure_date": "2024-10-11",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-pppg-cpfq-h7wr"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade jsonpath-plus to >= 10.0.0. Treat any service that took user-controlled JSONPath input on a vulnerable version as compromised."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "jsonwebtoken",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<=8.5.1"
+      ],
+      "attack_vector": "Key confusion / signature bypass: when verify() is called without explicit algorithms, an HMAC-signed token can be accepted by an RSA-keyed verifier (or vice versa) by changing the alg header. Reaches RCE in some misconfigured handlers, full auth bypass in most. Three companion CVEs in the same advisory cycle.",
+      "severity": "critical",
+      "cve": "CVE-2022-23529",
+      "disclosure_date": "2022-12-22",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-27h2-hvpr-p74q",
+        "https://github.com/advisories/GHSA-qwph-4952-7xr6",
+        "https://github.com/advisories/GHSA-hjrf-2m68-5959"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Upgrade jsonwebtoken to >=9.0.0.\n2. Always pass an explicit `algorithms` array to verify(). Never call verify() without it.\n3. Audit any auth code path that accepts external tokens for the JWT-NO-ALG family of bypasses."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "kodiak2k",
+      "malicious_versions": [
+        "*"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Same campaign as warbeast2000. Postinstall payload exfiltrates Solana / Bitcoin wallet files and SSH keys.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2024-02-12",
+      "source": "ReversingLabs Research",
+      "references": [
+        "https://www.reversinglabs.com/blog/warbeast2000-npm-stealer"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Same as warbeast2000."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lodash",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<4.17.21"
+      ],
+      "attack_vector": "Prototype pollution in zipObjectDeep / mergeWith / set. A crafted input can set Object.prototype keys, enabling privilege escalation in code paths that iterate fresh objects without hasOwnProperty checks.",
+      "severity": "high",
+      "cve": "CVE-2020-8203",
+      "disclosure_date": "2020-07-15",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-p6mc-m468-83gw"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade lodash to >= 4.17.21."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "micromatch",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.0.8"
+      ],
+      "attack_vector": "ReDoS via crafted glob pattern. User-supplied input that reaches micromatch() (file-name filters, route matchers) hangs the worker. Widely depended on.",
+      "severity": "high",
+      "cve": "CVE-2024-4067",
+      "disclosure_date": "2024-05-14",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-952p-6rrq-rcjv"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade micromatch to >=4.0.8."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "minimatch",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<3.0.5"
+      ],
+      "attack_vector": "Path-traversal via crafted glob patterns; widely depended-upon (npm, node-glob, mocha). Exploitable by any tool that accepts glob input from untrusted sources.",
+      "severity": "high",
+      "cve": "CVE-2022-3517",
+      "disclosure_date": "2022-10-17",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-f8q6-p94x-37v3"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade minimatch to >= 3.0.5."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "nanoid",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<3.3.8",
+        ">=4.0.0 <5.0.9"
+      ],
+      "attack_vector": "Predictable IDs when alphabet is shorter than size argument; non-uniform distribution lets attackers guess upcoming IDs above uniform odds. Exploitable for session-token / capability-URL prediction.",
+      "severity": "medium",
+      "cve": "CVE-2024-55565",
+      "disclosure_date": "2024-12-09",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-mwcw-c2x4-8c55"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade nanoid to >=3.3.8 (v3) or >=5.0.9 (v5)."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "next",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<14.2.10",
+        ">=15.0.0 <15.0.4"
+      ],
+      "attack_vector": "Cache poisoning in Pages Router: a crafted request with specific headers can cause a response intended for one user to be served to others from the cache.",
+      "severity": "high",
+      "cve": "CVE-2024-46982",
+      "disclosure_date": "2024-09-17",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-gp8f-8m3g-qvj9"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade Next.js to >=14.2.10 (14.x branch) or >=15.0.4 (15.x branch)."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "nitro",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.10.0"
+      ],
+      "attack_vector": "Two simultaneous 2026 advisories in Nitro (Nuxt's server engine): (1) open redirect via protocol-relative URL bypass in wildcard route rules, exploitable on any Nuxt app with wildcard routes; (2) proxy scope bypass via percent-encoded path traversal in routeRules, letting requests reach internal services that should be off-limits.",
+      "severity": "medium",
+      "cve": "CVE-2026-44372",
+      "disclosure_date": "2026-04-23",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-9phm-9p8f-hw5m",
+        "https://github.com/advisories/GHSA-5w89-w975-hf9q"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade nitro to >=2.10.0; transitively upgrade Nuxt to a version pinned at the patched nitro."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "noblox.js-proxy",
+      "malicious_versions": [
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5",
+        "1.0.6",
+        "1.0.7"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat of noblox.js. Postinstall downloads a Discord token grabber; the package was used to compromise gaming-bot dev environments.",
+      "severity": "high",
+      "cve": "CVE-2021-44228-style",
+      "disclosure_date": "2021-09-01",
+      "source": "Sonatype OSS Index",
+      "references": [
+        "https://blog.sonatype.com/discord-stealing-malware-noblox.js-proxy"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove noblox.js-proxy. If installed, rotate Discord tokens and audit Discord account for unauthorized actions."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "node-fetch",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.6.7",
+        ">=3.0.0 <3.1.1"
+      ],
+      "attack_vector": "Cross-origin redirect leak: cookies and Authorization headers were forwarded to redirect targets on different hosts, exposing session tokens to attacker-controlled servers.",
+      "severity": "high",
+      "cve": "CVE-2022-0235",
+      "disclosure_date": "2022-01-16",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-r683-j2x4-v87g"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade node-fetch to >=2.6.7 / >=3.1.1."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "node-forge",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<1.3.0"
+      ],
+      "attack_vector": "ASN.1 validator desynchronization lets an attacker craft an X.509 certificate that the verifier accepts but the consumer interprets differently. Exploitable in any pipeline that uses node-forge to validate certificates from untrusted sources.",
+      "severity": "high",
+      "cve": "CVE-2022-24773",
+      "disclosure_date": "2022-03-22",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-x4jg-mjrx-434g"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade node-forge to >= 1.3.0."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "node-ipc",
+      "malicious_versions": [
+        "10.1.1",
+        "10.1.2",
+        "10.1.3",
+        "11.0.0"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Maintainer added geo-targeted file-deletion code as a protest against the Russia-Ukraine war ('peacenotwar'). On systems with IP addresses geolocating to Russia or Belarus, the package overwrites files with a heart-emoji byte pattern. Hit thousands of unrelated downstream apps including the US Department of Defense's Vue.js stack.",
+      "severity": "critical",
+      "cve": "CVE-2022-23812",
+      "disclosure_date": "2022-03-15",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/RIAEvangelist/node-ipc/issues/233",
+        "https://github.com/advisories/GHSA-97m3-w2cp-4xx6"
+      ],
+      "trojanized_deps": [
+        "peacenotwar",
+        "oss-attack"
+      ],
+      "persistence_artifacts": [],
+      "remediation": "1. Pin node-ipc to 9.2.1.\n2. If running on infrastructure in Russia or Belarus, audit recent file activity and restore from backup."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "node-tar",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<6.2.1"
+      ],
+      "attack_vector": "Path traversal via crafted tar entries. A malicious archive can write files outside the extraction directory by abusing hardlink + symlink handling and Unicode normalization on case-insensitive filesystems (macOS APFS).",
+      "severity": "high",
+      "cve": "CVE-2024-28863",
+      "disclosure_date": "2024-03-21",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-f5x3-32g6-xq36"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade node-tar to >= 6.2.1. Audit any service that extracts tar archives from untrusted sources."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "nth-check",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.0.1"
+      ],
+      "attack_vector": "ReDoS in CSS pseudo-class :nth-check parser. Reachable through any HTML/CSS pipeline that processes untrusted input (SVG rendering, sanitization).",
+      "severity": "high",
+      "cve": "CVE-2021-3803",
+      "disclosure_date": "2021-09-17",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-rp65-9cf3-cjxr"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade nth-check to >=2.0.1. Frequently reached through react-scripts; upgrade your build toolchain."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "path-to-regexp",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<0.1.10",
+        ">=0.2.0 <8.0.0"
+      ],
+      "attack_vector": "ReDoS via crafted route patterns. Affects Express by transitive dependency. A single request with a maliciously crafted path hangs the worker; concurrent requests trivially DoS.",
+      "severity": "high",
+      "cve": "CVE-2024-45296",
+      "disclosure_date": "2024-09-09",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-9wv6-86v2-598j"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade path-to-regexp to 0.1.10, 1.9.0, 3.3.0, 6.3.0, or 8.0.0+."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "peacenotwar",
+      "malicious_versions": [
+        "1.0.0",
+        "1.0.1",
+        "1.0.2",
+        "1.0.3",
+        "1.0.4",
+        "1.0.5",
+        "1.0.6",
+        "1.0.7",
+        "1.0.8",
+        "1.0.9",
+        "1.0.10"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Standalone payload package referenced by the trojanized node-ipc versions. Drops a WITH-LOVE-FROM-AMERICA.txt manifesto on every desktop and writes geo-targeted destructive payloads.",
+      "severity": "critical",
+      "cve": "CVE-2022-23812",
+      "disclosure_date": "2022-03-15",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-97m3-w2cp-4xx6"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove peacenotwar; there is no safe version. It is solely the attacker's payload package."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "postcss",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<8.4.31"
+      ],
+      "attack_vector": "Parser confusion: a crafted CSS input with `\\r` line endings is mis-parsed, causing the parser to hang or yield wrong AST. Exploitable in any build pipeline that processes user-uploaded CSS.",
+      "severity": "high",
+      "cve": "CVE-2023-44270",
+      "disclosure_date": "2023-09-28",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-7fh5-64p2-3v2j"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade postcss to >=8.4.31."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "rc",
+      "malicious_versions": [
+        "1.2.9",
+        "1.3.9",
+        "2.3.9"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Same attacker as ua-parser-js / coa. Three impostor versions were published with a postinstall payload identical to the coa attack: download Cobalt Strike loader and password stealer.",
+      "severity": "critical",
+      "cve": "CVE-2021-43138",
+      "disclosure_date": "2021-11-04",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-g2q5-5433-rhrf"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Pin rc to 1.2.8 / 1.3.8 / 2.3.8 (last known good).\n2. Rebuild the affected dev environment from a clean OS install if `npm install` ran on a Windows machine while a bad version was published."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "react-router",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=6.0.0,<6.30.2",
+        ">=7.0.0,<7.6.4"
+      ],
+      "attack_vector": "Server-side rendering (SSR) cross-site scripting via the ScrollRestoration component. Reflected user input can break out of the JSON serialization and inject arbitrary HTML on the rendered page.",
+      "severity": "high",
+      "cve": "CVE-2025-43864",
+      "disclosure_date": "2025-04-25",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-cpj6-fhp6-mr6j"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade react-router to >= 6.30.2 (or >= 7.6.4 on the v7 line)."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "rollup",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=4.0.0,<4.22.4"
+      ],
+      "attack_vector": "Path-traversal vulnerability in the file-resolution layer allowed a malicious dependency to write files outside the build output directory during a build. Exploitable by any project that builds packages it does not fully control.",
+      "severity": "high",
+      "cve": "CVE-2024-47068",
+      "disclosure_date": "2024-09-21",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-gcx4-mw62-g8wm"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade rollup to >= 4.22.4."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "rspack-cli",
+      "malicious_versions": [
+        "1.1.7",
+        "1.1.8"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Compromised maintainer credentials pushed two versions with a postinstall data-exfiltration script targeting environment variables and SSH keys. Caught quickly; <700 installs reported.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2024-12-19",
+      "source": "Rspack Security Advisory",
+      "references": [
+        "https://github.com/web-infra-dev/rspack/security/advisories"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Upgrade to rspack-cli@1.1.9 or later.\n2. Rotate environment-variable secrets exposed to the affected machine."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "semver",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=7.0.0 <7.5.2",
+        ">=6.0.0 <6.3.1",
+        "<5.7.2"
+      ],
+      "attack_vector": "ReDoS in `new Range()`. A crafted range string triggers catastrophic backtracking. Widely depended on; exploitable any time a service accepts user-supplied semver ranges.",
+      "severity": "high",
+      "cve": "CVE-2022-25883",
+      "disclosure_date": "2023-06-20",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-c2qf-rxjj-qqgw"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade to semver@7.5.2 / 6.3.1 / 5.7.2 or later."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "send",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<0.19.0"
+      ],
+      "attack_vector": "Reflected XSS in error responses: when an invalid path is passed to send/serve-static, the path is reflected into the 404 page without escaping.",
+      "severity": "medium",
+      "cve": "CVE-2024-43799",
+      "disclosure_date": "2024-09-10",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-m6fv-jmcg-4jfg"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade send to >=0.19.0; transitively, upgrade Express to >=4.20.0 or >=5.0.0."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "serve-static",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<1.16.0"
+      ],
+      "attack_vector": "Same reflected-XSS class as send (its dependency): error responses reflected unescaped path components.",
+      "severity": "medium",
+      "cve": "CVE-2024-43800",
+      "disclosure_date": "2024-09-10",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-cm22-4g7w-348p"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade serve-static to >=1.16.0."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "socket.io",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.5.1",
+        ">=3.0.0 <4.6.2"
+      ],
+      "attack_vector": "DoS via crafted Engine.IO header. A malformed `EIO` parameter triggers an unhandled exception in the handshake path, crashing the worker. Exploitable on any service that exposes a Socket.IO endpoint to untrusted clients.",
+      "severity": "high",
+      "cve": "CVE-2024-38355",
+      "disclosure_date": "2024-06-19",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-25hc-qcg6-38wj"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade socket.io to >=2.5.1 (v2 branch) or >=4.6.2 (v3+ branches)."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "tar",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<6.2.1"
+      ],
+      "attack_vector": "Same hardlink path-traversal class as node-tar; both packages share extraction code paths in older releases.",
+      "severity": "high",
+      "cve": "CVE-2024-28863",
+      "disclosure_date": "2024-03-21",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-f5x3-32g6-xq36"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade tar to >= 6.2.1."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ua-parser-js",
+      "malicious_versions": [
+        "0.7.29",
+        "0.8.0",
+        "1.0.0"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Maintainer's npm credentials were stolen and three malicious versions were published. Each runs a postinstall script that downloads and executes a Linux/macOS crypto-miner plus a Windows password stealer that exfiltrates browser-stored credentials.",
+      "severity": "critical",
+      "cve": "CVE-2021-3962",
+      "disclosure_date": "2021-10-22",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-pjwm-rvh2-c87w",
+        "https://github.com/faisalman/ua-parser-js/issues/536"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Pin ua-parser-js to 0.7.30 / 0.8.1 / 1.0.1 or later.\n2. Audit any machine that ran `npm install` while a bad version was current \u00e2\u20ac\u201d assume browser-stored credentials are compromised.\n3. Rotate passwords saved in Chrome / Edge / Firefox on affected machines."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "vm2",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<3.9.20"
+      ],
+      "attack_vector": "Sandbox escape via Promise handler. An attacker who can submit JavaScript to a vm2 sandbox can execute arbitrary code on the host process. Library is now deprecated; the maintainer recommends migrating to isolated-vm. 2026 wave: five new sandbox-escape CVEs disclosed in early 2026 (CVE-2026-43997, 43999, 44001, 44005, 44006) reinforce that vm2 is unsalvageable for hardening; all production users should migrate to isolated-vm immediately.",
+      "severity": "critical",
+      "cve": "CVE-2023-37466",
+      "disclosure_date": "2023-07-14",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-47x8-96vw-5wg6",
+        "https://github.com/advisories/GHSA-947f-4v7f-x2v8",
+        "https://github.com/advisories/GHSA-cchq-frgr-rh26",
+        "https://github.com/advisories/GHSA-hw58-p9xv-2mjh",
+        "https://github.com/advisories/GHSA-qcp4-v2jj-fjx8",
+        "https://github.com/advisories/GHSA-vwrp-x96c-mhwq"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Migrate away from vm2; use isolated-vm or Node's vm.SourceTextModule with a ContextifyContext. vm2 is end-of-life."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "warbeast2000",
+      "malicious_versions": [
+        "*"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Crypto wallet stealer typosquatting Web3 dev tooling. On install runs a postinstall script that reads ~/.config/Solana, ~/.bitcoin, browser wallet extensions, and ~/.ssh/* and exfiltrates to an attacker server.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2024-02-12",
+      "source": "ReversingLabs Research",
+      "references": [
+        "https://www.reversinglabs.com/blog/warbeast2000-npm-stealer"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. `npm uninstall warbeast2000`.\n2. Treat machine as compromised: rotate every wallet, SSH key, cloud credential.\n3. Audit wallet transaction logs."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ws",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=8.0.0,<8.17.1",
+        ">=7.0.0,<7.5.10",
+        ">=6.0.0,<6.2.3",
+        ">=5.0.0,<5.2.4"
+      ],
+      "attack_vector": "DoS / request-smuggling via crafted HTTP headers in the WebSocket upgrade handshake. Exploitable on any service that accepts WebSocket connections from untrusted origins.",
+      "severity": "high",
+      "cve": "CVE-2024-37890",
+      "disclosure_date": "2024-06-17",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-3h5v-q93c-6h6q"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade ws to >= 8.17.1 (or matching patch on 7.x / 6.x / 5.x)."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "xmldom",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<0.7.0"
+      ],
+      "attack_vector": "XML node injection through unvalidated comment / processing-instruction / DocumentType serialization. Three distinct CVEs share the same root cause.",
+      "severity": "high",
+      "cve": "CVE-2021-32796",
+      "disclosure_date": "2021-08-09",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-9pgh-qqpf-7wqj"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Migrate to @xmldom/xmldom >= 0.7.0 (the original xmldom package is no longer maintained)."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "aiohttp",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<3.9.2"
+      ],
+      "attack_vector": "HTTP request smuggling via mishandled Content-Length parsing. An attacker can desynchronize a frontend reverse proxy from the aiohttp backend, smuggling poisoned requests onto another user's session.",
+      "severity": "high",
+      "cve": "CVE-2024-23829",
+      "disclosure_date": "2024-01-29",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-8qpw-xqxj-h4r2"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade aiohttp to >=3.9.2."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "black",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<24.3.0"
+      ],
+      "attack_vector": "ReDoS in `lines2` tokenizer. A crafted Python source file with long sequences of specific tokens hangs the formatter for minutes, blocking any CI pipeline that runs Black on user-submitted code.",
+      "severity": "high",
+      "cve": "CVE-2024-21503",
+      "disclosure_date": "2024-02-15",
+      "source": "Snyk Vulnerability Database",
+      "references": [
+        "https://security.snyk.io/vuln/SNYK-PYTHON-BLACK-6256142"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade black to >=24.3.0."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "blender-bpy",
+      "malicious_versions": [
+        "*"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat targeting Blender Python script developers (legitimate `bpy` ships only with Blender). Downloads BlackCap stealer + W4SP modules on import.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2023-04-01",
+      "source": "Phylum / ReversingLabs",
+      "references": [
+        "https://blog.phylum.io/pypi-stealer-typosquat-blender-bpy"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. `pip uninstall blender-bpy`.\n2. Treat host as compromised."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "colourama",
+      "malicious_versions": [
+        "0.1.6"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat of colorama (British spelling). Replaces every clipboard cryptocurrency address with the attacker's address while the package is imported, redirecting transfers.",
+      "severity": "critical",
+      "cve": "CVE-2018-1000877",
+      "disclosure_date": "2018-04-01",
+      "source": "PyPI Security Advisory",
+      "references": [
+        "https://snyk.io/research/malicious-pypi-package-typosquatting"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove colourama; install the legitimate `colorama` package. Audit recent crypto-currency transactions on the affected machine for redirected payments."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<42.0.4"
+      ],
+      "attack_vector": "NULL pointer dereference in PKCS#12 parsing led to denial-of-service. More serious in the same line: a memory-corruption fix for PKCS7 signatures shipped in 42.0.4.",
+      "severity": "high",
+      "cve": "CVE-2024-26130",
+      "disclosure_date": "2024-02-21",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-3ww4-gg4f-jr7f"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade cryptography to >= 42.0.4."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "ctx",
+      "malicious_versions": [
+        "0.2.2",
+        "0.2.6"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Trojanized takeover of an abandoned package. New maintainer added code that exfiltrates os.environ (frequently AWS_SECRET_ACCESS_KEY, AWS_ACCESS_KEY_ID, DB credentials) to a Heroku endpoint at every import.",
+      "severity": "critical",
+      "cve": "CVE-2022-29217",
+      "disclosure_date": "2022-05-21",
+      "source": "PyPI Security Advisory",
+      "references": [
+        "https://medium.com/@socketsupply/ctx-pypi-malicious-package-investigation",
+        "https://github.com/advisories/GHSA-8r8j-xvfj-36f9"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. Pin ctx to 0.1.2 (last known good).\n2. Rotate every credential that was in environment variables on the affected machine \u00e2\u20ac\u201d assume AWS keys, DB passwords, API tokens are exposed.\n3. Audit AWS CloudTrail / IAM access logs for unusual activity from new IPs."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "diffusers",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<0.30.4"
+      ],
+      "attack_vector": "Untrusted-code execution via a None.py bypass mechanism in the model-loading pipeline. A model on Hugging Face Hub with a crafted file can execute arbitrary Python on `from_pretrained()` even when `safetensors=True` is intended.",
+      "severity": "high",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2026-04-28",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-j7w6-vpvq-j3gm"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade diffusers to >=0.30.4. Always pin model sources to verified Hub organizations; never load from untrusted accounts."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "django",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=4.2.0,<4.2.16",
+        ">=5.0.0,<5.0.9",
+        ">=5.1.0,<5.1.1"
+      ],
+      "attack_vector": "URLValidator regex catastrophic backtracking allowing DoS, plus a memory-leak in HttpResponse on slow uploads. Fixed in the listed point releases.",
+      "severity": "high",
+      "cve": "CVE-2024-45230",
+      "disclosure_date": "2024-09-04",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-jwjx-mp2j-q3qg"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade Django to the matching patch release on your major line."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "easyfuncs",
+      "malicious_versions": [
+        "*"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "W4SP Stealer wave. Masquerades as a utility-functions library; on import runs the W4SP stealer.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2022-11-02",
+      "source": "Phylum Research",
+      "references": [
+        "https://blog.phylum.io/w4sp-stealer-discovered-on-pypi"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Same recovery as request3."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "fastapi",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<0.109.1"
+      ],
+      "attack_vector": "ReDoS via crafted Content-Type header. Reachable on any FastAPI app that processes form data without an upstream length limit.",
+      "severity": "high",
+      "cve": "CVE-2024-24762",
+      "disclosure_date": "2024-02-05",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-2jv5-9r88-3w3p"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade FastAPI to >=0.109.1."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "flask-cors",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.0.1"
+      ],
+      "attack_vector": "Case-sensitive origin matching flaw: `Access-Control-Allow-Origin` header validation compared against the configured allow-list with case sensitivity, while browsers normalize the request Origin to lowercase. An attacker controlling an origin like `EXAMPLE.com` (uppercase) could bypass policies set for `example.com`, enabling cross-origin reads against authenticated APIs.",
+      "severity": "high",
+      "cve": "CVE-2024-1681",
+      "disclosure_date": "2024-02-19",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-9889-ghwc-c6xv"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade flask-cors to >=4.0.1. Ensure your CORS allow-list compares origins case-insensitively if you can't upgrade immediately."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "gradio",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.19.2"
+      ],
+      "attack_vector": "Local file disclosure via path traversal in the file-component download endpoint. An unauthenticated attacker reading a public Gradio demo can fetch arbitrary files from the host filesystem.",
+      "severity": "critical",
+      "cve": "CVE-2024-1561",
+      "disclosure_date": "2024-02-15",
+      "source": "Huntr / GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-h7v4-7xg3-hxcc"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade gradio to >=4.19.2. Don't expose Gradio demos to untrusted networks until upgraded."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "jeIlyfish",
+      "malicious_versions": [
+        "0.7.0",
+        "0.7.1",
+        "0.7.2"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat of jellyfish (capital I instead of l). Reads the user's SSH and GPG keys plus crypto wallet files and exfiltrates them to a remote server during import.",
+      "severity": "critical",
+      "cve": "CVE-2019-14854",
+      "disclosure_date": "2019-12-04",
+      "source": "PyPI Security Advisory",
+      "references": [
+        "https://medium.com/@bertusk/spying-on-pypi-typosquatting"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove jeIlyfish; install the legitimate `jellyfish` package. Rotate SSH and GPG keys on affected machines."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "jupyter-server",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.14.1"
+      ],
+      "attack_vector": "Authenticated XSS in the file-listing UI. A user with write access can upload a file with a crafted name that executes JavaScript in another user's session.",
+      "severity": "high",
+      "cve": "CVE-2024-35178",
+      "disclosure_date": "2024-05-29",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-hrw6-wg82-cm62"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade jupyter-server to >=2.14.1."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "keras",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<3.7.0"
+      ],
+      "attack_vector": "DoS via malicious model files causing excessive memory allocation. A crafted .keras file consumed by Keras's model-loading path triggers a multi-gigabyte allocation and crashes the worker. Exploitable in any service that accepts user-uploaded models.",
+      "severity": "high",
+      "cve": "CVE-2026-0897",
+      "disclosure_date": "2026-04-12",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-mgx6-5cf9-rr43"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade keras to >=3.7.0. Set memory limits on worker pools; gate model uploads to known users."
     },
     {
       "ecosystem": "pypi",
       "name": "litellm",
-      "malicious_versions": ["1.82.7", "1.82.8"],
-      "attack_vector": "Credential harvester exfiltrates environment variables and API keys. Installs persistent .pth backdoor in site-packages that survives pip uninstall",
+      "malicious_versions": [
+        "1.82.7",
+        "1.82.8"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Credential harvester exfiltrates environment variables and API keys. Installs persistent .pth backdoor in site-packages that survives pip uninstall.",
       "severity": "critical",
-      "cve": "CVE-2026-XXXX",
+      "cve": "no-cve-assigned",
       "disclosure_date": "2026-03-24",
       "source": "PyPI Security Advisory",
       "references": [
@@ -36,8 +1513,507 @@
         "https://pypi.org/project/litellm/#history"
       ],
       "trojanized_deps": [],
-      "persistence_artifacts": ["*.pth"],
-      "remediation": "1. Run: pip uninstall litellm && pip install litellm==1.82.6\n2. Check site-packages for suspicious .pth files:\n   python -c \"import site; print(site.getsitepackages())\"\n   Look for .pth files you don't recognize — the backdoor survives uninstall\n3. Rotate ALL API keys, tokens, and credentials from environment variables\n4. Check ~/.local/lib and conda envs for the same .pth artifacts"
+      "persistence_artifacts": [
+        "*.pth"
+      ],
+      "remediation": "1. Run: pip uninstall litellm && pip install litellm==1.82.6. 2. Check site-packages for suspicious .pth files: python -c \"import site; print(site.getsitepackages())\". Look for .pth files you don't recognize. The backdoor survives uninstall. 3. Rotate ALL API keys, tokens, and credentials from environment variables. 4. Check ~/.local/lib and conda envs for the same .pth artifacts."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "lxml",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.9.1"
+      ],
+      "attack_vector": "XSS via `Cleaner.clean_html()` not stripping `<style>`-injected JavaScript URIs. Apps relying on Cleaner to sanitize untrusted HTML are exposed.",
+      "severity": "high",
+      "cve": "CVE-2022-2309",
+      "disclosure_date": "2022-07-10",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-pgww-xf46-h92r"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade lxml to >=4.9.1. Don't rely on Cleaner.clean_html() as your sole sanitizer."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "misp-modules",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.4.198"
+      ],
+      "attack_vector": "Two simultaneous 2026 advisories in MISP-modules (the threat-intelligence platform's expansion module surface): (1) Missing CSRF protection on the homepage blueprint allows any authenticated user to perform privileged actions cross-site; (2) Unsafe remote-resource fetching in expansion modules without origin validation enables SSRF.",
+      "severity": "critical",
+      "cve": "CVE-2026-44364",
+      "disclosure_date": "2026-04-27",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-j4rh-7jcr-qm69",
+        "https://github.com/advisories/GHSA-fhq3-2gf3-8f3j"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade misp-modules to >=2.4.198. If your MISP serves untrusted SOC users, gate write operations behind extra approval in the meantime."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "noblesse",
+      "malicious_versions": [
+        "1.0.0"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Discord token grabber and credit-card sniffer. Targeted Windows-based bot developers.",
+      "severity": "critical",
+      "cve": "",
+      "disclosure_date": "2020-12-01",
+      "source": "Sonatype OSS Index",
+      "references": [
+        "https://blog.sonatype.com/python-pypi-discord-stealer"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove noblesse; rotate Discord tokens. Audit credit cards entered on affected machines."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "phpass",
+      "malicious_versions": [
+        "1.2.2",
+        "1.2.3"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Same attacker chain as ctx, same env-var exfiltration payload.",
+      "severity": "critical",
+      "cve": "CVE-2022-29218",
+      "disclosure_date": "2022-05-21",
+      "source": "PyPI Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-cv7m-jrh6-vfg3"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove phpass; rotate environment-variable secrets on affected machines."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pillow",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<10.3.0"
+      ],
+      "attack_vector": "Buffer overflow in PIL.ImageMath.eval allowed remote code execution when processing images from untrusted sources via crafted format strings.",
+      "severity": "high",
+      "cve": "CVE-2024-28219",
+      "disclosure_date": "2024-04-01",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-44wm-f244-xhp3"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade Pillow to >= 10.3.0."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "praisonai",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.0.6"
+      ],
+      "attack_vector": "Unauthenticated remote code execution via tool override configuration bypass. An attacker who can submit a tool definition to a PraisonAI agent endpoint can override the registered tool handler and execute arbitrary Python in the agent process. Exploitable on any PraisonAI deployment that accepts tool definitions from untrusted users.",
+      "severity": "high",
+      "cve": "CVE-2026-44334",
+      "disclosure_date": "2026-04-25",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-xcmw-grxf-wjhj"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade praisonai to >=2.0.6. Strict-validate every tool definition before registration; gate tool registration to admin users only."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "praisonaiagents",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.0.6"
+      ],
+      "attack_vector": "SSRF protection bypass mechanism. The library's tool execution layer accepts URLs without re-validating them against the SSRF allow-list, letting an LLM tool call reach internal services. Companion advisory to praisonai's RCE.",
+      "severity": "high",
+      "cve": "CVE-2026-44335",
+      "disclosure_date": "2026-04-25",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-q9pw-vmhh-384g"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade praisonaiagents to >=2.0.6. Treat any URL reaching tool execution as untrusted; re-validate against your SSRF allow-list."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pymafka",
+      "malicious_versions": [
+        "1.0.0",
+        "1.0.1",
+        "1.0.2"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat of `pykafka`. On import downloads and runs a beacon to an attacker C2 server; reports host external IP, OS, home dir contents. Caught in 2 days; ~325 downloads before takedown.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2022-05-26",
+      "source": "Sonatype Security Research",
+      "references": [
+        "https://blog.sonatype.com/pymafka-pypi-malware"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. `pip uninstall pymafka`.\n2. Inspect host for unexpected outbound traffic during install window.\n3. Rotate any credentials accessible from the host."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pyrequest",
+      "malicious_versions": [
+        "*"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "W4SP Stealer wave. Typosquat of `requests`. Same payload as request3 / urlllib3.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2022-11-02",
+      "source": "Phylum Research / Snyk",
+      "references": [
+        "https://blog.phylum.io/w4sp-stealer-discovered-on-pypi"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Same recovery as request3."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "python3-dateutil",
+      "malicious_versions": [
+        "2.9.1"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat of python-dateutil. Same payload as jeIlyfish (same author): exfiltrates SSH keys and crypto wallet files.",
+      "severity": "critical",
+      "cve": "CVE-2019-14855",
+      "disclosure_date": "2019-12-04",
+      "source": "PyPI Security Advisory",
+      "references": [
+        "https://medium.com/@bertusk/spying-on-pypi-typosquatting"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove python3-dateutil; install the legitimate `python-dateutil` package. Rotate SSH and GPG keys on affected machines."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pytorch-lightning",
+      "malicious_versions": ["2.6.2", "2.6.3"],
+      "vulnerable_ranges": [],
+      "attack_vector": "PyPI maintainer-token compromise on 2026-04-30. Attacker pushed tampered builds 2.6.2 and 2.6.3 directly to PyPI (GitHub source repo was not touched); both versions live for ~42 minutes before quarantine. Payload: hidden _runtime/ directory containing a Bun-based JavaScript credential stealer that runs automatically on `import lightning` or `import pytorch_lightning`, exfiltrating environment variables, .env files, GitHub tokens, AWS/Azure/GCP credentials, browser-stored creds (Chrome, Firefox, Brave), and crypto wallets. Notable: plants persistence hooks targeting Claude Code and VS Code, the first documented in-the-wild abuse of Claude Code's hook system. Family: Mini Shai-Hulud, same author lineage as the npm Shai-Hulud worm wave. Last clean version: 2.6.1 (2026-01-30). Advisory: GHSA-w37p-236h-pfx3.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2026-04-30",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/Lightning-AI/pytorch-lightning/security/advisories/GHSA-w37p-236h-pfx3",
+        "https://snyk.io/blog/lightning-pypi-compromise-bun-based-credential-stealer/",
+        "https://www.aikido.dev/blog/pytorch-lightning-pypi-compromise-mini-shai-hulud",
+        "https://socket.dev/blog/lightning-pypi-package-compromised",
+        "https://www.sonatype.com/blog/malicious-pytorch-lightning-packages-found-on-pypi",
+        "https://semgrep.dev/blog/2026/malicious-dependency-in-pytorch-lightning-used-for-ai-training/"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [
+        "_runtime/ directory inside the installed package (contains the Bun-based JS stealer)",
+        "Claude Code hook entries planted under ~/.claude/",
+        "VS Code extension hook tampering"
+      ],
+      "remediation": "1. Pin pytorch-lightning to <=2.6.1 (or to a clean release published after the 2.6.3 quarantine).\n2. Wipe pip cache and reinstall: `pip cache purge && pip install --force-reinstall 'pytorch-lightning<=2.6.1'`.\n3. If you installed or upgraded pytorch-lightning or lightning during the disclosure window on 2026-04-30, audit ~/.claude/ for unfamiliar hooks, audit installed VS Code extensions, rotate GitHub and cloud (AWS/Azure/GCP) tokens, and check for unauthorized outbound traffic from any host that imported the module."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pyyaml",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<5.4"
+      ],
+      "attack_vector": "yaml.load() with the default Loader executed arbitrary Python on untrusted input. Even after the migration to safe loaders, pinned old versions remain widely deployed.",
+      "severity": "critical",
+      "cve": "CVE-2020-14343",
+      "disclosure_date": "2021-02-09",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-8q59-q68h-6hv4"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade PyYAML to >= 5.4 and migrate yaml.load(...) calls to yaml.safe_load(...) at every callsite."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "request",
+      "malicious_versions": [
+        "2024.1.0"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Typosquat of `requests`. Performs HTTP exfiltration of os.environ and ~/.aws/credentials at every import.",
+      "severity": "critical",
+      "cve": "",
+      "disclosure_date": "2024-03-01",
+      "source": "Sonatype OSS Index",
+      "references": [
+        "https://blog.sonatype.com/typosquatting-pypi-request-malware"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Remove `request`; install the legitimate `requests` package. Rotate AWS credentials and any secrets present in os.environ on affected machines."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "request3",
+      "malicious_versions": [
+        "*"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "W4SP Stealer wave. Typosquat of `requests`. On import downloads and runs the W4SP stealer payload that exfiltrates browser-stored passwords, Discord tokens, and crypto-wallet files via Discord webhook.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2022-11-02",
+      "source": "Phylum Research / Snyk",
+      "references": [
+        "https://blog.phylum.io/w4sp-stealer-discovered-on-pypi"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. `pip uninstall request3`.\n2. Treat host as compromised: rotate browser-saved passwords, Discord tokens, every reachable credential.\n3. Inspect Discord audit logs for unauthorized webhook activity."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "requests",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=0.0.0,<2.32.0"
+      ],
+      "attack_vector": "Session.get() / Session.post() forwarded the Proxy-Authorization header on cross-origin redirects, leaking corporate-proxy credentials to redirect targets.",
+      "severity": "high",
+      "cve": "CVE-2024-35195",
+      "disclosure_date": "2024-05-20",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-9wx4-h78v-vm56"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade requests to >= 2.32.0."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "scrapy",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.11.2"
+      ],
+      "attack_vector": "XML External Entity injection via the XmlItemExporter when crawling targets that return XML. A crafted XML response can read arbitrary files on the scrapy host.",
+      "severity": "high",
+      "cve": "CVE-2024-3574",
+      "disclosure_date": "2024-04-08",
+      "source": "Huntr",
+      "references": [
+        "https://huntr.dev/bounties/scrapy-2.11.2"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade Scrapy to >=2.11.2."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "secretslib",
+      "malicious_versions": [
+        "1.0.0",
+        "1.0.1",
+        "1.0.2",
+        "1.0.3"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Trojan masquerading as a secrets-management library. On import, downloads a Linux/macOS Monero miner into a hidden subdirectory and adds it to crontab for persistence.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2022-08-04",
+      "source": "Sonatype / ReversingLabs Security Research",
+      "references": [
+        "https://blog.sonatype.com/secretslib-pypi-malware"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [
+        "~/.cache/.secrets-helper/",
+        "Crontab entry referencing .secrets-helper"
+      ],
+      "remediation": "1. `pip uninstall secretslib`.\n2. Check `crontab -l` for entries pointing to .secrets-helper and remove.\n3. Remove ~/.cache/.secrets-helper/.\n4. Audit for unauthorized outbound traffic to mining pools."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "starlette",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<0.40.0"
+      ],
+      "attack_vector": "Multipart parser DoS: a crafted multipart/form-data upload with many small parts exhausts CPU. Affects FastAPI by transit.",
+      "severity": "high",
+      "cve": "CVE-2024-47874",
+      "disclosure_date": "2024-10-15",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-f96h-pmfr-66vw"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade starlette to >=0.40.0; transitively upgrade FastAPI to >=0.115.0."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "torch",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.2.0"
+      ],
+      "attack_vector": "Arbitrary code execution via `torch.load()` of an untrusted file. The pickle deserializer is unsafe; loading a model from an untrusted source executes attacker code.",
+      "severity": "critical",
+      "cve": "CVE-2024-31580",
+      "disclosure_date": "2024-04-17",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-pg7h-5qx3-wjr3"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade torch to >=2.2.0. Pass `weights_only=True` to `torch.load()` for untrusted files."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "torchtriton",
+      "malicious_versions": [
+        "1.0.0",
+        "1.0.1",
+        "1.0.2"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "Dependency-confusion attack against pytorch-nightly. PyPI's torchtriton (malicious) was preferred over the internal index version with the same name. The package collected /etc/hosts, /etc/passwd, ~/.gitconfig, ~/.ssh/* and uploaded to an attacker server during import.",
+      "severity": "critical",
+      "cve": "CVE-2022-45907",
+      "disclosure_date": "2022-12-30",
+      "source": "PyTorch Security Advisory",
+      "references": [
+        "https://pytorch.org/blog/compromised-nightly-dependency",
+        "https://github.com/advisories/GHSA-r2cm-mqxp-q97p"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. If you installed pytorch-nightly between 2022-12-25 and 2022-12-30, treat the machine as compromised: rotate SSH keys, audit ~/.ssh/known_hosts for new entries, and assume /etc/hosts contents leaked.\n2. Use the official triton package; never install torchtriton from PyPI."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "transformers",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<4.38.0"
+      ],
+      "attack_vector": "Arbitrary code execution via untrusted pickle deserialization. A model uploaded to Hugging Face Hub with a crafted pytorch_model.bin can execute arbitrary Python on load.",
+      "severity": "critical",
+      "cve": "CVE-2024-3568",
+      "disclosure_date": "2024-04-04",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-3863-2447-669p"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade transformers to >=4.38.0. Use `safetensors` format for untrusted models."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "urllib3",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        ">=2.0.0,<2.2.2",
+        ">=1.0.0,<1.26.19"
+      ],
+      "attack_vector": "Cookie / proxy-auth credential leakage on cross-origin redirects. Sensitive headers were forwarded when an HTTPS request redirected to a different host.",
+      "severity": "high",
+      "cve": "CVE-2024-37891",
+      "disclosure_date": "2024-06-17",
+      "source": "GitHub Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-34jh-p97f-mpxf"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade urllib3 to >= 1.26.19 or >= 2.2.2. Rotate any bearer tokens that may have been forwarded during cross-origin redirects."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "urlllib3",
+      "malicious_versions": [
+        "*"
+      ],
+      "vulnerable_ranges": [],
+      "attack_vector": "W4SP Stealer wave. Typosquat of `urllib3` (extra `l`). Same payload as request3.",
+      "severity": "critical",
+      "cve": "no-cve-assigned",
+      "disclosure_date": "2022-11-02",
+      "source": "Phylum Research / Snyk",
+      "references": [
+        "https://blog.phylum.io/w4sp-stealer-discovered-on-pypi"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "1. `pip uninstall urlllib3` (note extra `l`).\n2. Same recovery as request3."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "weblate",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<5.8.4"
+      ],
+      "attack_vector": "Two simultaneous 2026 advisories: (1) Stored XSS via maliciously-crafted Markdown content in translation comments and project descriptions; (2) Enumeration of private translations through an unprotected screenshot API endpoint. Both exploitable on shared multi-org Weblate deployments.",
+      "severity": "medium",
+      "cve": "CVE-2026-44264",
+      "disclosure_date": "2026-04-29",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-5cmv-3rc4-7279",
+        "https://github.com/advisories/GHSA-gcg5-86jr-f7jg"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade Weblate to >=5.8.4."
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "werkzeug",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<3.0.6"
+      ],
+      "attack_vector": "Multipart bomb DoS: a crafted upload with tens of thousands of small parts causes memory blowup. Affects Flask by transit.",
+      "severity": "high",
+      "cve": "CVE-2024-49767",
+      "disclosure_date": "2024-10-25",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-q34m-jh98-gwm2"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade werkzeug to >=3.0.6."
     }
   ]
 }

@@ -12,9 +12,11 @@ Examples:
         return deny_response()
 """
 
+import json
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Set
+from pathlib import Path
+from typing import List, Optional, Set, Tuple
 
 from ..utils.request import get_request_header
 
@@ -52,111 +54,41 @@ class BotDetectionResult:
 # BOT DATABASE
 # =============================================================================
 
-_BotPattern = tuple  # (compiled_regex, name, category)
-
-def _compile_patterns() -> List[_BotPattern]:
-    """Compile bot patterns once at import time."""
-    raw = [
-        # --- SEARCH ENGINES (specific variants before generic) ---
-        (r'Googlebot-Image', 'Googlebot-Image', SEARCH_ENGINE),
-        (r'Googlebot-Video', 'Googlebot-Video', SEARCH_ENGINE),
-        (r'Googlebot-News', 'Googlebot-News', SEARCH_ENGINE),
-        (r'Googlebot', 'Googlebot', SEARCH_ENGINE),
-        (r'AdsBot-Google', 'AdsBot-Google', SEARCH_ENGINE),
-        (r'Mediapartners-Google', 'Mediapartners-Google', SEARCH_ENGINE),
-        (r'Bingbot', 'Bingbot', SEARCH_ENGINE),
-        (r'msnbot', 'msnbot', SEARCH_ENGINE),
-        (r'Slurp', 'Yahoo Slurp', SEARCH_ENGINE),
-        (r'DuckDuckBot', 'DuckDuckBot', SEARCH_ENGINE),
-        (r'Baiduspider', 'Baiduspider', SEARCH_ENGINE),
-        (r'YandexBot', 'YandexBot', SEARCH_ENGINE),
-        (r'YandexImages', 'YandexImages', SEARCH_ENGINE),
-        (r'Sogou', 'Sogou', SEARCH_ENGINE),
-        (r'Exabot', 'Exabot', SEARCH_ENGINE),
-        (r'ia_archiver', 'Alexa', SEARCH_ENGINE),
-        (r'Applebot', 'Applebot', SEARCH_ENGINE),
-        (r'Qwantify', 'Qwantify', SEARCH_ENGINE),
-        (r'PetalBot', 'PetalBot', SEARCH_ENGINE),
-        (r'SeznamBot', 'SeznamBot', SEARCH_ENGINE),
-
-        # --- SOCIAL ---
-        (r'Twitterbot', 'Twitterbot', SOCIAL),
-        (r'facebookexternalhit', 'Facebook', SOCIAL),
-        (r'Facebot', 'Facebot', SOCIAL),
-        (r'LinkedInBot', 'LinkedInBot', SOCIAL),
-        (r'Pinterest', 'Pinterest', SOCIAL),
-        (r'Slackbot', 'Slackbot', SOCIAL),
-        (r'TelegramBot', 'TelegramBot', SOCIAL),
-        (r'WhatsApp', 'WhatsApp', SOCIAL),
-        (r'Discordbot', 'Discordbot', SOCIAL),
-        (r'Redditbot', 'Redditbot', SOCIAL),
-        (r'Embedly', 'Embedly', SOCIAL),
-        (r'Quora Link Preview', 'Quora', SOCIAL),
-        (r'Mastodon', 'Mastodon', SOCIAL),
-
-        # --- MONITORING ---
-        (r'UptimeRobot', 'UptimeRobot', MONITORING),
-        (r'Pingdom', 'Pingdom', MONITORING),
-        (r'Site24x7', 'Site24x7', MONITORING),
-        (r'StatusCake', 'StatusCake', MONITORING),
-        (r'Datadog', 'Datadog', MONITORING),
-        (r'NewRelicPinger', 'New Relic', MONITORING),
-        (r'Better Uptime Bot', 'Better Uptime', MONITORING),
-        (r'GTmetrix', 'GTmetrix', MONITORING),
-        (r'PageSpeed', 'PageSpeed Insights', MONITORING),
-
-        # --- AI CRAWLERS ---
-        (r'GPTBot', 'GPTBot', AI_CRAWLER),
-        (r'ChatGPT-User', 'ChatGPT-User', AI_CRAWLER),
-        (r'Claude-Web', 'Claude-Web', AI_CRAWLER),
-        (r'ClaudeBot', 'ClaudeBot', AI_CRAWLER),
-        (r'anthropic-ai', 'Anthropic', AI_CRAWLER),
-        (r'Bytespider', 'Bytespider', AI_CRAWLER),
-        (r'CCBot', 'CCBot', AI_CRAWLER),
-        (r'cohere-ai', 'Cohere', AI_CRAWLER),
-        (r'PerplexityBot', 'PerplexityBot', AI_CRAWLER),
-        (r'YouBot', 'YouBot', AI_CRAWLER),
-        (r'Google-Extended', 'Google-Extended', AI_CRAWLER),
-        (r'Diffbot', 'Diffbot', AI_CRAWLER),
-        (r'Amazonbot', 'Amazonbot', AI_CRAWLER),
-        (r'meta-externalagent', 'Meta AI', AI_CRAWLER),
-
-        # --- AUTOMATED TOOLS ---
-        (r'HeadlessChrome', 'Headless Chrome', AUTOMATED),
-        (r'PhantomJS', 'PhantomJS', AUTOMATED),
-        (r'Selenium', 'Selenium', AUTOMATED),
-        (r'Puppeteer', 'Puppeteer', AUTOMATED),
-        (r'Playwright', 'Playwright', AUTOMATED),
-        (r'Cypress', 'Cypress', AUTOMATED),
-        (r'webdriver', 'WebDriver', AUTOMATED),
-        (r'MSIE 6\.0', 'Fake IE6', AUTOMATED),
-
-        # --- SCRAPERS / CLI TOOLS ---
-        (r'^curl/', 'curl', SCRAPER),
-        (r'^wget/', 'wget', SCRAPER),
-        (r'^python-requests/', 'python-requests', SCRAPER),
-        (r'^python-httpx/', 'python-httpx', SCRAPER),
-        (r'^Python-urllib', 'Python-urllib', SCRAPER),
-        (r'^aiohttp/', 'aiohttp', SCRAPER),
-        (r'^Go-http-client', 'Go-http-client', SCRAPER),
-        (r'^Java/', 'Java HttpClient', SCRAPER),
-        (r'^Apache-HttpClient', 'Apache HttpClient', SCRAPER),
-        (r'^okhttp/', 'OkHttp', SCRAPER),
-        (r'^node-fetch/', 'node-fetch', SCRAPER),
-        (r'^axios/', 'axios', SCRAPER),
-        (r'^got/', 'got', SCRAPER),
-        (r'^libwww-perl', 'libwww-perl', SCRAPER),
-        (r'^Ruby', 'Ruby', SCRAPER),
-        (r'^PHP/', 'PHP', SCRAPER),
-        (r'Scrapy', 'Scrapy', SCRAPER),
-        (r'^Postman', 'Postman', SCRAPER),
-        (r'^Insomnia', 'Insomnia', SCRAPER),
-        (r'^HTTPie/', 'HTTPie', SCRAPER),
-    ]
-    return [(re.compile(p, re.IGNORECASE), name, cat) for p, name, cat in raw]
+@dataclass
+class _BotEntry:
+    """A compiled bot signature: ALL accepted patterns must match AND no
+    forbidden pattern may match for an entry to fire."""
+    entry_id: str
+    name: str
+    category: str
+    accepted: Tuple[re.Pattern, ...]
+    forbidden: Tuple[re.Pattern, ...]
 
 
-BOT_PATTERNS = _compile_patterns()
+def _load_bot_patterns() -> List[_BotEntry]:
+    """Load and compile the bot-corpus shipped with the package.
+
+    Source: ``arcis/data/bot_patterns.json`` — derived from
+    arcjet/well-known-bots (MIT) plus a supplementary list of browser
+    automation tools and CLI scrapers. Regenerate via
+    ``python packages/core/generate-bot-patterns.py`` after upgrading.
+    """
+    data_path = Path(__file__).resolve().parent.parent / "data" / "bot_patterns.json"
+    with data_path.open() as f:
+        raw = json.load(f)
+    out: List[_BotEntry] = []
+    for entry in raw:
+        out.append(_BotEntry(
+            entry_id=entry["id"],
+            name=entry["name"],
+            category=entry["category"],
+            accepted=tuple(re.compile(p, re.IGNORECASE) for p in entry["patterns"]),
+            forbidden=tuple(re.compile(p, re.IGNORECASE) for p in entry["forbidden"]),
+        ))
+    return out
+
+
+BOT_PATTERNS = _load_bot_patterns()
 
 
 # =============================================================================
@@ -217,16 +149,23 @@ def detect_bot(request) -> BotDetectionResult:
             signals=signals,
         )
 
-    # Match against known bot patterns
-    for pattern, name, category in BOT_PATTERNS:
-        if pattern.search(ua):
-            return BotDetectionResult(
-                is_bot=True,
-                category=category,
-                name=name,
-                confidence=0.95,
-                signals=signals,
-            )
+    # Match against known bot patterns. ALL accepted patterns must match
+    # (multi-pattern entries like iMessage Preview need every token present)
+    # AND no forbidden pattern may match.
+    for entry in BOT_PATTERNS:
+        if not entry.accepted:
+            continue
+        if not all(p.search(ua) for p in entry.accepted):
+            continue
+        if any(p.search(ua) for p in entry.forbidden):
+            continue
+        return BotDetectionResult(
+            is_bot=True,
+            category=entry.category,
+            name=entry.name,
+            confidence=0.95,
+            signals=signals,
+        )
 
     # Behavioral analysis
     behavior_score = len(signals)

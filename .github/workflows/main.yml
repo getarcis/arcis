@@ -1,0 +1,30 @@
+name: Main
+
+# Triggers:
+#   - PR to nwl: full validation before merge.
+#   - Push to nwl: integration check after merge.
+# Direct pushes to track/* and feat/* intentionally do NOT fire CI;
+# the PR opened from those branches provides validation. This avoids
+# duplicate runs (push CI + PR CI) on every track commit.
+on:
+  push:
+    branches: [nwl]
+  pull_request:
+    branches: [nwl]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  unit-test-node:
+    uses: ./.github/workflows/unit-test-node.yml
+
+  unit-test-python:
+    uses: ./.github/workflows/unit-test-python.yml
+
+  unit-test-go:
+    uses: ./.github/workflows/unit-test-go.yml

@@ -161,6 +161,71 @@ describe('detectBot', () => {
   });
 
   // =========================================================================
+  // EXPANDED CORPUS — sample of UAs added by the 2026-05-06 corpus expansion
+  // (635 entries from arcjet/well-known-bots MIT). These are bots the previous
+  // 80-entry hardcoded list missed; if the corpus regresses these tests catch
+  // it before we ship.
+  // =========================================================================
+  describe('Expanded corpus coverage', () => {
+    const newSearchEngines = [
+      'Mozilla/5.0 (compatible; Yeti/1.1; +http://naver.me/spd)',                   // Naver
+      'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)', // Semrush
+      'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)',         // Ahrefs
+      'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)',              // Majestic
+      'Sogou web spider/4.0(+http://www.sogou.com/docs/help/webmasters.htm#07)',
+    ];
+    it.each(newSearchEngines)('detects new search/SEO bot: %s', (ua) => {
+      const result = detectBot(botReq(ua) as Request);
+      expect(result.isBot).toBe(true);
+      expect(result.name).not.toBeNull();
+    });
+
+    const newAiCrawlers = [
+      // OAI-SearchBot is dual-tagged search-engine + ai by Arcjet — we resolve
+      // to SEARCH_ENGINE (search wins over ai in our taxonomy). Listed here
+      // because the corpus expansion is what added detection at all.
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Claude-User/1.0; +mailto:contact@anthropic.com)',
+      'Mozilla/5.0 (compatible; cohere-ai)',
+      'Mozilla/5.0 (compatible; Diffbot/0.1; +http://diffbot.com)',
+    ];
+    it.each(newAiCrawlers)('detects new AI crawler: %s', (ua) => {
+      const result = detectBot(botReq(ua) as Request);
+      expect(result.isBot).toBe(true);
+      expect(result.category).toBe('AI_CRAWLER');
+    });
+
+    const newMonitors = [
+      'Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/)',
+      'StatusCake (https://www.statuscake.com)',
+    ];
+    it.each(newMonitors)('detects new monitoring bot: %s', (ua) => {
+      const result = detectBot(botReq(ua) as Request);
+      expect(result.isBot).toBe(true);
+      expect(result.category).toBe('MONITORING');
+    });
+
+    const newSocial = [
+      'Mozilla/5.0 (compatible; LinkedInBot/1.0; +http://www.linkedin.com)',
+      'TelegramBot (like TwitterBot)',
+      'Mozilla/5.0 (compatible; Iframely/1.3.1; +https://iframely.com)',
+    ];
+    it.each(newSocial)('detects new social/preview bot: %s', (ua) => {
+      const result = detectBot(botReq(ua) as Request);
+      expect(result.isBot).toBe(true);
+      expect(result.category).toBe('SOCIAL');
+    });
+
+    it('does NOT misclassify a bare Twitterbot UA as iMessage-Preview', () => {
+      // Regression: Arcjet's iMessage-Preview entry has multiple accepted
+      // patterns — ALL-of-patterns semantics means a bare Twitterbot UA must
+      // NOT be tagged as iMessage just because Twitterbot is one of those.
+      const result = detectBot(botReq('Twitterbot/1.0') as Request);
+      expect(result.isBot).toBe(true);
+      expect(result.name).toBe('Twitterbot');
+    });
+  });
+
+  // =========================================================================
   // HUMAN DETECTION
   // =========================================================================
   describe('Human detection', () => {

@@ -1,0 +1,44 @@
+[package]
+name = "arcis-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Shared engine logic (sanitizers, rule matchers, version parser) for the Arcis CLI."
+
+[dependencies]
+arcis-data = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+regex = { workspace = true }
+# walkdir, not the `ignore` crate, on purpose. Python `os.walk` does not
+# honor `.gitignore`; using `ignore` would diverge from the parity
+# contract whenever a target tree has gitignored source files. Gitignore
+# support belongs behind a flag (post-parity).
+walkdir = "2.5"
+# Async runtime + HTTP client for `arcis scan` (Phase B3). rustls-tls so
+# we don't need a system OpenSSL on Windows. Mirrors Python's
+# concurrent.futures.ThreadPoolExecutor(max_workers=10) via a tokio
+# Semaphore around reqwest fan-out.
+tokio = { workspace = true }
+reqwest = { workspace = true }
+urlencoding = "2.1"
+# `~/.arcis/osv-cache.json` — OSV layer (cli-sca.md Phase B).
+dirs = { workspace = true }
+# Deterministic finding IDs for `arcis audit` (cli-audit.md Phase B
+# item 10). Used only by `audit::finding_id`; safe in the hot path.
+sha2 = { workspace = true }
+# `.arcisignore` + `.gitignore` exclusion for `arcis audit` (cli-audit.md
+# Phase B item 7). Used only by `audit::walker`; built on top of walkdir
+# under the hood so we lose nothing performance-wise vs the previous
+# raw walkdir traversal.
+ignore = { workspace = true }
+# pnpm-lock.yaml deserialization for `arcis sca` transitive paths
+# (cli-sca.md Phase C item 5, commit 2). Workspace dep declared in
+# commit 1; first import lands with the pnpm graph builder in commit 2.
+serde_yml = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"

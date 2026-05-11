@@ -1,7 +1,7 @@
 {
   "name": "@arcis/node",
-  "version": "1.4.4",
-  "description": "Zero-dependency security middleware for Node.js. Protects against XSS, SQL injection, CSRF, SSRF, HPP, rate limiting, bot detection, and 15+ more attack types. Supply chain attack scanner included.",
+  "version": "1.5.0",
+  "description": "Inside-the-app security middleware for Node.js. One install protects Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono against XSS, SQL injection, CSRF, SSRF, HPP, prompt injection, bot traffic, rate limiting, and 20+ more attack types. Includes prompt-injection signature library, LLM token-budget middleware, 646-pattern bot corpus, and the @arcis/cli supply-chain scanner.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -50,10 +50,56 @@
       "types": "./dist/telemetry/index.d.ts",
       "import": "./dist/telemetry/index.mjs",
       "require": "./dist/telemetry/index.js"
+    },
+    "./fastify": {
+      "types": "./dist/fastify/index.d.ts",
+      "import": "./dist/fastify/index.mjs",
+      "require": "./dist/fastify/index.js"
+    },
+    "./koa": {
+      "types": "./dist/koa/index.d.ts",
+      "import": "./dist/koa/index.mjs",
+      "require": "./dist/koa/index.js"
+    },
+    "./nestjs": {
+      "types": "./dist/nestjs/index.d.ts",
+      "import": "./dist/nestjs/index.mjs",
+      "require": "./dist/nestjs/index.js"
+    },
+    "./nextjs": {
+      "types": "./dist/nextjs/index.d.ts",
+      "import": "./dist/nextjs/index.mjs",
+      "require": "./dist/nextjs/index.js"
+    },
+    "./sveltekit": {
+      "types": "./dist/sveltekit/index.d.ts",
+      "import": "./dist/sveltekit/index.mjs",
+      "require": "./dist/sveltekit/index.js"
+    },
+    "./astro": {
+      "types": "./dist/astro/index.d.ts",
+      "import": "./dist/astro/index.mjs",
+      "require": "./dist/astro/index.js"
+    },
+    "./nuxt": {
+      "types": "./dist/nuxt/index.d.ts",
+      "import": "./dist/nuxt/index.mjs",
+      "require": "./dist/nuxt/index.js"
+    },
+    "./bun": {
+      "types": "./dist/bun/index.d.ts",
+      "import": "./dist/bun/index.mjs",
+      "require": "./dist/bun/index.js"
+    },
+    "./hono": {
+      "types": "./dist/hono/index.d.ts",
+      "import": "./dist/hono/index.mjs",
+      "require": "./dist/hono/index.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts/postinstall.cjs"
   ],
   "bin": {
     "arcis": "./dist/cli/arcis.mjs"
@@ -68,7 +114,8 @@
     "test:coverage": "vitest --coverage",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.cjs"
   },
   "keywords": [
     "security",
@@ -100,6 +147,7 @@
     "express": ">=4.0.0"
   },
   "devDependencies": {
+    "@nestjs/common": "^11.1.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",

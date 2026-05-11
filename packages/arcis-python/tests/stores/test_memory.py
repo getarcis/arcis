@@ -2,7 +2,6 @@
 InMemoryStore tests — extracted from tests/test_core.py.
 """
 
-import pytest
 import time
 from arcis.core import InMemoryStore
 

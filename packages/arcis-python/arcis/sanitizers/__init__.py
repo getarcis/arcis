@@ -31,6 +31,12 @@ from .encode import (
     encode_for_css,
 )
 from .ldap import sanitize_ldap_filter, sanitize_ldap_dn, detect_ldap_injection
+from .prompt_injection import (
+    detect_prompt_injection,
+    sanitize_prompt_injection,
+    PromptInjectionMatch,
+    DetectPromptInjectionResult,
+)
 from typing import Dict
 
 
@@ -100,4 +106,8 @@ __all__ = [
     "encode_for_js",
     "encode_for_url",
     "encode_for_css",
+    "detect_prompt_injection",
+    "sanitize_prompt_injection",
+    "PromptInjectionMatch",
+    "DetectPromptInjectionResult",
 ]
