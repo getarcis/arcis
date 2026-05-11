@@ -18,6 +18,7 @@
 
 pub mod auth;
 pub mod classifier;
+pub mod csrf;
 pub mod discover;
 pub mod login;
 pub mod payloads;
@@ -31,6 +32,10 @@ pub(crate) mod test_server;
 
 pub use auth::{AuthConfig, AuthError};
 pub use classifier::{classify, Classification};
+pub use csrf::{
+    fetch_csrf, parse_spec as parse_csrf_spec, CsrfError, CsrfFetchOutcome, CsrfSpec, CsrfState,
+    CsrfStrategy, DEFAULT_THREAD_HEADER as DEFAULT_CSRF_THREAD_HEADER,
+};
 pub use discover::{
     detect_project_kind, detect_target, discover_routes, env_target, probe_control_plane,
     probe_dev_ports, read_env_files, sniff_framework, DiscoveredRoute, TargetCandidate,
@@ -40,5 +45,8 @@ pub use login::{execute_login, LoginConfig, LoginError};
 pub use payloads::{
     attack_categories, AttackCategory, AttackVector, BLOCKED_STATUS_CODES, DEFAULT_FIELDS,
 };
-pub use probe::{scan_route, send_one, RouteResult, ScanOptions, VectorResult};
+pub use probe::{
+    scan_route, send_one, CancelInfo, CancelKind, CancelMode, RouteResult, ScanOptions,
+    VectorResult,
+};
 pub use repro::format_curl;

@@ -20,9 +20,10 @@
 //! Tests in this module assert that unique sentinel token / cookie
 //! literals do not appear anywhere in the serialized JSON.
 
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, COOKIE};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, COOKIE};
 use serde_json::{Map, Value};
 
+use super::csrf::CsrfState;
 use super::login::LoginConfig;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -50,11 +51,21 @@ pub enum AuthError {
 /// authed via login" marker — so [`AuthConfig::redact_for_json`] can
 /// report `methods=["login"]` instead of leaking which artifact type
 /// was captured.
+///
+/// `csrf` is populated when the run was authed via `--csrf-from`.
+/// The captured token rides as a request header on every probe via
+/// [`AuthConfig::to_header_map`]; the cookie payload (when the
+/// strategy was `cookie` or auto-detect resolved to cookie) is
+/// expected to be appended to `cookie` by the caller — see
+/// [`super::csrf::CsrfFetchOutcome::cookie_to_append`]. CSRF
+/// composes with all auth methods (bearer, cookie, login); no
+/// mutex.
 #[derive(Debug, Clone, Default)]
 pub struct AuthConfig {
     pub bearer: Option<String>,
     pub cookie: Option<String>,
     pub login: Option<LoginConfig>,
+    pub csrf: Option<CsrfState>,
 }
 
 impl AuthConfig {
@@ -89,8 +100,13 @@ impl AuthConfig {
     /// Build the `HeaderMap` seeded into
     /// `Client::builder().default_headers`. Probe and every vector
     /// inherits these headers automatically — single injection site.
-    /// `Authorization` and `Cookie` are distinct header names, so
-    /// composition is automatic when both are set.
+    /// `Authorization`, `Cookie`, and the CSRF threading header are
+    /// distinct header names, so composition is automatic when more
+    /// than one is set.
+    ///
+    /// CSRF threading uses the runtime header name from
+    /// [`CsrfState::thread_header`] (default `X-CSRF-Token`,
+    /// overridable via the CLI `--csrf-header` flag).
     pub fn to_header_map(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         if let Some(token) = &self.bearer {
@@ -106,6 +122,19 @@ impl AuthConfig {
                 headers.insert(COOKIE, v);
             }
         }
+        if let Some(csrf) = &self.csrf {
+            // Defensive: validate the header NAME at insertion. The
+            // CLI parser should already have rejected invalid names
+            // (control chars, empty), but if direct API users
+            // construct the state by hand we silently skip rather
+            // than panic — same posture as bearer/cookie.
+            if let (Ok(name), Ok(value)) = (
+                HeaderName::from_bytes(csrf.thread_header.as_bytes()),
+                HeaderValue::from_str(&csrf.token),
+            ) {
+                headers.insert(name, value);
+            }
+        }
         headers
     }
 
@@ -113,24 +142,35 @@ impl AuthConfig {
     ///
     /// **Locked schema.** This method produces exactly ONE of:
     ///
-    /// - `{"methods": ["login"]}`               — when login is set
-    /// - `{"methods": ["bearer"]}`              — bearer only
-    /// - `{"methods": ["cookie"]}`              — cookie only
-    /// - `{"methods": ["bearer", "cookie"]}`    — both manual flags
-    /// - `None`                                 — no auth configured
+    /// - `{"methods": ["login"]}`                          — when login is set, no CSRF
+    /// - `{"methods": ["login", "csrf-from"]}`             — login + csrf
+    /// - `{"methods": ["bearer"]}`                         — bearer only
+    /// - `{"methods": ["bearer", "csrf-from"]}`            — bearer + csrf
+    /// - `{"methods": ["cookie"]}`                         — cookie only
+    /// - `{"methods": ["cookie", "csrf-from"]}`            — cookie + csrf
+    /// - `{"methods": ["bearer", "cookie"]}`               — both manual flags
+    /// - `{"methods": ["bearer", "cookie", "csrf-from"]}`  — all three
+    /// - `{"methods": ["csrf-from"]}`                      — csrf only
+    /// - `None`                                            — no auth configured
     ///
     /// No additional keys. No `loginUrl`, no `origin`, no provenance
     /// fields. When `login` is set, `methods` reports `["login"]` and
     /// the captured-artifact channel (bearer or cookie) is NOT
     /// reflected in the output — login overrides for reporting purposes.
+    /// `csrf-from` is additive and composes with every other method.
+    ///
+    /// Method ordering: alphabetical (bearer < cookie < csrf-from)
+    /// when login is absent; `login` first then `csrf-from` when
+    /// login is set. Deterministic so day-over-day diffs are stable.
     ///
     /// Future auth flags MUST extend the `methods` array AND add a
     /// bullet to the enumeration above — never add sibling keys.
     /// Adding a key requires a deliberate schema bump.
     ///
     /// **Redaction contract:** NEVER emits token values, cookie values,
-    /// or login form values. Tests assert that unique sentinel literals
-    /// for each kind do not appear in the serialized output.
+    /// login form values, or CSRF tokens. Tests assert that unique
+    /// sentinel literals for each kind do not appear in the serialized
+    /// output.
     pub fn redact_for_json(&self) -> Option<Value> {
         let mut methods: Vec<Value> = Vec::new();
         if self.login.is_some() {
@@ -146,6 +186,12 @@ impl AuthConfig {
             if self.cookie.is_some() {
                 methods.push(Value::String("cookie".into()));
             }
+        }
+        // CSRF is additive — orthogonal to the auth-method axis.
+        // Always last in the array so login/bearer/cookie ordering
+        // semantics above remain stable.
+        if self.csrf.is_some() {
+            methods.push(Value::String("csrf-from".into()));
         }
         if methods.is_empty() {
             return None;
@@ -392,6 +438,7 @@ mod tests {
             bearer: Some(TEST_BEARER_TOKEN.into()),
             cookie: Some(TEST_COOKIE_VALUE.into()),
             login: Some(login_with_sentinel_password()),
+            ..Default::default()
         };
         let v = cfg.redact_for_json().unwrap();
         let s = serde_json::to_string(&v).unwrap();
@@ -435,5 +482,176 @@ mod tests {
             !s.contains("localhost:5000"),
             "login URL leaked under locked schema: {s}"
         );
+    }
+
+    // ----- CSRF-from coverage -----
+
+    /// Sentinel CSRF token. Pinned unique so a substring match
+    /// against the emitted JSON cannot false-positive on any other
+    /// surface (route URL, vector label, hash digest, etc.).
+    const TEST_CSRF_TOKEN: &str = "arcis-test-csrf-DEADC0DE-1f7e3a";
+
+    fn csrf_state_with_default_header() -> CsrfState {
+        CsrfState {
+            token: TEST_CSRF_TOKEN.into(),
+            thread_header: "X-CSRF-Token".into(),
+        }
+    }
+
+    #[test]
+    fn redact_for_json_csrf_only_emits_methods_array_with_csrf_from() {
+        let cfg = AuthConfig {
+            csrf: Some(csrf_state_with_default_header()),
+            ..Default::default()
+        };
+        let v = cfg.redact_for_json().unwrap();
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"methods":["csrf-from"]}"#);
+        assert!(
+            !s.contains(TEST_CSRF_TOKEN),
+            "CSRF token leaked under csrf-only redaction: {s}"
+        );
+    }
+
+    #[test]
+    fn redact_for_json_bearer_plus_csrf_emits_alphabetical_ordering() {
+        // Locked: bearer < cookie < csrf-from. Pin the order.
+        let cfg = AuthConfig {
+            bearer: Some(TEST_BEARER_TOKEN.into()),
+            csrf: Some(csrf_state_with_default_header()),
+            ..Default::default()
+        };
+        let v = cfg.redact_for_json().unwrap();
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"methods":["bearer","csrf-from"]}"#);
+        assert!(!s.contains(TEST_BEARER_TOKEN), "bearer leaked: {s}");
+        assert!(!s.contains(TEST_CSRF_TOKEN), "csrf token leaked: {s}");
+    }
+
+    #[test]
+    fn redact_for_json_cookie_plus_csrf_emits_alphabetical_ordering() {
+        let cfg = AuthConfig {
+            cookie: Some(TEST_COOKIE_VALUE.into()),
+            csrf: Some(csrf_state_with_default_header()),
+            ..Default::default()
+        };
+        let v = cfg.redact_for_json().unwrap();
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"methods":["cookie","csrf-from"]}"#);
+        assert!(!s.contains(TEST_COOKIE_VALUE), "cookie leaked: {s}");
+        assert!(!s.contains(TEST_CSRF_TOKEN), "csrf token leaked: {s}");
+    }
+
+    #[test]
+    fn redact_for_json_all_three_manual_methods_emits_full_array() {
+        let cfg = AuthConfig {
+            bearer: Some(TEST_BEARER_TOKEN.into()),
+            cookie: Some(TEST_COOKIE_VALUE.into()),
+            csrf: Some(csrf_state_with_default_header()),
+            ..Default::default()
+        };
+        let v = cfg.redact_for_json().unwrap();
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"methods":["bearer","cookie","csrf-from"]}"#);
+        // Triple sentinel pin — none of the three values may appear.
+        assert!(!s.contains(TEST_BEARER_TOKEN));
+        assert!(!s.contains(TEST_COOKIE_VALUE));
+        assert!(!s.contains(TEST_CSRF_TOKEN));
+    }
+
+    #[test]
+    fn redact_for_json_login_with_csrf_emits_login_then_csrf_from() {
+        // Login-overrides-bearer/cookie semantics still hold; CSRF
+        // is additive — appears AFTER the login marker.
+        let cfg = AuthConfig {
+            bearer: Some(TEST_BEARER_TOKEN.into()),
+            cookie: Some(TEST_COOKIE_VALUE.into()),
+            login: Some(login_with_sentinel_password()),
+            csrf: Some(csrf_state_with_default_header()),
+        };
+        let v = cfg.redact_for_json().unwrap();
+        let s = serde_json::to_string(&v).unwrap();
+        assert_eq!(s, r#"{"methods":["login","csrf-from"]}"#);
+        // Every sentinel absent.
+        assert!(!s.contains(TEST_BEARER_TOKEN));
+        assert!(!s.contains(TEST_COOKIE_VALUE));
+        assert!(!s.contains(TEST_LOGIN_PASSWORD));
+        assert!(!s.contains(TEST_CSRF_TOKEN));
+    }
+
+    #[test]
+    fn to_header_map_emits_csrf_header_with_default_name() {
+        let cfg = AuthConfig {
+            csrf: Some(csrf_state_with_default_header()),
+            ..Default::default()
+        };
+        let headers = cfg.to_header_map();
+        assert_eq!(
+            headers.get("x-csrf-token").map(|v| v.to_str().unwrap()),
+            Some(TEST_CSRF_TOKEN)
+        );
+    }
+
+    #[test]
+    fn to_header_map_emits_csrf_header_with_custom_name() {
+        // Per --csrf-header override path: thread_header carries
+        // the user-chosen name. Angular uses X-XSRF-TOKEN, Django
+        // uses X-CSRFToken — pin support for both.
+        let cfg = AuthConfig {
+            csrf: Some(CsrfState {
+                token: TEST_CSRF_TOKEN.into(),
+                thread_header: "X-XSRF-TOKEN".into(),
+            }),
+            ..Default::default()
+        };
+        let headers = cfg.to_header_map();
+        assert_eq!(
+            headers.get("x-xsrf-token").map(|v| v.to_str().unwrap()),
+            Some(TEST_CSRF_TOKEN)
+        );
+        // Default name must NOT be set when override was used.
+        assert!(headers.get("x-csrf-token").is_none());
+    }
+
+    #[test]
+    fn to_header_map_csrf_composes_with_bearer_and_cookie() {
+        // Three distinct header names — composition is automatic.
+        let cfg = AuthConfig {
+            bearer: Some("token-foo".into()),
+            cookie: Some("session=abc".into()),
+            csrf: Some(csrf_state_with_default_header()),
+            ..Default::default()
+        };
+        let headers = cfg.to_header_map();
+        assert_eq!(
+            headers.get("authorization").map(|v| v.to_str().unwrap()),
+            Some("Bearer token-foo")
+        );
+        assert_eq!(
+            headers.get("cookie").map(|v| v.to_str().unwrap()),
+            Some("session=abc")
+        );
+        assert_eq!(
+            headers.get("x-csrf-token").map(|v| v.to_str().unwrap()),
+            Some(TEST_CSRF_TOKEN)
+        );
+    }
+
+    #[test]
+    fn to_header_map_silently_skips_invalid_csrf_header_name() {
+        // Defensive posture parallel to bearer/cookie: bad-bytes in
+        // the thread_header (e.g. control chars from a direct API
+        // misuse) are silently dropped rather than panicking the
+        // scan. CLI parser is the authoritative validator.
+        let cfg = AuthConfig {
+            csrf: Some(CsrfState {
+                token: "ok".into(),
+                thread_header: "X-Bad\r\nHeader".into(),
+            }),
+            ..Default::default()
+        };
+        let headers = cfg.to_header_map();
+        // No CSRF header emitted; map is empty.
+        assert!(headers.is_empty());
     }
 }
