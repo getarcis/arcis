@@ -85,3 +85,32 @@ def detect_ldap_injection(value: str) -> bool:
     if not isinstance(value, str):
         return False
     return bool(_LDAP_DETECT.search(value) or _LDAP_INJECTION.search(value))
+
+
+def detect_ldap_injection_strict(value: str) -> bool:
+    """
+    Strict LDAP injection check, safe for request-boundary scanning.
+
+    Uses only the attack-specific filter-break shapes ')(' and '*)(' that
+    don't false-positive on legitimate user input containing parens.
+    Use this from scan_threats / request-boundary scanners.
+
+    The looser detect_ldap_injection() also checks for any LDAP special
+    character ([*()\\\\\\x00]); that's safe to use when you KNOW the value
+    is heading into an LDAP filter context, but not at the request
+    boundary where any parenthesised string would trip it.
+
+    Args:
+        value: The string to check.
+
+    Returns:
+        True only when an LDAP filter-break pattern is present.
+
+    Example:
+        detect_ldap_injection_strict("*)(uid=*))(|(uid=*")   # True
+        detect_ldap_injection_strict("john")                  # False
+        detect_ldap_injection_strict("call me (when you can)")  # False
+    """
+    if not isinstance(value, str):
+        return False
+    return bool(_LDAP_INJECTION.search(value))
