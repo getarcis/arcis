@@ -254,11 +254,16 @@ def test_path_matches_prefers_cmd_over_bare_name_on_windows(tmp_path, monkeypatc
     """Bug #14 (v1.5.4): npm on Windows ships both `<prefix>\\arcis` (a
     bash script for git-bash) and `<prefix>\\arcis.cmd` (the real
     launcher). The shim must pick the .cmd, not the bash script, or the
-    Windows kernel refuses with WinError 193."""
+    Windows kernel refuses with WinError 193.
+
+    Linux CI note: file lookups are case-sensitive on Linux but case-
+    insensitive on real Windows. We use a lowercase PATHEXT in the test
+    so the lookup matches the lowercase files we create. Real Windows
+    PATHEXT is uppercase, but os.path.isfile there is case-insensitive
+    so the production code works either way.
+    """
     monkeypatch.setattr(cli_shim.sys, "platform", "win32")
-    # PATHEXT must be set so the Windows branch picks the right extension
-    # list rather than reading the host's actual PATHEXT.
-    monkeypatch.setenv("PATHEXT", ".EXE;.CMD;.BAT;.COM")
+    monkeypatch.setenv("PATHEXT", ".exe;.cmd;.bat;.com")
     d = tmp_path / "npm"
     d.mkdir()
     (d / "arcis").write_text("#!/bin/sh\n# git-bash launcher\n")
