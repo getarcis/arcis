@@ -125,35 +125,30 @@ fn build_left(version: &str, cwd: &str) -> Vec<String> {
     rows.push(String::new());
     rows.push(center("Welcome to Arcis", LEFT_INNER));
     rows.push(String::new());
-    // Arcis burst mascot. Three rows of radial spokes around a center
-    // star, inspired by the burst SVGs in `cladue desing/exports/`.
-    // The center glyph U+2738 (heavy 8-pointed star) renders as a
-    // single column on every Unicode terminal we've tested.
+    // Arcis burst mascot. Five rows of radial spokes around a dense
+    // center mass, approximating the 7-petal sunburst from
+    // `cladue desing/exports/arcis-burst-emerald.svg`. Uses U+2572 ╲
+    // and U+2571 ╱ (heavy box-drawing diagonals) for the petals so
+    // they read as broad rays rather than thin slashes. U+25CF ● is
+    // the center where all 7 ellipses overlap in the SVG.
     rows.push(center(
-        &format!(
-            "{EMERALD}\\  {V}  /{RESET}",
-            EMERALD = EMERALD,
-            V = V,
-            RESET = RESET
-        ),
+        &format!("{EMERALD}\u{2572} \u{2572}\u{2502}\u{2571} \u{2571}{RESET}"),
         LEFT_INNER,
     ));
     rows.push(center(
-        &format!(
-            "{EMERALD}{H}{H} \u{2738} {H}{H}{RESET}",
-            EMERALD = EMERALD,
-            H = H,
-            RESET = RESET
-        ),
+        &format!("{EMERALD} \u{2572}\u{2572}\u{2502}\u{2571}\u{2571} {RESET}"),
         LEFT_INNER,
     ));
     rows.push(center(
-        &format!(
-            "{EMERALD}/  {V}  \\{RESET}",
-            EMERALD = EMERALD,
-            V = V,
-            RESET = RESET
-        ),
+        &format!("{EMERALD}{H}{H}{H}\u{25CF}{H}{H}{H}{RESET}"),
+        LEFT_INNER,
+    ));
+    rows.push(center(
+        &format!("{EMERALD} \u{2571}\u{2571}\u{2502}\u{2572}\u{2572} {RESET}"),
+        LEFT_INNER,
+    ));
+    rows.push(center(
+        &format!("{EMERALD}\u{2571} \u{2571}\u{2502}\u{2572} \u{2572}{RESET}"),
         LEFT_INNER,
     ));
     rows.push(String::new());
@@ -173,17 +168,18 @@ fn build_right() -> Vec<String> {
     let mut rows = Vec::new();
     rows.push(String::new());
     rows.push(format!("{EMERALD}Tips for getting started{RESET}"));
-    rows.push("Run 'arcis audit .' to scan your code for unsafe patterns".to_string());
-    rows.push("Run 'arcis sca .' to match deps against the threat database".to_string());
-    rows.push("Run 'arcis scan <url>' to probe a live endpoint".to_string());
+    rows.push("  Run 'arcis audit .' to scan your code for unsafe patterns".to_string());
+    rows.push("  Run 'arcis sca .' to match deps against the threat database".to_string());
+    rows.push("  Run 'arcis scan <url>' to probe a live endpoint".to_string());
     rows.push(String::new());
-    rows.push(format!("{EMERALD}What's new{RESET}"));
-    rows.push("Two-panel welcome screen on 'arcis' with no arguments".to_string());
-    rows.push("Python SDK shim restored: 'pip install arcis' exposes 'arcis' again".to_string());
-    rows.push("Daily cli-install-smoke workflow catches publish-channel breakage".to_string());
-    rows.push("Auto-published on every nwl to main release via publish.yml".to_string());
+    rows.push(format!("{EMERALD}More commands{RESET}"));
+    rows.push("  arcis --help      Per-command help and full flag reference".to_string());
+    rows.push("  arcis --version   Print installed CLI version".to_string());
+    rows.push("  arcis --list      Verbose catalog with examples per command".to_string());
+    rows.push("  arcis update      Check for a newer Arcis release".to_string());
+    rows.push(String::new());
     rows.push(format!(
-        "{DIM}arcis --help for the full command reference{RESET}"
+        "{DIM}  Upgrade:  npm install -g @arcis/cli@latest{RESET}"
     ));
     rows.push(String::new());
     rows
@@ -277,7 +273,7 @@ mod tests {
     fn right_panel_carries_section_titles() {
         let out = render("1.0.1", "/tmp/proj");
         assert!(out.contains("Tips for getting started"));
-        assert!(out.contains("What's new"));
+        assert!(out.contains("More commands"));
     }
 
     #[test]
@@ -286,6 +282,17 @@ mod tests {
         assert!(out.contains("arcis audit ."));
         assert!(out.contains("arcis sca ."));
         assert!(out.contains("arcis scan"));
+    }
+
+    #[test]
+    fn right_panel_lists_meta_commands() {
+        let out = render("1.0.1", "/tmp/proj");
+        assert!(out.contains("--help"));
+        assert!(out.contains("--version"));
+        assert!(out.contains("--list"));
+        assert!(out.contains("arcis update"));
+        assert!(out.contains("Upgrade:"));
+        assert!(out.contains("npm install -g @arcis/cli"));
     }
 
     #[test]
