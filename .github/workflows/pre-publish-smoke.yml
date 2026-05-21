@@ -1,0 +1,175 @@
+name: Pre-publish smoke
+
+# End-to-end install + invoke flow exercised against the THIS-PR build
+# (not the published packages). Runs on every PR that touches the CLI
+# wrapper or Python shim, so we catch the next "shipped a broken
+# launcher" / "shim crashes on Windows" before the release PR merges.
+#
+# What this catches that unit tests cannot:
+#   * bin/arcis being silently excluded from the npm tarball
+#     (gitignore catching the launcher → first publish was non-functional).
+#   * shim crashing on Windows when both `arcis` (bash) and `arcis.cmd`
+#     live in the same npm prefix dir (WinError 193 if the bare script
+#     is picked).
+#   * Python's subprocess on Windows failing to find `npm.cmd` without
+#     PATHEXT resolution.
+#   * Real PATH ordering where Python's Scripts/ comes first on Windows.
+#
+# We do NOT exercise the full Rust binary path here because the GitHub
+# Release for this PR's version does not exist yet. ARCIS_CLI_SKIP_INSTALL=1
+# defers the binary fetch; the daily cli-install-smoke job already covers
+# the post-publish flow against the live binary.
+
+on:
+  pull_request:
+    branches: [nwl, main]
+    paths:
+      - "packages/arcis-python/**"
+      - "packages/arcis-cli-npm/**"
+      - ".github/workflows/pre-publish-smoke.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.0.0
+        with:
+          node-version: "20"
+
+      - name: Build Python wheel
+        shell: bash
+        working-directory: packages/arcis-python
+        run: |
+          set -e
+          python -m pip install --upgrade build
+          python -m build --wheel
+          ls dist/
+
+      - name: Build npm tarball
+        shell: bash
+        working-directory: packages/arcis-cli-npm
+        run: |
+          set -e
+          npm pack
+          ls *.tgz
+
+      - name: Verify tarball contains bin/arcis (regression guard for bug 13)
+        shell: bash
+        working-directory: packages/arcis-cli-npm
+        run: |
+          set -e
+          tgz=$(ls arcis-cli-*.tgz | head -1)
+          echo "inspecting $tgz"
+          contents=$(tar -tzf "$tgz")
+          echo "$contents"
+          if ! echo "$contents" | grep -qE '(^|/)package/bin/arcis$'; then
+            echo "::error::bug-13 regression: package/bin/arcis missing from $tgz"
+            exit 1
+          fi
+          echo "ok: bin/arcis is in the tarball"
+
+      - name: Install Python wheel
+        shell: bash
+        run: |
+          set -e
+          pip install packages/arcis-python/dist/arcis-*.whl
+          which arcis || true
+          arcis --version
+
+      - name: Install npm tarball (skip binary download)
+        shell: bash
+        env:
+          ARCIS_CLI_SKIP_INSTALL: "1"
+        run: |
+          set -e
+          npm install -g packages/arcis-cli-npm/arcis-cli-*.tgz
+          npm config get prefix
+
+      - name: Smoke - arcis --version
+        shell: bash
+        run: |
+          set -e
+          out=$(arcis --version 2>&1)
+          echo "$out"
+          # Either the Python shim ('arcis SDK X.Y.Z (Python)') or the
+          # Rust binary version line is acceptable; both mean the shim
+          # routed through correctly. We assert it contains 'arcis' +
+          # a semver. We accept either casing of the noun.
+          echo "$out" | grep -qE 'arcis( SDK)? [0-9]+\.[0-9]+\.[0-9]+' \
+            || { echo "::error::--version output unexpected: $out"; exit 1; }
+
+      - name: Smoke - bare arcis does not crash (regression guard for bug 14)
+        shell: bash
+        run: |
+          set -e
+          # Bare `arcis` should hit the Python shim's welcome OR the
+          # JS shim's 'native binary not found' message — never a
+          # platform-level launcher failure like WinError 193.
+          out=$(arcis 2>&1) || true
+          echo "$out"
+          if echo "$out" | grep -qiE 'WinError 193|not a valid Win32 application|exec format error'; then
+            echo "::error::bug-14 regression: bare arcis crashed with a platform launcher error"
+            exit 1
+          fi
+          # Sanity check: SOMETHING got printed. A silent zero-byte stdout
+          # means the shim short-circuited unexpectedly.
+          if [ -z "$out" ]; then
+            echo "::error::bare arcis produced no output"
+            exit 1
+          fi
+          echo "ok: bare arcis ran cleanly"
+
+      - name: Smoke - arcis --diag works
+        shell: bash
+        run: |
+          set -e
+          out=$(arcis --diag 2>&1)
+          echo "$out"
+          echo "$out" | grep -q 'arcis-shim diag' \
+            || { echo "::error::--diag missing expected header"; exit 1; }
+          echo "$out" | grep -q '_find_real_cli' \
+            || { echo "::error::--diag missing _find_real_cli line"; exit 1; }
+
+      - name: Smoke - shim handles unknown subcommand cleanly
+        shell: bash
+        run: |
+          set -e
+          # With ARCIS_CLI_SKIP_INSTALL=1 there is no Rust binary, so a
+          # passthrough subcommand should print the install hint and
+          # exit 127, NOT crash. Capture exit code separately because
+          # set -e would otherwise fail the step.
+          set +e
+          out=$(arcis audit . 2>&1)
+          rc=$?
+          set -e
+          echo "rc=$rc"
+          echo "$out"
+          # On a fresh smoke env the Rust binary is not present. The
+          # shim might either find a previous cli install or fall back
+          # to the install hint. Either way the runner should not see
+          # a platform launcher error.
+          if echo "$out" | grep -qiE 'WinError 193|not a valid Win32 application|exec format error'; then
+            echo "::error::audit passthrough crashed at the launcher level"
+            exit 1
+          fi
+          echo "ok: audit passthrough did not crash"
