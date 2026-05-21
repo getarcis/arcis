@@ -12,16 +12,17 @@
 
 use thiserror::Error;
 
-// Embedded payloads. Paths are relative to *this file*, so:
-//   crates/arcis-data/src/lib.rs  ->  ../../../../arcis-python/arcis/data/<file>
-//
-// The `..` count goes: src/ -> arcis-data/ -> crates/ -> arcis-rust/ -> packages/
-// One more `..` lands inside packages/arcis-python/.
-pub const THREAT_DB_JSON: &[u8] =
-    include_bytes!("../../../../arcis-python/arcis/data/threat-db.json");
+// Embedded payloads. Vendored copy at `crates/arcis-data/data/` so the
+// crate is self-contained — required because `cross` (used by the Linux
+// musl release builds) runs Cargo inside a Docker container that mounts
+// only `packages/arcis-rust/` as /project; reaching out to
+// `packages/arcis-python/arcis/data/` from inside that container would
+// hit a non-existent path. The Python source remains canonical; the
+// release CI keeps the vendored copy in lockstep via a sha256 check
+// (`.github/workflows/data-sync-check.yml`).
+pub const THREAT_DB_JSON: &[u8] = include_bytes!("../data/threat-db.json");
 
-pub const PATTERNS_JSON: &[u8] =
-    include_bytes!("../../../../arcis-python/arcis/data/patterns.json");
+pub const PATTERNS_JSON: &[u8] = include_bytes!("../data/patterns.json");
 
 /// Schema versions the Rust engine knows how to load. Bumped in lockstep
 /// with the Python side. If you bump the schema in Python, also bump it
