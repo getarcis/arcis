@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Native Rust CLI binary for Arcis security middleware. Strangler-fig replacement for the Python CLI; see documents/plans/rust-cli.md."
+description = "Native Rust CLI binary for Arcis security middleware. Distributes via npm as @arcis/cli."
 
 # The crate name is `arcis-cli` for cargo, but the produced binary is named
 # `arcis` so users invoke `arcis scan` / `arcis audit` / `arcis sca`.

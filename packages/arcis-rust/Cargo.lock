@@ -69,7 +69,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "arcis-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "arcis-data",
@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "arcis-data"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "arcis-engine"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "arcis-data",
  "dirs",

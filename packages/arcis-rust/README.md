@@ -1,12 +1,11 @@
 # Arcis Rust CLI
 
-Native Rust port of the Arcis CLI (`arcis scan`, `arcis audit`, `arcis sca`).
-This is the strangler-fig migration: the Python CLI keeps shipping every
-feature until the Rust binary is verified at byte-level parity, then we
-delete Python.
+Native Rust binary that powers `arcis scan`, `arcis audit`, and
+`arcis sca`. Distributed to end users via npm as `@arcis/cli`.
 
-See [`documents/plans/rust-cli.md`](../../../documents/plans/rust-cli.md)
-for the migration plan and acceptance criteria.
+The package wrapper (`packages/arcis-cli-npm`) downloads the
+platform-matching prebuilt binary from the GitHub release at install
+time and verifies its SHA-256 checksum against the release manifest.
 
 ## Status
 

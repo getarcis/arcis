@@ -1,4 +1,4 @@
-name: Main
+name: CI
 
 # Triggers:
 #   - PR to nwl: full validation before merge.
@@ -6,6 +6,10 @@ name: Main
 # Direct pushes to track/* and feat/* intentionally do NOT fire CI;
 # the PR opened from those branches provides validation. This avoids
 # duplicate runs (push CI + PR CI) on every track commit.
+#
+# NOTE: This workflow runs on nwl-bound work, NOT on the `main` branch.
+# Publishing is handled by publish.yml (push to main only) — this one
+# is test/lint only.
 on:
   push:
     branches: [nwl]

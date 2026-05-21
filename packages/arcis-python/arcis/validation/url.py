@@ -287,3 +287,183 @@ def is_url_safe(
         True if the URL is safe to fetch.
     """
     return validate_url_ssrf(url, options).safe
+
+
+# ── Async SSRF with DNS-rebinding protection ───────────────────────────
+
+
+async def validate_url_async(
+    url: str,
+    options: Optional[ValidateUrlOptions] = None,
+    *,
+    timeout_seconds: float = 2.0,
+) -> ValidateUrlResult:
+    """Async SSRF check that resolves DNS and validates every returned IP.
+
+    The sync ``validate_url_ssrf`` validates the literal hostname only.
+    That's NOT enough against DNS rebinding: an attacker controls
+    ``7f000001.rebind.it``, whose first resolve returns a public IP
+    (passes the literal-hostname check) and whose second resolve at
+    fetch time returns 127.0.0.1. Validating the hostname at request
+    time and then fetching at handler time opens a TOCTOU window.
+
+    This function closes the window by resolving the hostname upfront
+    and rejecting the URL if ANY returned address is private / loopback
+    / link-local / cloud-metadata. Callers should pin the returned IP
+    (use ``pinned_dns_lookup`` style adapters in the underlying HTTP
+    client) so the actual fetch hits the same address that was
+    validated.
+
+    Args:
+        url: The URL string to validate.
+        options: Standard SSRF options (allowed protocols, allow/block
+            hosts, allow_localhost, allow_private).
+        timeout_seconds: Cap on DNS resolution wall-clock. Default 2.0
+            to keep the request hot path snappy under DNS slowness.
+
+    Returns:
+        ``ValidateUrlResult`` with safe + reason. Safe is True only
+        when (a) the URL passes the sync check AND (b) every resolved
+        IP is also safe.
+
+    Example::
+
+        result = await validate_url_async("http://7f000001.rebind.it/")
+        # ValidateUrlResult(safe=False, reason='resolved to loopback ...')
+
+    The implementation prefers ``dns.asyncresolver`` (dnspython) when
+    available since it's natively async. Falls back to
+    ``asyncio.to_thread(socket.getaddrinfo, ...)`` when dnspython is
+    not installed, which keeps the function async-correct (doesn't
+    block the loop) at the cost of a thread per call.
+    """
+    import asyncio
+
+    if options is None:
+        options = ValidateUrlOptions()
+
+    # Run the sync literal-hostname check first. If that says no, no
+    # point doing DNS work.
+    sync_result = validate_url_ssrf(url, options)
+    if not sync_result.safe:
+        return sync_result
+
+    # Re-parse so we can extract just the hostname for resolution.
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return ValidateUrlResult(safe=False, reason="invalid URL: failed to parse")
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return ValidateUrlResult(safe=False, reason="invalid URL: no hostname")
+
+    # Allowlisted host? Skip resolution entirely — the user explicitly
+    # opted into trusting this name even if it resolves elsewhere later.
+    if any(hostname == h.lower() for h in options.allowed_hosts):
+        return ValidateUrlResult(safe=True)
+
+    # If the hostname is already an IP (sync check would have caught
+    # private ones), no DNS to do.
+    if _is_ip_literal(hostname):
+        return ValidateUrlResult(safe=True)
+
+    # Resolve. Try dnspython native-async first, fall back to
+    # to_thread(getaddrinfo).
+    try:
+        ips = await asyncio.wait_for(
+            _resolve_async(hostname), timeout=timeout_seconds
+        )
+    except asyncio.TimeoutError:
+        return ValidateUrlResult(
+            safe=False,
+            reason=f"DNS resolution timed out after {timeout_seconds}s",
+        )
+    except Exception as err:
+        return ValidateUrlResult(
+            safe=False, reason=f"DNS resolution failed: {err}"
+        )
+
+    if not ips:
+        return ValidateUrlResult(
+            safe=False, reason="DNS resolution returned no addresses"
+        )
+
+    # Validate each resolved IP. Fail-closed on ANY private hit.
+    for ip in ips:
+        if not options.allow_localhost:
+            if ip in ("127.0.0.1", "::1", "0.0.0.0"):
+                return ValidateUrlResult(
+                    safe=False, reason=f"resolved to loopback ({ip})"
+                )
+            if _RE_LOOPBACK.match(ip):
+                return ValidateUrlResult(
+                    safe=False, reason=f"resolved to loopback ({ip})"
+                )
+        if not options.allow_private:
+            reason = _check_private_ip(ip)
+            if reason:
+                return ValidateUrlResult(
+                    safe=False, reason=f"resolved to {reason} ({ip})"
+                )
+
+    return ValidateUrlResult(safe=True)
+
+
+async def _resolve_async(hostname: str) -> List[str]:
+    """Resolve a hostname asynchronously to a list of A/AAAA addresses.
+
+    Tries ``dns.asyncresolver`` first (dnspython, native async). Falls
+    back to ``asyncio.to_thread(socket.getaddrinfo)`` when dnspython
+    isn't installed.
+    """
+    import asyncio
+    import socket
+
+    # Path 1: dnspython native async resolver.
+    try:
+        import dns.asyncresolver  # type: ignore[import-not-found]
+
+        ips: List[str] = []
+        for record_type in ("A", "AAAA"):
+            try:
+                answers = await dns.asyncresolver.resolve(hostname, record_type)
+                ips.extend(str(rdata) for rdata in answers)
+            except Exception:
+                # Missing AAAA / NXDOMAIN per-type is fine; we collect
+                # whatever the resolver returns and let the empty-result
+                # branch in the caller handle "nothing came back".
+                continue
+        return ips
+    except ImportError:
+        pass
+
+    # Path 2: stdlib getaddrinfo, offloaded to a thread.
+    def _sync_resolve() -> List[str]:
+        try:
+            infos = socket.getaddrinfo(hostname, None)
+        except socket.gaierror:
+            return []
+        ips: List[str] = []
+        for family, _type, _proto, _canon, sockaddr in infos:
+            if family == socket.AF_INET:
+                ips.append(sockaddr[0])
+            elif family == socket.AF_INET6:
+                # Strip IPv6 zone identifier if present.
+                addr = sockaddr[0]
+                if "%" in addr:
+                    addr = addr.split("%", 1)[0]
+                ips.append(addr)
+        return ips
+
+    return await asyncio.to_thread(_sync_resolve)
+
+
+def _is_ip_literal(hostname: str) -> bool:
+    """True when ``hostname`` is a literal IPv4 / IPv6 address (no DNS)."""
+    import ipaddress
+
+    try:
+        ipaddress.ip_address(hostname.strip("[]"))
+        return True
+    except ValueError:
+        return False

@@ -83,6 +83,10 @@ import (
 // package so the two adapters share one source of truth.
 type Config = arcischi.Config
 
+// SanitizeEvent is the payload passed to Config.OnSanitize when a
+// block-mode scan matches a threat. Aliased to the chi package.
+type SanitizeEvent = arcischi.SanitizeEvent
+
 // RateLimitOption configures a standalone rate-limit middleware. Use
 // WithTelemetry to attach a telemetry client.
 type RateLimitOption = arcischi.RateLimitOption
