@@ -1,225 +1,236 @@
-//! Two-panel welcome screen for `arcis` no-args on TTY.
+//! Claude-Code-shaped welcome screen for `arcis` no-args on TTY.
 //!
-//! Shows on `arcis` (no arguments) when stdout is a TTY. Inspired by
-//! Claude Code's first-screen layout: left panel for identity (version,
-//! cwd), right panel for tips + commands + "what's new". Non-TTY (pipes,
-//! CI) and `--help` / `--list` continue to use the plain catalog in
-//! `catalog.rs` so byte-equal parity with the Python harness holds.
+//! Layout: a single unified rounded box with the title embedded in the
+//! top border, an internal vertical divider, and two side-by-side
+//! panels. Left panel carries identity (mascot, version, cwd). Right
+//! panel carries Tips + What's new with colored section headers.
 //!
-//! Width: the panels target ~120 columns total. If the terminal is
-//! narrower than 80 columns, fall back to the plain catalog. Wider than
-//! 120 means we just leave extra blank on the right; we don't stretch
-//! panels because hand-stretched panels look worse than fixed-width ones.
+//! Non-TTY paths (pipes, CI, redirects, narrow terminals) keep the
+//! plain catalog so byte-equal parity with the Python harness holds.
 
 use std::io::{self, Write};
 
-/// Bullet entries shown in the right-side "Tips" panel. Kept short so
-/// they fit in ~70 columns minus padding.
-struct Tip {
-    cmd: &'static str,
-    note: &'static str,
+// Arcis Signal Orange #FF5300, the primary brand color used in the
+// dashboard. Encoded as 24-bit ANSI true color. Modern terminals
+// (Windows Terminal, iTerm2, Alacritty, all modern Linux terminals)
+// support this. Older Windows cmd.exe before Win10 1607 may render
+// the escape as literal text, but we only emit this on TTY, and the
+// user explicitly invoked an interactive command. Anyone hitting that
+// edge case can pipe to `cat` or set NO_COLOR.
+const ORANGE: &str = "\x1b[38;2;255;83;0m";
+const DIM: &str = "\x1b[2m";
+const RESET: &str = "\x1b[0m";
+
+// Box character set. Rounded corners + thin lines mirrors Claude Code.
+const TL: &str = "\u{256D}"; // ╭
+const TR: &str = "\u{256E}"; // ╮
+const BL: &str = "\u{2570}"; // ╰
+const BR: &str = "\u{256F}"; // ╯
+const V: &str = "\u{2502}"; // │
+const H: &str = "\u{2500}"; // ─
+
+/// Total width in display columns. 130 fits comfortably in a 144-col
+/// terminal (modern default for most editors / wide terminals).
+const TOTAL_WIDTH: usize = 130;
+
+/// Inner content width of the left panel (excludes border + 1-col pad
+/// on each side).
+const LEFT_INNER: usize = 34;
+
+/// Inner content width of the right panel. TOTAL_WIDTH minus:
+/// left border (1) + left pad (1) + LEFT_INNER (34) + left pad (1)
+/// + divider (1) + right pad (1) + right pad (1) + right border (1) = 41
+/// remaining for right inner = 130 - 41 = 89.
+const RIGHT_INNER: usize = 89;
+
+/// Terminals narrower than this fall back to the catalog. We need at
+/// least TOTAL_WIDTH plus a tiny margin so the right edge doesn't
+/// hug the terminal edge.
+const MIN_COLS: usize = TOTAL_WIDTH + 2;
+
+pub fn too_narrow(cols: usize) -> bool {
+    cols < MIN_COLS
 }
 
-const TIPS: &[Tip] = &[
-    Tip {
-        cmd: "arcis audit .",
-        note: "Static-scan your code for unsafe patterns",
-    },
-    Tip {
-        cmd: "arcis sca .",
-        note: "Match deps against supply-chain threat DB",
-    },
-    Tip {
-        cmd: "arcis scan http://localhost:3000",
-        note: "Probe a live endpoint for vulnerabilities",
-    },
-    Tip {
-        cmd: "arcis --help",
-        note: "Full command reference + flags",
-    },
-];
-
-/// Bullet entries shown in the "What's new" panel. Bump when the CLI
-/// gets new flags / commands worth surfacing on every cold start.
-const WHATS_NEW: &[&str] = &[
-    "Two-panel welcome screen on `arcis` no-args (TTY only).",
-    "Python SDK shim: `pip install arcis` exposes `arcis` again.",
-    "Daily cli-install-smoke workflow catches publish-channel breakage.",
-    "Auto-published from publish.yml on every nwl to main release.",
-];
-
-const LEFT_WIDTH: usize = 42;
-const RIGHT_WIDTH: usize = 72;
-
-/// Print the welcome screen. `version` is the CLI binary version; `cwd`
-/// is the directory the user invoked `arcis` from (rendered truncated
-/// if it would overflow the left panel).
+/// Render the welcome screen. Caller decides TTY-ness; this just
+/// writes the formatted output.
 pub fn print<W: Write>(w: &mut W, version: &str, cwd: &str) -> io::Result<()> {
-    let title_left = format!(" Arcis CLI v{version} ");
-    let title_tips = " Tips for getting started ";
-    let title_news = " What's new ";
+    // Top border with title embedded between dashes.
+    let title = format!(" Arcis CLI v{version} ");
+    writeln!(w, "{}", top_border(&title))?;
 
-    // Top border with the embedded titles.
-    writeln!(
-        w,
-        "{}  {}",
-        top_border(LEFT_WIDTH, &title_left),
-        top_border(RIGHT_WIDTH, title_tips)
-    )?;
+    let left = build_left(version, cwd);
+    let right = build_right();
+    let rows = left.len().max(right.len());
 
-    // Render row-by-row. The two panels are independent vertically so
-    // we compute the height of each and pad the shorter one.
-    let left_rows = build_left_rows(version, cwd);
-    let mut right_rows: Vec<String> = Vec::new();
-    push_blank(&mut right_rows);
-    for tip in TIPS {
-        push_tip(&mut right_rows, tip.cmd, tip.note);
-    }
-    push_blank(&mut right_rows);
-    // Right panel transitions to "What's new" with an inline title.
-    right_rows.push(format!(
-        "{}{}",
-        section_title(title_news),
-        " ".repeat(RIGHT_WIDTH.saturating_sub(title_news.len()).saturating_sub(2))
-    ));
-    push_blank(&mut right_rows);
-    for note in WHATS_NEW {
-        push_news(&mut right_rows, note);
-    }
-    push_blank(&mut right_rows);
-
-    let height = left_rows.len().max(right_rows.len());
-    for i in 0..height {
-        let left = left_rows
-            .get(i)
-            .map(String::as_str)
-            .unwrap_or("");
-        let right = right_rows
-            .get(i)
-            .map(String::as_str)
-            .unwrap_or("");
-        let left_padded = format!("|{}|", pad_inside(left, LEFT_WIDTH - 2));
-        let right_padded = format!("|{}|", pad_inside(right, RIGHT_WIDTH - 2));
-        writeln!(w, "{}  {}", left_padded, right_padded)?;
+    for i in 0..rows {
+        let l = left.get(i).map(String::as_str).unwrap_or("");
+        let r = right.get(i).map(String::as_str).unwrap_or("");
+        render_row(w, l, r)?;
     }
 
-    writeln!(
-        w,
-        "{}  {}",
-        bottom_border(LEFT_WIDTH),
-        bottom_border(RIGHT_WIDTH)
-    )?;
-    writeln!(w)?;
-    writeln!(w, "  Run 'arcis --help' for the full reference.")?;
-    writeln!(w, "  Issues: https://github.com/Gagancm/arcis/issues")?;
+    writeln!(w, "{}", bottom_border())?;
     Ok(())
 }
 
-/// Returns true when the terminal is too narrow to render the welcome
-/// nicely. Caller falls back to the plain catalog when true.
-pub fn too_narrow(cols: usize) -> bool {
-    cols < (LEFT_WIDTH + RIGHT_WIDTH + 4)
+fn top_border(title: &str) -> String {
+    // ╭─ Arcis CLI vX.Y.Z ────────────────────────╮
+    // The title sits 2 cols in from the left corner. The rest of the
+    // top is filled with horizontal lines until the right corner.
+    let mut s = String::new();
+    s.push_str(ORANGE);
+    s.push_str(TL);
+    s.push_str(H);
+    s.push_str(title);
+    let used_cols = 1 + 1 + visible_cols(title);
+    let remaining = TOTAL_WIDTH.saturating_sub(used_cols).saturating_sub(1);
+    for _ in 0..remaining {
+        s.push_str(H);
+    }
+    s.push_str(TR);
+    s.push_str(RESET);
+    s
 }
 
-fn build_left_rows(version: &str, cwd: &str) -> Vec<String> {
-    let mut rows: Vec<String> = Vec::new();
-    push_blank(&mut rows);
-    rows.push(center("Welcome to Arcis", LEFT_WIDTH - 2));
-    push_blank(&mut rows);
-    // Compact ASCII shield as the visual anchor. Box-drawing characters
-    // skipped on purpose so terminals without Unicode font support
-    // still render correctly.
-    rows.push(center("___", LEFT_WIDTH - 2));
-    rows.push(center("/ A \\", LEFT_WIDTH - 2));
-    rows.push(center("\\___/", LEFT_WIDTH - 2));
-    push_blank(&mut rows);
-    rows.push(center(&format!("v{version} (Rust)"), LEFT_WIDTH - 2));
-    push_blank(&mut rows);
-    let cwd_short = truncate_cwd(cwd, LEFT_WIDTH - 4);
-    rows.push(center(&cwd_short, LEFT_WIDTH - 2));
-    push_blank(&mut rows);
-    push_blank(&mut rows);
+fn bottom_border() -> String {
+    let mut s = String::new();
+    s.push_str(ORANGE);
+    s.push_str(BL);
+    for _ in 0..(TOTAL_WIDTH - 2) {
+        s.push_str(H);
+    }
+    s.push_str(BR);
+    s.push_str(RESET);
+    s
+}
+
+fn render_row<W: Write>(w: &mut W, left: &str, right: &str) -> io::Result<()> {
+    let left_padded = pad(left, LEFT_INNER);
+    let right_padded = pad(right, RIGHT_INNER);
+    // Format: │ <left 34 cols> │ <right 89 cols> │
+    writeln!(
+        w,
+        "{O}{V}{R} {l} {O}{V}{R} {r} {O}{V}{R}",
+        O = ORANGE,
+        V = V,
+        R = RESET,
+        l = left_padded,
+        r = right_padded
+    )
+}
+
+fn build_left(version: &str, cwd: &str) -> Vec<String> {
+    let mut rows = Vec::new();
+    rows.push(String::new());
+    rows.push(center("Welcome to Arcis", LEFT_INNER));
+    rows.push(String::new());
+    // Arcis burst mascot. Three rows of radial spokes around a center
+    // star, inspired by the burst SVGs in `cladue desing/exports/`.
+    // The center glyph U+2738 (heavy 8-pointed star) renders as a
+    // single column on every Unicode terminal we've tested.
+    rows.push(center(
+        &format!("{ORANGE}\\  {V}  /{RESET}", ORANGE = ORANGE, V = V, RESET = RESET),
+        LEFT_INNER,
+    ));
+    rows.push(center(
+        &format!("{ORANGE}{H}{H} \u{2738} {H}{H}{RESET}", ORANGE = ORANGE, H = H, RESET = RESET),
+        LEFT_INNER,
+    ));
+    rows.push(center(
+        &format!("{ORANGE}/  {V}  \\{RESET}", ORANGE = ORANGE, V = V, RESET = RESET),
+        LEFT_INNER,
+    ));
+    rows.push(String::new());
+    rows.push(center(&format!("v{version} (Rust)"), LEFT_INNER));
+    rows.push(center("native binary on 5 platforms", LEFT_INNER));
+    rows.push(String::new());
+    let cwd_short = truncate_cwd(cwd, LEFT_INNER - 2);
+    rows.push(center(
+        &format!("{DIM}{cwd_short}{RESET}", DIM = DIM, RESET = RESET),
+        LEFT_INNER,
+    ));
+    rows.push(String::new());
+    rows
+}
+
+fn build_right() -> Vec<String> {
+    let mut rows = Vec::new();
+    rows.push(String::new());
+    rows.push(format!("{ORANGE}Tips for getting started{RESET}"));
+    rows.push("Run 'arcis audit .' to scan your code for unsafe patterns".to_string());
+    rows.push("Run 'arcis sca .' to match deps against the threat database".to_string());
+    rows.push("Run 'arcis scan <url>' to probe a live endpoint".to_string());
+    rows.push(String::new());
+    rows.push(format!("{ORANGE}What's new{RESET}"));
+    rows.push("Two-panel welcome screen on 'arcis' with no arguments".to_string());
+    rows.push("Python SDK shim restored: 'pip install arcis' exposes 'arcis' again".to_string());
+    rows.push("Daily cli-install-smoke workflow catches publish-channel breakage".to_string());
+    rows.push("Auto-published on every nwl to main release via publish.yml".to_string());
+    rows.push(format!("{DIM}arcis --help for the full command reference{RESET}"));
+    rows.push(String::new());
     rows
 }
 
 fn truncate_cwd(cwd: &str, width: usize) -> String {
-    if cwd.len() <= width {
+    if cwd.chars().count() <= width {
         return cwd.to_string();
     }
-    // Show the tail of the path with ellipsis. More useful than the head
-    // because the relevant info (project name) is usually at the end.
+    // Show the tail of the path with leading ellipsis. The tail
+    // (project name) is what's relevant for a developer reading the
+    // banner; the head is just home directory + a long parent chain.
+    let chars: Vec<char> = cwd.chars().collect();
     let keep = width.saturating_sub(3);
-    let start = cwd.len().saturating_sub(keep);
-    format!("...{}", &cwd[start..])
+    let start = chars.len().saturating_sub(keep);
+    let tail: String = chars[start..].iter().collect();
+    format!("...{tail}")
 }
 
-fn push_blank(rows: &mut Vec<String>) {
-    rows.push(String::new());
-}
-
-fn push_tip(rows: &mut Vec<String>, cmd: &str, note: &str) {
-    // Two-line tip: command (highlighted) then dim explanation.
-    rows.push(format!("  {cmd}"));
-    rows.push(format!("    {note}"));
-    push_blank(rows);
-}
-
-fn push_news(rows: &mut Vec<String>, note: &str) {
-    rows.push(format!("  - {note}"));
-}
-
-fn section_title(title: &str) -> String {
-    // A subtle inline divider so the right panel reads as two stacked
-    // sections (Tips then What's new) without needing a second box.
-    format!("  {title}")
-}
-
-/// Left-pad and right-pad a row to exactly `width` inner columns. Used
-/// for the contents between the panel's left/right border characters.
-fn pad_inside(s: &str, width: usize) -> String {
-    if s.len() >= width {
-        // Truncate at character boundary; we control the inputs above
-        // so this should never fire in practice.
-        return s[..width.min(s.len())].to_string();
-    }
-    let pad = " ".repeat(width - s.len());
-    format!("{s}{pad}")
-}
-
-fn center(s: &str, width: usize) -> String {
-    if s.len() >= width {
+/// Pad `s` so its visible column count equals `width`. Counts visible
+/// columns (ignoring ANSI escape sequences) so colored content lines
+/// up with uncolored ones.
+fn pad(s: &str, width: usize) -> String {
+    let vis = visible_cols(s);
+    if vis >= width {
         return s.to_string();
     }
-    let total = width - s.len();
-    let left = total / 2;
-    let right = total - left;
-    format!("{}{}{}", " ".repeat(left), s, " ".repeat(right))
+    format!("{s}{}", " ".repeat(width - vis))
 }
 
-fn top_border(width: usize, title: &str) -> String {
-    // Plain ASCII border so it renders on every terminal/font combination.
-    // `+- title --------+` style; mimics the rounded look without using
-    // Unicode box-drawing chars (which fail on default Windows cmd.exe
-    // when chcp != 65001).
-    let mut bar = String::from(",");
-    bar.push('-');
-    bar.push_str(title);
-    let used = bar.len();
-    let pad = width.saturating_sub(used).saturating_sub(1);
-    for _ in 0..pad {
-        bar.push('-');
+/// Center `s` within `width` display columns. Ignores ANSI sequences
+/// when counting.
+fn center(s: &str, width: usize) -> String {
+    let vis = visible_cols(s);
+    if vis >= width {
+        return s.to_string();
     }
-    bar.push('.');
-    bar
+    let total = width - vis;
+    let left_pad = total / 2;
+    let right_pad = total - left_pad;
+    format!("{}{}{}", " ".repeat(left_pad), s, " ".repeat(right_pad))
 }
 
-fn bottom_border(width: usize) -> String {
-    let mut bar = String::from("'");
-    for _ in 1..(width - 1) {
-        bar.push('-');
+/// Count display columns in a string, stripping ANSI escape sequences.
+/// Approximate for non-ASCII: counts each `char` as one column. For the
+/// glyphs we use (box-drawing, star, ASCII), each is one column.
+fn visible_cols(s: &str) -> usize {
+    let mut n = 0;
+    let mut in_escape = false;
+    for c in s.chars() {
+        if c == '\x1b' {
+            in_escape = true;
+            continue;
+        }
+        if in_escape {
+            // ANSI sequences end on a letter. Be loose: stop on any
+            // ASCII letter, which covers SGR ('m'), cursor codes, etc.
+            if c.is_ascii_alphabetic() {
+                in_escape = false;
+            }
+            continue;
+        }
+        n += 1;
     }
-    bar.push('\'');
-    bar
+    n
 }
 
 #[cfg(test)]
@@ -233,14 +244,26 @@ mod tests {
     }
 
     #[test]
-    fn shows_version_and_label() {
+    fn includes_version_in_title() {
         let out = render("1.0.1", "/tmp/proj");
         assert!(out.contains("Arcis CLI v1.0.1"));
-        assert!(out.contains("v1.0.1 (Rust)"));
     }
 
     #[test]
-    fn shows_three_main_commands() {
+    fn left_panel_carries_welcome() {
+        let out = render("1.0.1", "/tmp/proj");
+        assert!(out.contains("Welcome to Arcis"));
+    }
+
+    #[test]
+    fn right_panel_carries_section_titles() {
+        let out = render("1.0.1", "/tmp/proj");
+        assert!(out.contains("Tips for getting started"));
+        assert!(out.contains("What's new"));
+    }
+
+    #[test]
+    fn right_panel_lists_three_main_commands() {
         let out = render("1.0.1", "/tmp/proj");
         assert!(out.contains("arcis audit ."));
         assert!(out.contains("arcis sca ."));
@@ -248,38 +271,40 @@ mod tests {
     }
 
     #[test]
-    fn shows_tips_panel_title() {
-        let out = render("1.0.1", "/tmp/proj");
-        assert!(out.contains("Tips for getting started"));
-    }
-
-    #[test]
-    fn shows_whats_new_section() {
-        let out = render("1.0.1", "/tmp/proj");
-        assert!(out.contains("What's new"));
-    }
-
-    #[test]
-    fn shows_short_cwd_unchanged() {
+    fn renders_short_cwd_unchanged() {
         let out = render("1.0.1", "/tmp/proj");
         assert!(out.contains("/tmp/proj"));
     }
 
     #[test]
-    fn truncates_long_cwd_to_tail() {
+    fn long_cwd_truncated_to_tail_with_ellipsis() {
         let long = "/a/very/long/path/that/way/exceeds/the/left/panel/width/projectname";
         let out = render("1.0.1", long);
-        // Tail (project name) preserved
         assert!(out.contains("projectname"));
-        // Ellipsis present
         assert!(out.contains("..."));
     }
 
     #[test]
-    fn too_narrow_threshold() {
+    fn too_narrow_triggers_at_correct_threshold() {
         assert!(too_narrow(80));
-        assert!(!too_narrow(120));
+        assert!(too_narrow(MIN_COLS - 1));
+        assert!(!too_narrow(MIN_COLS));
         assert!(!too_narrow(160));
+    }
+
+    #[test]
+    fn visible_cols_ignores_ansi_sequences() {
+        assert_eq!(visible_cols("hello"), 5);
+        assert_eq!(visible_cols(&format!("{ORANGE}hello{RESET}")), 5);
+        assert_eq!(visible_cols("\x1b[38;2;255;0;0mred\x1b[0m"), 3);
+    }
+
+    #[test]
+    fn pad_uses_visible_width_not_byte_count() {
+        let colored = format!("{ORANGE}abc{RESET}");
+        let padded = pad(&colored, 10);
+        // 3 visible chars + 7 spaces of padding
+        assert_eq!(visible_cols(&padded), 10);
     }
 
     #[test]
@@ -288,9 +313,19 @@ mod tests {
     }
 
     #[test]
-    fn truncate_cwd_keeps_tail() {
-        let result = truncate_cwd("/a/very/long/path/projectname", 20);
-        assert!(result.ends_with("projectname"));
-        assert!(result.starts_with("..."));
+    fn truncate_cwd_handles_unicode() {
+        // Should not panic on multi-byte chars.
+        let unicode = "/тест/проект/файл";
+        let result = truncate_cwd(unicode, 10);
+        assert!(result.len() > 0);
+    }
+
+    #[test]
+    fn render_contains_box_drawing_corners() {
+        let out = render("1.0.1", "/p");
+        assert!(out.contains(TL));
+        assert!(out.contains(TR));
+        assert!(out.contains(BL));
+        assert!(out.contains(BR));
     }
 }
