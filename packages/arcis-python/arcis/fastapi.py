@@ -390,6 +390,24 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # patterns and return 403 (with telemetry attribution) instead of
         # silently sanitizing. Opt-in for backwards compatibility.
         block: bool = False,
+        # Dry-run mode: when True, run the full block-mode detection
+        # pipeline but do NOT return 403. The threat is logged + the
+        # on_sanitize callback fires + the marker is set (so telemetry
+        # records would-have-blocked decisions). Use for safe rollout:
+        # turn on `block=True + dry_run=True`, watch the marker stream
+        # for false positives, then flip dry_run=False once confident.
+        # Ignored when block=False.
+        dry_run: bool = False,
+        # Per-request callback fired when sanitization modifies input or
+        # the block path matches a threat. Receives a dict with keys:
+        #   - vector: str
+        #   - rule: str
+        #   - matched: str (truncated sample of the matched value)
+        #   - path: str (request URL path)
+        #   - dry_run: bool (True if dry_run is on)
+        # Useful for log aggregation, alerting on silent-rewrite cases,
+        # and dashboards. Must not raise; exceptions are swallowed.
+        on_sanitize: Optional[Callable[[Dict[str, Any]], None]] = None,
         # Rate limiter options
         rate_limit: bool = True,
         rate_limit_max: int = DEFAULT_MAX_REQUESTS,
@@ -414,6 +432,8 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
         self.block = block
+        self.dry_run = dry_run
+        self.on_sanitize = on_sanitize
 
         self.sanitizer = sanitizer or (Sanitizer(
             xss=sanitize_xss,
@@ -576,17 +596,46 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                     marker.severity = "high"
                     marker.matched_pattern = matched
                     marker.reason = f"{vector} pattern detected in request"
-                    marker.decision = "deny"
-                response = JSONResponse(
-                    content={
-                        "error": "Request blocked for security reasons",
-                        "code": "SECURITY_THREAT",
-                        "vector": vector,
-                    },
-                    status_code=403,
-                )
-                self._maybe_record(request, response, telemetry_start)
-                return response
+                    # In dry_run mode the would-have-blocked decision is
+                    # still recorded; downstream tooling can graph these
+                    # before flipping the switch.
+                    marker.decision = "would_deny" if self.dry_run else "deny"
+
+                # Fire the on_sanitize callback so operators can wire
+                # logging / alerting without subscribing to the
+                # telemetry stream. Swallow exceptions — callbacks must
+                # not be able to crash the middleware.
+                if self.on_sanitize is not None:
+                    try:
+                        self.on_sanitize({
+                            "vector": vector,
+                            "rule": rule,
+                            "matched": matched,
+                            "path": request.url.path or "",
+                            "dry_run": self.dry_run,
+                        })
+                    except Exception:
+                        logger.exception("on_sanitize callback raised")
+
+                # Dry-run: log + continue past the deny path. The marker
+                # above carries decision=would_deny; the next handler
+                # serves the request normally.
+                if self.dry_run:
+                    logger.info(
+                        "arcis dry-run: would block vector=%s rule=%s path=%s",
+                        vector, rule, request.url.path or "",
+                    )
+                else:
+                    response = JSONResponse(
+                        content={
+                            "error": "Request blocked for security reasons",
+                            "code": "SECURITY_THREAT",
+                            "vector": vector,
+                        },
+                        status_code=403,
+                    )
+                    self._maybe_record(request, response, telemetry_start)
+                    return response
 
         # Store sanitized body in request state if JSON
         if self.sanitizer and body_read and body is not None:

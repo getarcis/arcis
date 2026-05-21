@@ -173,6 +173,21 @@ type Config struct {
 	// to the handler. Opt-in (default false).
 	Block bool
 
+	// DryRun: when true (and Block is also true), run the block-mode
+	// detection pipeline but do NOT abort with 403. The threat is logged
+	// + the OnSanitize callback fires + telemetry records the would-have-
+	// blocked decision. Use for safe rollout: turn on Block=true +
+	// DryRun=true, watch the telemetry stream for false positives, then
+	// flip DryRun=false once confident.
+	// Ignored when Block=false.
+	DryRun bool
+
+	// OnSanitize fires when a threat is detected in block mode (regardless
+	// of DryRun). Receives a SanitizeEvent describing the vector + path.
+	// Useful for log aggregation and alerting. Must not panic; the
+	// middleware ignores panics from this callback via defer/recover.
+	OnSanitize func(SanitizeEvent)
+
 	// Rate limiter options
 	RateLimit       bool
 	RateLimitMax    int
@@ -198,6 +213,18 @@ type Config struct {
 	// middleware decision. Nil = zero overhead (no defer registered, no
 	// allocations) per spec/API_SPEC.md §9 Guarantees.
 	Telemetry *telemetry.Client
+}
+
+// SanitizeEvent is the payload passed to Config.OnSanitize when a
+// block-mode scan matches a threat. The DryRun field indicates whether
+// the request was actually denied or only logged (mirrors the Python
+// FastAPI ArcisMiddleware on_sanitize callback shape).
+type SanitizeEvent struct {
+	Vector  string
+	Rule    string
+	Matched string
+	Path    string
+	DryRun  bool
 }
 
 // DefaultConfig returns the default Arcis configuration for Gin.
@@ -454,19 +481,48 @@ func MiddlewareWithConfig(config Config) gin.HandlerFunc {
 		// Block mode: scan body / query / path for attack patterns.
 		if config.Block {
 			if hit := scanRequestForThreats(c.Request); hit != nil {
-				decision = telemetry.DecisionDeny
+				// In dry-run mode the telemetry decision is "would_deny"
+				// so dashboards can graph false-positive rate before the
+				// switch flips. In real-deny mode it's "deny".
+				if config.DryRun {
+					decision = telemetry.Decision("would_deny")
+				} else {
+					decision = telemetry.DecisionDeny
+				}
 				evtVector = hit.Vector
 				evtRule = hit.Rule
 				evtMatched = hit.MatchedPattern
 				evtSeverity = telemetry.SeverityHigh
 				evtReason = "Detected " + hit.Vector + " pattern"
 
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-					"error":  "Request blocked for security reasons",
-					"code":   "SECURITY_THREAT",
-					"vector": hit.Vector,
-				})
-				return
+				// Fire the OnSanitize callback so operators can wire
+				// log aggregation / alerting without subscribing to the
+				// telemetry stream. Defer/recover so a panicking
+				// callback can't crash the middleware.
+				if config.OnSanitize != nil {
+					func() {
+						defer func() { _ = recover() }()
+						config.OnSanitize(SanitizeEvent{
+							Vector:  hit.Vector,
+							Rule:    hit.Rule,
+							Matched: hit.MatchedPattern,
+							Path:    c.Request.URL.Path,
+							DryRun:  config.DryRun,
+						})
+					}()
+				}
+
+				// Dry-run: skip the 403 and let the handler run. The
+				// telemetry record above still reflects the would-have-
+				// blocked decision.
+				if !config.DryRun {
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+						"error":  "Request blocked for security reasons",
+						"code":   "SECURITY_THREAT",
+						"vector": hit.Vector,
+					})
+					return
+				}
 			}
 		}
 
