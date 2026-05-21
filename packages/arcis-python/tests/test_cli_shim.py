@@ -250,6 +250,33 @@ def test_path_matches_returns_all_hits_in_path_order(tmp_path, monkeypatch):
     )
 
 
+def test_path_matches_prefers_cmd_over_bare_name_on_windows(tmp_path, monkeypatch):
+    """Bug #14 (v1.5.4): npm on Windows ships both `<prefix>\\arcis` (a
+    bash script for git-bash) and `<prefix>\\arcis.cmd` (the real
+    launcher). The shim must pick the .cmd, not the bash script, or the
+    Windows kernel refuses with WinError 193.
+
+    Linux CI note: file lookups are case-sensitive on Linux but case-
+    insensitive on real Windows. We use a lowercase PATHEXT in the test
+    so the lookup matches the lowercase files we create. Real Windows
+    PATHEXT is uppercase, but os.path.isfile there is case-insensitive
+    so the production code works either way.
+    """
+    monkeypatch.setattr(cli_shim.sys, "platform", "win32")
+    monkeypatch.setenv("PATHEXT", ".exe;.cmd;.bat;.com")
+    d = tmp_path / "npm"
+    d.mkdir()
+    (d / "arcis").write_text("#!/bin/sh\n# git-bash launcher\n")
+    (d / "arcis.cmd").write_text("@echo off\nnode arcis-impl.js %*\n")
+
+    monkeypatch.setenv("PATH", str(d))
+    results = cli_shim._path_matches("arcis")
+    # First result must be the .cmd, not the bare name. Both files exist
+    # so the function returns just one per directory (first match wins).
+    assert len(results) == 1
+    assert results[0].lower().endswith("arcis.cmd")
+
+
 def test_path_matches_dedupes_repeated_directories(tmp_path, monkeypatch):
     """A PATH with the same directory listed twice still returns one match."""
     d = tmp_path / "only"

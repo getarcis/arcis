@@ -41,7 +41,7 @@ from typing import List, Optional
 
 # Version of the SDK shipping this shim. Kept in sync with
 # arcis/__init__.py:__version__ — both should bump together.
-SDK_VERSION = "1.5.3"
+SDK_VERSION = "1.5.4"
 
 
 # Locations where npm install -g writes binaries. We check these in
@@ -184,8 +184,16 @@ def _path_matches(name: str) -> List[str]:
     seen: set = set()
 
     if sys.platform == "win32":
+        # PATHEXT entries FIRST, bare name LAST. npm on Windows ships
+        # BOTH `<prefix>\arcis.cmd` (the real Windows launcher) AND
+        # `<prefix>\arcis` (a bash script for git-bash / WSL users).
+        # Picking the bare name on a Windows host blows up with WinError
+        # 193 ("not a valid Win32 application") because the kernel can't
+        # exec a shell script. The bare extension is only useful as a
+        # last-resort fallback for the edge case where someone has just
+        # an extensionless executable on PATH.
         pathext = os.environ.get("PATHEXT", ".EXE;.CMD;.BAT;.COM").split(";")
-        extensions = [""] + [e for e in pathext if e]
+        extensions = [e for e in pathext if e] + [""]
     else:
         extensions = [""]
 
