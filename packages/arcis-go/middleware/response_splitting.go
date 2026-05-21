@@ -88,8 +88,8 @@ func ResponseSplittingGuard(opts ResponseSplittingOptions) func(http.Handler) ht
 // response, no extra allocations on clean headers.
 type responseSplittingWriter struct {
 	http.ResponseWriter
-	mode         ResponseSplittingMode
-	onDetect     func(header, value string)
+	mode          ResponseSplittingMode
+	onDetect      func(header, value string)
 	headerWritten bool
 	rejected      bool
 }

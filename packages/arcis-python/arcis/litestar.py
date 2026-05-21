@@ -36,11 +36,11 @@ import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs
 
-logger = logging.getLogger(__name__)
-
 from .middleware.headers import SecurityHeaders
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
 from .sanitizers.sanitize import Sanitizer, scan_threats
+
+logger = logging.getLogger(__name__)
 
 # ASGI typing surface — kept narrow enough that we don't need ``litestar``
 # imports for runtime correctness. ``Receive`` and ``Send`` are awaitable

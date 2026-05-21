@@ -8,7 +8,6 @@ Covers:
 - Callback exceptions are swallowed (don't crash the middleware)
 """
 
-import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 

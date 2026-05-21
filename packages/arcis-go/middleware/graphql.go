@@ -56,7 +56,8 @@ type GraphqlGuardMiddlewareOptions struct {
 //   - Over-long queries (default max_length=10000)
 //
 // Blocked queries get a 400 with body:
-//   {"error": "graphql_query_blocked", "reason": "...", "depth": N, "length": N}
+//
+//	{"error": "graphql_query_blocked", "reason": "...", "depth": N, "length": N}
 func GraphqlGuard(opts GraphqlGuardMiddlewareOptions) func(http.Handler) http.Handler {
 	paths := opts.OnlyPaths
 	if len(paths) == 0 {

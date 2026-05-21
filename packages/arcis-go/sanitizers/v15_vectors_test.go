@@ -187,7 +187,7 @@ func TestDetectEmailHeaderInjection_Attacks(t *testing.T) {
 func TestDetectEmailHeaderInjection_Safe(t *testing.T) {
 	for _, safe := range []string{
 		"victim@example.com",
-		"multi-line\ntext content",     // newline, no SMTP keyword
+		"multi-line\ntext content",      // newline, no SMTP keyword
 		"From this point on",            // 'From' word, no CRLF prefix
 		"Subject of conversation today", // 'Subject' word, no CRLF prefix
 		"",

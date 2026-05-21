@@ -35,7 +35,7 @@ Example::
 
 import asyncio
 import json
-from typing import Callable, Optional
+from typing import Callable
 
 
 class RequestBudgetMiddleware:

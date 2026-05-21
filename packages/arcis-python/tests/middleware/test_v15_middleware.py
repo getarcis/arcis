@@ -22,7 +22,6 @@ from arcis.middleware.mass_assignment import (
     apply_mass_assign_filter,
 )
 from arcis.middleware.method_allowlist import (
-    METHOD_OVERRIDE_HEADERS,
     MethodAllowlistMiddleware,
     check_method,
 )

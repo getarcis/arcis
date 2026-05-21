@@ -16,7 +16,6 @@ import pytest
 from arcis.validation.url import (
     ValidateUrlOptions,
     validate_url_async,
-    validate_url_ssrf,
 )
 
 
