@@ -22,6 +22,10 @@ serde_json = { workspace = true }
 # Async runtime for `arcis scan`. Runtime is constructed once in scan.rs
 # and dropped after the run; the rest of the CLI stays synchronous.
 tokio = { workspace = true }
+# Native terminal-size detection (ioctl on Unix, GetConsoleScreenBufferInfo
+# on Windows). Required so the no-args welcome screen picks the right
+# branch on PowerShell, which never exports COLUMNS.
+terminal_size = "0.4"
 
 [dev-dependencies]
 # End-to-end CLI tests under `tests/` need scratch dirs for fixtures

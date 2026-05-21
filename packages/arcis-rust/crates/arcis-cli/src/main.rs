@@ -26,20 +26,29 @@ mod welcome;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Best-effort terminal column count without adding a dep.
+/// Terminal column count, in priority order:
+///   1. `$COLUMNS` if a shell exported it (rare on Windows, common on bash).
+///   2. Native terminal-size syscall (ioctl `TIOCGWINSZ` on Unix,
+///      `GetConsoleScreenBufferInfo` on Windows).
+///   3. Conservative default of 132 (the welcome screen's minimum) so
+///      a piped or detached invocation still picks the welcome branch.
 ///
-/// Reads `$COLUMNS` if exported (most shells set this on interactive
-/// sessions); otherwise returns 120 as a reasonable default that's
-/// wider than the welcome panel's minimum. If the welcome screen
-/// renders wider than the real terminal, lines wrap and the user sees
-/// a slightly mangled box. That's acceptable; the catalog fallback
-/// only triggers below 80 cols and we trust users to have a normal
-/// terminal width.
+/// Previous version returned 120 when `$COLUMNS` was unset, which
+/// guaranteed PowerShell users always fell back to the plain catalog
+/// because the welcome panel requires 132+ cols. The native query
+/// works on every modern terminal (Windows Terminal, conhost.exe,
+/// iTerm2, Alacritty, GNOME Terminal, tmux).
 fn terminal_cols() -> usize {
-    std::env::var("COLUMNS")
+    if let Some(cols) = std::env::var("COLUMNS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(120)
+    {
+        return cols;
+    }
+    if let Some((terminal_size::Width(w), _)) = terminal_size::terminal_size() {
+        return w as usize;
+    }
+    132
 }
 
 fn main() -> ExitCode {
@@ -61,19 +70,29 @@ fn main() -> ExitCode {
     // catalog as a graceful fallback when the user has a narrow window
     // or has piped stdout. This keeps byte-equal parity with the
     // Python CLI on non-TTY paths, where parity tests run.
+    //
+    // Write-error semantics: BrokenPipe is the standard "the reader
+    // hung up" condition (e.g. `arcis | head`). Treat it as a clean
+    // exit; the user got what they wanted from the partial output.
+    // Any other write error means the terminal itself failed mid-banner,
+    // which is rare but worth surfacing as a non-zero exit so wrapper
+    // scripts can detect it.
     if argv.len() < 2 {
         let stdout_is_tty = std::io::stdout().is_terminal();
         let cols = terminal_cols();
-        if stdout_is_tty && !welcome::too_narrow(cols) {
+        let write_result = if stdout_is_tty && !welcome::too_narrow(cols) {
             let cwd = std::env::current_dir()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|_| String::from("."));
-            let _ = welcome::print(&mut out, VERSION, &cwd);
+            welcome::print(&mut out, VERSION, &cwd)
         } else {
-            let _ = catalog::print(&mut out, VERSION, /* verbose = */ false);
-            let _ = writeln!(out);
-        }
-        return ExitCode::from(0);
+            catalog::print(&mut out, VERSION, /* verbose = */ false).and_then(|_| writeln!(out))
+        };
+        return match write_result {
+            Ok(()) => ExitCode::from(0),
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::from(0),
+            Err(_) => ExitCode::from(1),
+        };
     }
 
     let arg = argv[1].as_str();

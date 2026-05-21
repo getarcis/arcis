@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+// Tiny shim: finds the native binary that the postinstall script wrote
+// next to this file, then exec's it with the same argv. Same pattern as
+// esbuild / swc / Claude Code. Done in JS instead of platform-specific
+// shell wrappers so npm's `bin` field works the same on Linux, macOS,
+// and Windows (npm cmd-shim wraps this for us on Windows).
+
+"use strict";
+
+const path = require("node:path");
+const fs = require("node:fs");
+const { spawnSync } = require("node:child_process");
+
+const exeName = process.platform === "win32" ? "arcis-bin.exe" : "arcis-bin";
+const exePath = path.join(__dirname, exeName);
+
+if (!fs.existsSync(exePath)) {
+  process.stderr.write(
+    `arcis: native binary not found at ${exePath}.\n` +
+      "  This usually means npm postinstall did not run.\n" +
+      "  Reinstall with: npm install -g @arcis/cli\n" +
+      "  Or, if you used --ignore-scripts: run `node $(npm root -g)/@arcis/cli/install.js`\n",
+  );
+  process.exit(1);
+}
+
+const result = spawnSync(exePath, process.argv.slice(2), {
+  stdio: "inherit",
+});
+
+if (result.error) {
+  process.stderr.write(`arcis: failed to spawn binary: ${result.error.message}\n`);
+  process.exit(1);
+}
+
+// Exit code propagation:
+//   * Normal exit:           result.status holds the child's exit code (use it).
+//   * Killed by signal:      result.status === null AND result.signal is set.
+//                            POSIX convention is 128+N; map the signal to its
+//                            numeric value so wrapper scripts can detect e.g.
+//                            SIGINT (130 = 128 + 2) vs SIGTERM (143).
+//   * Truly unexpected:      both null. Fall back to 1.
+if (result.status !== null) {
+  process.exit(result.status);
+}
+
+// Signal name -> number table for the signals callers are likely to see.
+// Node's `os.constants.signals` could give this dynamically, but the table
+// is short, stable, and saves a require() that would otherwise run on every
+// happy-path invocation.
+const SIGNUM = {
+  SIGHUP: 1,
+  SIGINT: 2,
+  SIGQUIT: 3,
+  SIGILL: 4,
+  SIGABRT: 6,
+  SIGFPE: 8,
+  SIGKILL: 9,
+  SIGSEGV: 11,
+  SIGPIPE: 13,
+  SIGTERM: 15,
+};
+if (result.signal && SIGNUM[result.signal] !== undefined) {
+  process.exit(128 + SIGNUM[result.signal]);
+}
+process.exit(1);
