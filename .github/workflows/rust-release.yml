@@ -56,10 +56,15 @@ jobs:
             archive: tar.gz
             binary: arcis
           - target: x86_64-apple-darwin
-            # macos-13 is the explicit Intel runner. macos-latest is now
-            # Apple Silicon and would produce an arm64 binary even with
-            # the x86_64 target triple unless cross-compiled.
-            os: macos-13
+            # macos-latest is Apple Silicon. We cross-compile to
+            # x86_64-apple-darwin from it because GitHub's macos-13 (the
+            # explicit Intel runner) is being phased out — runner
+            # availability has collapsed and jobs queue for hours
+            # without ever being picked up. Cross-compile on macOS works
+            # because Rust ships pre-built x86_64 std libs and the
+            # bundled macOS SDK is universal. ring + rustls (our
+            # cryptographic crates) support macOS cross-compile.
+            os: macos-latest
             use-cross: false
             archive: tar.gz
             binary: arcis
