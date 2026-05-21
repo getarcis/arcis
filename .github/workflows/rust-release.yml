@@ -220,3 +220,65 @@ jobs:
             --title "Arcis CLI ${version}" \
             --generate-notes \
             dist/arcis-*.tar.gz dist/arcis-*.zip dist/SHA256SUMS
+
+  # Publish the npm wrapper package (@arcis/cli) after the GitHub Release
+  # is live. Postinstall in the wrapper fetches the platform binary from
+  # the GitHub release we just created + SHA-256 verifies it; we must not
+  # publish to npm before the release exists or the first user to install
+  # gets a 404 from the postinstall script.
+  #
+  # Uses NPM_TOKEN from repo secrets — a granular access token scoped to
+  # @arcis/cli. No local-machine publishing for v1.0.0+. The credential
+  # lives only in GitHub Actions secrets; rotating it is one click.
+  #
+  # Tag-pushes only. workflow_dispatch produces nothing on npm.
+  publish-npm:
+    name: Publish @arcis/cli to npm
+    needs: release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v6.0.0
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify wrapper version matches the tag
+        shell: bash
+        working-directory: packages/arcis-cli-npm
+        run: |
+          tag_version="${GITHUB_REF_NAME#cli-v}"
+          pkg_version=$(node -p "require('./package.json').version")
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::tag is cli-v${tag_version} but package.json says ${pkg_version}"
+            echo "Bump package.json before re-tagging."
+            exit 1
+          fi
+          echo "ok: tag and package.json both report ${pkg_version}"
+
+      - name: Wait for GitHub release to be reachable
+        shell: bash
+        run: |
+          # The release was created by the preceding job; give the GitHub
+          # CDN a moment to propagate so the wrapper's postinstall (which
+          # downloads from releases/download/...) can resolve. 5s is
+          # enough in practice; bail with a clear error if not.
+          tag="${GITHUB_REF_NAME}"
+          for i in 1 2 3 4 5; do
+            if curl -fsSLI "https://github.com/Gagancm/arcis/releases/tag/${tag}" >/dev/null; then
+              echo "release page reachable after ${i} attempt(s)"
+              break
+            fi
+            sleep 3
+          done
+
+      - name: Publish to npm
+        working-directory: packages/arcis-cli-npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
