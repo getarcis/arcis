@@ -41,17 +41,17 @@ def real_cli_at(monkeypatch):
 def test_no_args_with_real_cli_execs_passthrough(real_cli_at, monkeypatch):
     """Bare `arcis` defers to the real CLI when installed (regression: v1.5.2)."""
     monkeypatch.setattr(sys, "argv", ["arcis"])
-    with patch.object(cli_shim.os, "execv") as mock_execv:
+    with patch.object(cli_shim, "_exec_real", return_value=0) as mock_exec:
         cli_shim.main()
-    mock_execv.assert_called_once_with(real_cli_at, [real_cli_at])
+    mock_exec.assert_called_once_with(real_cli_at, [])
 
 
 def test_no_args_without_real_cli_prints_welcome(no_real_cli, monkeypatch, capsys):
     """Bare `arcis` falls back to shim welcome when the real CLI is missing."""
     monkeypatch.setattr(sys, "argv", ["arcis"])
-    with patch.object(cli_shim.os, "execv") as mock_execv:
+    with patch.object(cli_shim, "_exec_real") as mock_exec:
         rc = cli_shim.main()
-    mock_execv.assert_not_called()
+    mock_exec.assert_not_called()
     out = capsys.readouterr().out
     assert rc == 0
     assert "Arcis Python SDK" in out
@@ -61,40 +61,36 @@ def test_no_args_without_real_cli_prints_welcome(no_real_cli, monkeypatch, capsy
 def test_help_with_real_cli_execs_passthrough(real_cli_at, monkeypatch):
     """`arcis --help` defers to the real CLI when installed."""
     monkeypatch.setattr(sys, "argv", ["arcis", "--help"])
-    with patch.object(cli_shim.os, "execv") as mock_execv:
+    with patch.object(cli_shim, "_exec_real", return_value=0) as mock_exec:
         cli_shim.main()
-    mock_execv.assert_called_once_with(real_cli_at, [real_cli_at, "--help"])
+    mock_exec.assert_called_once_with(real_cli_at, ["--help"])
 
 
 def test_subcommand_with_real_cli_execs_passthrough(real_cli_at, monkeypatch):
     """`arcis scan ...` defers to the real CLI when installed."""
     monkeypatch.setattr(sys, "argv", ["arcis", "scan", "http://localhost"])
-    with patch.object(cli_shim.os, "execv") as mock_execv:
+    with patch.object(cli_shim, "_exec_real", return_value=0) as mock_exec:
         cli_shim.main()
-    mock_execv.assert_called_once_with(
-        real_cli_at, [real_cli_at, "scan", "http://localhost"]
-    )
+    mock_exec.assert_called_once_with(real_cli_at, ["scan", "http://localhost"])
 
 
 def test_check_command_runs_locally_even_with_real_cli(real_cli_at, monkeypatch, capsys):
     """`arcis check '<payload>'` is SDK-local; never delegates to the binary."""
     monkeypatch.setattr(sys, "argv", ["arcis", "check", "hello world"])
-    with patch.object(cli_shim.os, "execv") as mock_execv:
+    with patch.object(cli_shim, "_exec_real") as mock_exec:
         rc = cli_shim.main()
-    mock_execv.assert_not_called()
+    mock_exec.assert_not_called()
     # rc 0 if clean, 1 if threat detected. Either is fine; we only care
-    # that the shim didn't execv.
+    # that the shim didn't pass through.
     assert rc in (0, 1)
 
 
-def test_version_flag_prints_sdk_version_without_execv(real_cli_at, monkeypatch, capsys):
+def test_version_flag_prints_sdk_version_without_passthrough(real_cli_at, monkeypatch, capsys):
     """`arcis --version` prints the Python SDK version locally."""
     monkeypatch.setattr(sys, "argv", ["arcis", "--version"])
-    # subprocess.run on the fake path will fail; we accept either exit
-    # path so long as the shim doesn't execv away from us.
-    with patch.object(cli_shim.os, "execv") as mock_execv:
+    with patch.object(cli_shim, "_exec_real") as mock_exec:
         rc = cli_shim.main()
-    mock_execv.assert_not_called()
+    mock_exec.assert_not_called()
     out = capsys.readouterr().out
     assert rc == 0
     assert cli_shim.SDK_VERSION in out
@@ -107,6 +103,118 @@ def test_unknown_subcommand_without_real_cli_prints_install_hint(no_real_cli, mo
     err = capsys.readouterr().err
     assert rc == 127
     assert "npm install -g @arcis/cli" in err
+
+
+# ---------------------------------------------------------------------------
+# _exec_real: Unix uses os.execv; Windows uses subprocess.run because execv
+# can't launch .cmd shim files.
+# ---------------------------------------------------------------------------
+
+
+def test_exec_real_on_windows_uses_subprocess_not_execv(monkeypatch):
+    """Bug #4 (v1.5.3): npm-global on Windows is `arcis.cmd`. os.execv on
+    a .cmd raises OSError; subprocess.run handles it correctly."""
+    monkeypatch.setattr(cli_shim.sys, "platform", "win32")
+    completed = type("CP", (), {"returncode": 0})()
+    with patch.object(cli_shim.subprocess, "run", return_value=completed) as mock_run:
+        with patch.object(cli_shim.os, "execv") as mock_execv:
+            rc = cli_shim._exec_real(r"C:\Users\u\AppData\Roaming\npm\arcis.cmd", ["audit", "."])
+    mock_run.assert_called_once_with([r"C:\Users\u\AppData\Roaming\npm\arcis.cmd", "audit", "."])
+    mock_execv.assert_not_called()
+    assert rc == 0
+
+
+def test_exec_real_on_unix_uses_execv(monkeypatch):
+    """On Unix the shim should `execv` so signals propagate naturally."""
+    monkeypatch.setattr(cli_shim.sys, "platform", "linux")
+    with patch.object(cli_shim.os, "execv") as mock_execv:
+        with patch.object(cli_shim.subprocess, "run") as mock_run:
+            cli_shim._exec_real("/usr/local/bin/arcis", ["scan", "http://x"])
+    mock_execv.assert_called_once_with(
+        "/usr/local/bin/arcis", ["/usr/local/bin/arcis", "scan", "http://x"]
+    )
+    mock_run.assert_not_called()
+
+
+def test_exec_real_returns_subprocess_returncode_on_windows(monkeypatch):
+    """The subprocess result.returncode must propagate so the user sees
+    the same exit status the binary returned."""
+    monkeypatch.setattr(cli_shim.sys, "platform", "win32")
+    completed = type("CP", (), {"returncode": 7})()
+    with patch.object(cli_shim.subprocess, "run", return_value=completed):
+        rc = cli_shim._exec_real("arcis.cmd", ["audit", "."])
+    assert rc == 7
+
+
+# ---------------------------------------------------------------------------
+# _candidate_paths: npm prefix lookup on Windows must resolve npm.cmd via
+# shutil.which, not call "npm" directly (which CreateProcess fails to find).
+# ---------------------------------------------------------------------------
+
+
+def test_candidate_paths_resolves_npm_via_shutil_which_on_windows(monkeypatch):
+    """Bug #3 (v1.5.3): subprocess.run(['npm', ...]) on Windows fails
+    because Python's subprocess doesn't honor PATHEXT. The shim must
+    resolve npm to its full `.cmd` path first."""
+    monkeypatch.setattr(cli_shim.sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", r"C:\Users\u\AppData\Roaming")
+    monkeypatch.delenv("USERPROFILE", raising=False)
+    monkeypatch.setattr(
+        cli_shim.shutil, "which", lambda n: r"C:\nodejs\npm.cmd" if n == "npm" else None
+    )
+    completed = type("CP", (), {"returncode": 0, "stdout": r"C:\nodejs\npm-prefix" + "\n"})()
+    with patch.object(cli_shim.subprocess, "run", return_value=completed) as mock_run:
+        candidates = cli_shim._candidate_paths()
+    # Must have invoked the .cmd-resolved path, not bare "npm".
+    invoked = mock_run.call_args[0][0]
+    assert invoked[0] == r"C:\nodejs\npm.cmd"
+    # Must have added the npm-prefix-based candidate variants.
+    joined = " ".join(candidates).lower()
+    assert r"c:\nodejs\npm-prefix\arcis.cmd".lower() in joined
+
+
+def test_candidate_paths_skips_npm_lookup_when_npm_not_on_path(monkeypatch):
+    """If shutil.which('npm') returns None, the shim must NOT crash trying
+    to subprocess.run a bare 'npm' string."""
+    monkeypatch.setattr(cli_shim.sys, "platform", "linux")
+    monkeypatch.setattr(cli_shim.shutil, "which", lambda n: None)
+    with patch.object(cli_shim.subprocess, "run") as mock_run:
+        candidates = cli_shim._candidate_paths()
+    mock_run.assert_not_called()
+    # The fixed-path Unix candidates should still be present. Normalize
+    # separators because os.path.join on the host (which may be Windows
+    # running this test) uses backslashes.
+    norm = [c.replace("\\", "/") for c in candidates]
+    assert any(c.endswith("/usr/local/bin/arcis") for c in norm)
+
+
+# ---------------------------------------------------------------------------
+# --diag flag: prints a debug dump so users can self-serve when the shim
+# refuses to find their binary.
+# ---------------------------------------------------------------------------
+
+
+def test_diag_flag_prints_path_matches_and_resolution(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["arcis", "--diag"])
+    monkeypatch.setattr(cli_shim, "_path_matches", lambda n: ["/path/a/arcis", "/path/b/arcis"])
+    monkeypatch.setattr(
+        cli_shim,
+        "_is_python_entry_point",
+        lambda p: p == "/path/a/arcis",
+    )
+    monkeypatch.setattr(cli_shim, "_candidate_paths", lambda: ["/opt/arcis"])
+    monkeypatch.setattr(cli_shim, "_find_real_cli", lambda: "/path/b/arcis")
+    monkeypatch.setattr(cli_shim.shutil, "which", lambda n: None)
+
+    rc = cli_shim.main()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "arcis-shim diag" in out
+    assert "/path/a/arcis" in out
+    assert "/path/b/arcis" in out
+    assert "[shim]" in out
+    assert "[real]" in out
+    assert "_find_real_cli():" in out
 
 
 # ---------------------------------------------------------------------------

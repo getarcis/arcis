@@ -74,24 +74,32 @@ def _candidate_paths() -> List[str]:
             candidates.append(os.path.join(prefix, "arcis"))
 
     # As a last attempt, ask npm itself where its global prefix is.
-    try:
-        result = subprocess.run(
-            ["npm", "config", "get", "prefix"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        if result.returncode == 0:
-            prefix = result.stdout.strip()
-            if prefix:
-                if sys.platform == "win32":
-                    candidates.append(os.path.join(prefix, "arcis.cmd"))
-                    candidates.append(os.path.join(prefix, "arcis.exe"))
-                else:
-                    candidates.append(os.path.join(prefix, "bin", "arcis"))
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        # npm not installed, or hung. Don't block on it.
-        pass
+    # On Windows we must resolve `npm` to its full `.cmd` path because
+    # subprocess.run with shell=False does NOT honor PATHEXT; calling
+    # "npm" directly would CreateProcess("npm.exe") and fail since npm
+    # ships as npm.cmd on Windows.
+    npm_exe = shutil.which("npm")
+    if npm_exe:
+        try:
+            result = subprocess.run(
+                [npm_exe, "config", "get", "prefix"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                prefix = result.stdout.strip()
+                if prefix:
+                    if sys.platform == "win32":
+                        # npm on Windows places the shim directly in
+                        # the prefix root: <prefix>\arcis.cmd|exe|ps1
+                        for name in ("arcis.cmd", "arcis.exe", "arcis.ps1", "arcis"):
+                            candidates.append(os.path.join(prefix, name))
+                    else:
+                        candidates.append(os.path.join(prefix, "bin", "arcis"))
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            # npm hung or returned garbage. Don't block on it.
+            pass
 
     return candidates
 
@@ -261,19 +269,107 @@ def _sdk_self_test(payload: str) -> int:
     return 1
 
 
+def _exec_real(real_cli: str, args: List[str]) -> int:
+    """Hand off to the real CLI with the given args.
+
+    Unix: `os.execv` replaces this process, so signals (Ctrl+C, SIGTERM)
+    propagate naturally to the binary and we never return.
+
+    Windows: `os.execv` can ONLY launch a Windows executable. npm-global
+    binaries on Windows are `.cmd` files (the JS shim that spawns the
+    real binary), and `execv` on a `.cmd` raises OSError. We fall back
+    to `subprocess.run`, which routes through CreateProcess properly
+    for `.cmd` / `.bat` / `.ps1` shims. We return its exit code so the
+    caller can `sys.exit(...)` with it.
+    """
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run([real_cli, *args])
+            return result.returncode if result.returncode is not None else 1
+        except OSError as exc:
+            print(
+                f"arcis: failed to launch CLI ({real_cli}): {exc}",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        try:
+            os.execv(real_cli, [real_cli, *args])
+        except OSError as exc:
+            print(
+                f"arcis: failed to launch CLI ({real_cli}): {exc}",
+                file=sys.stderr,
+            )
+            return 2
+        return 0  # unreachable; execv replaces the process on success
+
+
+def _print_diag() -> int:
+    """Diagnostic dump. Shows what the shim sees when looking for the
+    real CLI: PATH matches, _is_python_entry_point verdict per match,
+    candidate paths from `_candidate_paths`, npm's reported prefix, and
+    the platform pair Python detected. Helps debug "shim won't pass
+    through" reports without having to remote into the user's box.
+    """
+    print(f"arcis-shim diag (SDK {SDK_VERSION} on {sys.platform})")
+    print(f"  sys.argv[0]:     {os.path.realpath(sys.argv[0])}")
+    print(f"  sys.exec_prefix: {sys.exec_prefix}")
+    print()
+    print("PATH walk for 'arcis':")
+    matches = _path_matches("arcis")
+    if not matches:
+        print("  (no PATH hits)")
+    for m in matches:
+        flag = "shim" if _is_python_entry_point(m) else "real"
+        print(f"  [{flag}] {m}")
+    print()
+    print("Candidate paths from _candidate_paths():")
+    candidates = _candidate_paths()
+    if not candidates:
+        print("  (none)")
+    for c in candidates:
+        exists = "exists" if os.path.isfile(c) else "missing"
+        print(f"  [{exists}] {c}")
+    print()
+    npm_exe = shutil.which("npm")
+    print(f"npm on PATH:       {npm_exe or '(not found)'}")
+    if npm_exe:
+        try:
+            result = subprocess.run(
+                [npm_exe, "config", "get", "prefix"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            print(f"npm config prefix: {(result.stdout or '').strip() or '(empty)'}")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"npm config prefix: (failed: {exc})")
+    print()
+    resolved = _find_real_cli()
+    print(f"_find_real_cli():  {resolved or '(None)'}")
+    return 0
+
+
 def main() -> int:
     """Entry point registered as `arcis` in pyproject.toml.
 
     Behavior:
-      - With no args or `--help` or `-h`: print welcome screen.
+      - With no args or `--help` or `-h`: pass through to the real CLI
+        when installed, else print the shim's welcome screen.
       - With `--version` or `-V`: print SDK version + tell user about
         the separate CLI binary.
+      - With `--diag`: print a diagnostic dump (PATH matches, candidate
+        paths, npm prefix, what _find_real_cli resolved to). Always
+        runs locally so users with a broken setup can still get answers.
       - With `check <payload>`: run scan_threats on the payload (SDK
         self-test).
       - With any other args: try to passthrough to the real CLI; if
-        not installed, print welcome screen.
+        not installed, print install hint.
     """
     args = sys.argv[1:]
+
+    if args and args[0] == "--diag":
+        return _print_diag()
 
     # No-args and `--help` / `-h`: prefer the real CLI's own surface
     # whenever it's installed. The Rust binary prints a richer welcome
@@ -283,10 +379,7 @@ def main() -> int:
     if not args or args[0] in ("-h", "--help"):
         real_cli = _find_real_cli()
         if real_cli:
-            try:
-                os.execv(real_cli, [real_cli] + args)
-            except OSError:
-                pass
+            return _exec_real(real_cli, args)
         _print_welcome()
         return 0
 
@@ -321,11 +414,7 @@ def main() -> int:
     # Any other subcommand: passthrough to the real CLI if installed.
     real_cli = _find_real_cli()
     if real_cli:
-        try:
-            os.execv(real_cli, [real_cli] + args)
-        except OSError as exc:
-            print(f"arcis: failed to launch real CLI ({real_cli}): {exc}", file=sys.stderr)
-            return 2
+        return _exec_real(real_cli, args)
 
     # Real CLI not installed. Be helpful instead of cryptic.
     print(
