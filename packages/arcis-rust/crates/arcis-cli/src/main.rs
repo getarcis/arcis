@@ -14,7 +14,7 @@
 //! Plain text is what the parity harness compares against, byte-for-byte
 //! with the legacy Python CLI's non-TTY output.
 
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::process::ExitCode;
 
 mod audit;
@@ -22,8 +22,25 @@ mod catalog;
 mod sca;
 mod scan;
 mod stub;
+mod welcome;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Best-effort terminal column count without adding a dep.
+///
+/// Reads `$COLUMNS` if exported (most shells set this on interactive
+/// sessions); otherwise returns 120 as a reasonable default that's
+/// wider than the welcome panel's minimum. If the welcome screen
+/// renders wider than the real terminal, lines wrap and the user sees
+/// a slightly mangled box. That's acceptable; the catalog fallback
+/// only triggers below 80 cols and we trust users to have a normal
+/// terminal width.
+fn terminal_cols() -> usize {
+    std::env::var("COLUMNS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(120)
+}
 
 fn main() -> ExitCode {
     // Eager schema check so a build with a stale embedded threat DB fails
@@ -39,11 +56,23 @@ fn main() -> ExitCode {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
 
-    // No args: print catalog (matches Python's len(sys.argv) < 2 path on
-    // non-TTY, plus the dispatcher in arcis/cli/__init__.py).
+    // No args: pick welcome screen (TTY) or plain catalog (pipe/CI).
+    // Welcome screen requires a wide-enough terminal; we use the
+    // catalog as a graceful fallback when the user has a narrow window
+    // or has piped stdout. This keeps byte-equal parity with the
+    // Python CLI on non-TTY paths, where parity tests run.
     if argv.len() < 2 {
-        let _ = catalog::print(&mut out, VERSION, /* verbose = */ false);
-        let _ = writeln!(out);
+        let stdout_is_tty = std::io::stdout().is_terminal();
+        let cols = terminal_cols();
+        if stdout_is_tty && !welcome::too_narrow(cols) {
+            let cwd = std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| String::from("."));
+            let _ = welcome::print(&mut out, VERSION, &cwd);
+        } else {
+            let _ = catalog::print(&mut out, VERSION, /* verbose = */ false);
+            let _ = writeln!(out);
+        }
         return ExitCode::from(0);
     }
 
