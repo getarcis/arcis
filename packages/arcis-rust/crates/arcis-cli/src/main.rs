@@ -1,14 +1,18 @@
 //! `arcis` — native Rust CLI dispatcher.
 //!
-//! Phase A scope: bootstraps the binary surface and validates the parity
-//! harness end-to-end. The four subcommands (scan / audit / sca / update)
-//! are stubs that print a "Phase B" message; the real ports land branch
-//! by branch as the per-command parity tests turn green.
+//! `scan / audit / sca` are full ports of the legacy Python CLI surface
+//! plus the Phase B/C ergonomics added during the v1.5 cycle
+//! (`--baseline`, `--jobs`, `--osv`, `--sbom`, `--fail-on`, `--bearer`,
+//! `--cookie`, `--login`, `--csrf-from`, `--cancel-on`, suppress
+//! comments, `.arcisignore`, per-finding curl reproducer, etc.).
 //!
-//! Output strategy: plain text only in Phase A. Color / spinner work
-//! lands when the rich-output side of `audit.py` ports across (Phase B).
-//! Plain text is what the parity harness compares against, and what the
-//! Python CLI emits on non-TTY anyway, so this is byte-for-byte alignable.
+//! `update` is still a stub — see `stub.rs`. Self-update can wait until
+//! there's a real signal from users. Until then the upgrade path is
+//! `npm install -g @arcis/cli@latest`.
+//!
+//! Output strategy: rich-style text on TTY, plain text on pipes / CI.
+//! Plain text is what the parity harness compares against, byte-for-byte
+//! with the legacy Python CLI's non-TTY output.
 
 use std::io::Write;
 use std::process::ExitCode;

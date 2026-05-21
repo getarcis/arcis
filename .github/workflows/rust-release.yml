@@ -55,6 +55,14 @@ jobs:
             use-cross: false
             archive: tar.gz
             binary: arcis
+          - target: x86_64-apple-darwin
+            # macos-13 is the explicit Intel runner. macos-latest is now
+            # Apple Silicon and would produce an arm64 binary even with
+            # the x86_64 target triple unless cross-compiled.
+            os: macos-13
+            use-cross: false
+            archive: tar.gz
+            binary: arcis
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             use-cross: false

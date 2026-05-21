@@ -27,6 +27,16 @@ const TARGETS = {
     archive: "tar.gz",
     binary: "arcis",
   },
+  "darwin-x64": {
+    // Pre-Apple-Silicon Mac users. Built on macos-13 GitHub runner
+    // (the explicit Intel runner; macos-latest is now Apple Silicon
+    // and would produce an arm64 binary even with the x86_64 target
+    // triple unless cross-compiled, which is more brittle than just
+    // using the right runner).
+    target: "x86_64-apple-darwin",
+    archive: "tar.gz",
+    binary: "arcis",
+  },
   "win32-x64": {
     target: "x86_64-pc-windows-msvc",
     archive: "zip",
