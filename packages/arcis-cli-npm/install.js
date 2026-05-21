@@ -53,43 +53,110 @@ function packageVersion() {
   return pkg.version;
 }
 
-/** Stream-download a URL with redirect-following + timeout. Returns a
- * Promise<Buffer>. Bails after MAX_REDIRECTS to avoid loops. */
+/** Pick a proxy URL from the standard environment variables.
+ * HTTPS_PROXY / https_proxy / HTTP_PROXY / http_proxy in that priority order
+ * (uppercase wins per RFC and curl convention; lowercase honored for
+ * compatibility with older shells). Honors NO_PROXY too: if the target host
+ * matches an entry in NO_PROXY, returns null so we go direct.
+ */
+function proxyForUrl(targetUrl) {
+  const proxy =
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy ||
+    "";
+  if (!proxy) return null;
+
+  const noProxy = process.env.NO_PROXY || process.env.no_proxy || "";
+  if (noProxy) {
+    const host = new URL(targetUrl).hostname;
+    for (const entry of noProxy.split(",").map((s) => s.trim().toLowerCase())) {
+      if (!entry) continue;
+      if (entry === "*") return null;
+      // Match either exact hostname or suffix (".github.com" entry matches
+      // "api.github.com"). curl semantics.
+      const e = entry.startsWith(".") ? entry : "." + entry;
+      if (host.toLowerCase() === entry || host.toLowerCase().endsWith(e)) {
+        return null;
+      }
+    }
+  }
+  return proxy;
+}
+
+/** Stream-download a URL with redirect-following + timeout + proxy support.
+ * Returns a Promise<Buffer>. Bails after MAX_REDIRECTS to avoid loops. */
 function fetchToBuffer(url, redirects = 0) {
   if (redirects > MAX_REDIRECTS) {
     return Promise.reject(new Error(`too many redirects fetching ${url}`));
   }
   return new Promise((resolve, reject) => {
-    const req = https.get(
-      url,
-      { headers: { "User-Agent": "@arcis/cli installer" }, timeout: 60_000 },
-      (res) => {
-        // 3xx redirects: location header, recurse.
-        if (
-          res.statusCode &&
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          res.headers.location
-        ) {
-          // Some redirect targets are relative — resolve via URL ctor.
-          const next = new URL(res.headers.location, url).toString();
-          res.resume();
-          fetchToBuffer(next, redirects + 1).then(resolve, reject);
-          return;
-        }
-        if (res.statusCode !== 200) {
-          res.resume();
-          reject(
-            new Error(`HTTP ${res.statusCode} fetching ${url}`),
-          );
-          return;
-        }
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => resolve(Buffer.concat(chunks)));
-        res.on("error", reject);
-      },
-    );
+    const proxy = proxyForUrl(url);
+    const commonHeaders = { "User-Agent": "@arcis/cli installer" };
+    const timeout = 60_000;
+
+    // Shared response handler: 3xx -> recurse, 200 -> buffer, else reject.
+    const handleResponse = (res) => {
+      if (
+        res.statusCode &&
+        res.statusCode >= 300 &&
+        res.statusCode < 400 &&
+        res.headers.location
+      ) {
+        const next = new URL(res.headers.location, url).toString();
+        res.resume();
+        fetchToBuffer(next, redirects + 1).then(resolve, reject);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode} fetching ${url}`));
+        return;
+      }
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+      res.on("error", reject);
+    };
+
+    let req;
+    if (proxy) {
+      // Forward-proxy convention: send the absolute target URL as the
+      // request path. Works with corporate proxies that accept absolute-URI
+      // GET requests (Squid, most enterprise gateways). For HTTPS targets
+      // a CONNECT tunnel is more standard, but absolute-URI GET works for
+      // every proxy we've validated and avoids hand-rolling CONNECT logic
+      // for what is, by definition, a one-shot install step.
+      const proxyUrl = new URL(proxy);
+      const isProxyHttps = proxyUrl.protocol === "https:";
+      const proxyClient = isProxyHttps ? https : require("node:http");
+      const proxyOpts = {
+        host: proxyUrl.hostname,
+        port: proxyUrl.port || (isProxyHttps ? 443 : 80),
+        method: "GET",
+        path: url,
+        headers: {
+          ...commonHeaders,
+          Host: new URL(url).host,
+        },
+        timeout,
+      };
+      if (proxyUrl.username || proxyUrl.password) {
+        const creds = `${decodeURIComponent(proxyUrl.username)}:${decodeURIComponent(proxyUrl.password)}`;
+        proxyOpts.headers["Proxy-Authorization"] =
+          "Basic " + Buffer.from(creds).toString("base64");
+      }
+      req = proxyClient.request(proxyOpts, handleResponse);
+      req.on("timeout", () => {
+        req.destroy(new Error(`timeout fetching ${url} via proxy ${proxyUrl.host}`));
+      });
+      req.on("error", reject);
+      req.end();
+      return;
+    }
+
+    req = https.get(url, { headers: commonHeaders, timeout }, handleResponse);
     req.on("timeout", () => {
       req.destroy(new Error(`timeout fetching ${url}`));
     });
@@ -291,14 +358,28 @@ async function main() {
   // Place the binary alongside the Node shim. `bin/arcis` is the shim
   // npm puts on PATH; it `spawnSync`s the native binary saved here as
   // `bin/arcis-bin` (or `arcis-bin.exe` on Windows).
+  //
+  // Atomic-write pattern: write to a temp filename in the same directory,
+  // chmod it (Unix), then rename. fs.rename is atomic on a single
+  // filesystem, so if postinstall is interrupted (Ctrl+C, OOM, npm killed)
+  // the user is left with EITHER the previous binary OR no binary at all,
+  // never a half-written one that bin/arcis would happily try to execute.
   const binDir = path.join(__dirname, "bin");
   await fsp.mkdir(binDir, { recursive: true });
   const binaryName =
     process.platform === "win32" ? "arcis-bin.exe" : "arcis-bin";
   const binaryPath = path.join(binDir, binaryName);
-  await fsp.writeFile(binaryPath, binaryBuf);
-  if (process.platform !== "win32") {
-    await fsp.chmod(binaryPath, 0o755);
+  const tmpPath = `${binaryPath}.${process.pid}.tmp`;
+  try {
+    await fsp.writeFile(tmpPath, binaryBuf);
+    if (process.platform !== "win32") {
+      await fsp.chmod(tmpPath, 0o755);
+    }
+    await fsp.rename(tmpPath, binaryPath);
+  } catch (err) {
+    // Best-effort cleanup of the temp file if rename failed.
+    await fsp.rm(tmpPath, { force: true }).catch(() => {});
+    throw err;
   }
   log(`installed binary -> ${binaryPath}`);
 }

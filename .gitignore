@@ -52,6 +52,15 @@ obj/
 *.nupkg
 **/packages/repositories.config
 
+# ─── @arcis/cli wrapper exception ──────────────────────────────────────────────
+# The generic `bin/` rule above (intended for C# build output) accidentally
+# hides the JS launcher shim that npm needs to ship at packages/arcis-cli-npm/
+# bin/arcis. Re-include just that one file. The native binary that postinstall
+# downloads (bin/arcis-bin or bin/arcis-bin.exe) stays ignored.
+!packages/arcis-cli-npm/bin/
+packages/arcis-cli-npm/bin/*
+!packages/arcis-cli-npm/bin/arcis
+
 # ─── Java / Maven / Gradle ─────────────────────────────────────────────────────
 target/
 .gradle/
