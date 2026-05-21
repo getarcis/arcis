@@ -143,6 +143,23 @@ def _is_python_entry_point(path: str) -> bool:
             if os.path.isfile(os.path.join(parent, python_name)):
                 return True
 
+    # Shebang probe (Unix): `pip install --user arcis` drops a Python
+    # script at ~/.local/bin/arcis with no sibling python interpreter,
+    # and that location is never under sys.exec_prefix or /Scripts/.
+    # The script itself starts with `#!/.../python...`, which is the
+    # cleanest signal we have for that layout. We only read the first
+    # 256 bytes (enough for any reasonable shebang) and fail open so a
+    # binary or unreadable file falls through to the non-shim branch.
+    try:
+        with open(path, "rb") as f:
+            head = f.read(256)
+        if head.startswith(b"#!"):
+            first_line = head.split(b"\n", 1)[0].lower()
+            if b"python" in first_line:
+                return True
+    except (OSError, ValueError):
+        pass
+
     return False
 
 

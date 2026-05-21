@@ -168,9 +168,11 @@ def test_candidate_paths_resolves_npm_via_shutil_which_on_windows(monkeypatch):
     # Must have invoked the .cmd-resolved path, not bare "npm".
     invoked = mock_run.call_args[0][0]
     assert invoked[0] == r"C:\nodejs\npm.cmd"
-    # Must have added the npm-prefix-based candidate variants.
-    joined = " ".join(candidates).lower()
-    assert r"c:\nodejs\npm-prefix\arcis.cmd".lower() in joined
+    # Must have added the npm-prefix-based candidate variants. Normalize
+    # separators because os.path.join uses the HOST's separator (Linux's
+    # forward slash on CI) even when sys.platform is mocked to win32.
+    norm = [c.replace("\\", "/").lower() for c in candidates]
+    assert any(c.endswith("c:/nodejs/npm-prefix/arcis.cmd") for c in norm)
 
 
 def test_candidate_paths_skips_npm_lookup_when_npm_not_on_path(monkeypatch):
@@ -289,6 +291,40 @@ def test_find_real_cli_skips_python_shim_and_returns_npm_binary(tmp_path, monkey
     assert os.path.normcase(result).endswith(
         os.path.normcase(os.path.join("npm", "arcis"))
     )
+
+
+def test_is_python_entry_point_detects_python_shebang(tmp_path):
+    """Bug #7 (Linux/macOS): `pip install --user arcis` writes
+    ~/.local/bin/arcis with a python shebang and no sibling python
+    interpreter. The shebang probe must catch it so we don't infinite-
+    loop into the shim."""
+    shim = tmp_path / "arcis"
+    shim.write_text("#!/usr/bin/python3\nimport sys\nsys.exit(0)\n")
+    if sys.platform != "win32":
+        shim.chmod(0o755)
+    assert cli_shim._is_python_entry_point(str(shim)) is True
+
+
+def test_is_python_entry_point_does_not_flag_native_binary(tmp_path):
+    """The Rust binary from `@arcis/cli` has no python shebang. It must
+    not be flagged as a shim or we'd infinite-loop."""
+    real = tmp_path / "arcis-bin"
+    # Magic bytes of a minimal ELF header (just the first 4) so it
+    # clearly looks like a native binary, not a script.
+    real.write_bytes(b"\x7fELF" + b"\x00" * 60)
+    if sys.platform != "win32":
+        real.chmod(0o755)
+    assert cli_shim._is_python_entry_point(str(real)) is False
+
+
+def test_is_python_entry_point_does_not_flag_node_shim(tmp_path):
+    """The npm-installed JS wrapper at bin/arcis starts with
+    `#!/usr/bin/env node`. It must NOT be flagged as a Python shim."""
+    node_shim = tmp_path / "arcis"
+    node_shim.write_text("#!/usr/bin/env node\nrequire('./real-impl')\n")
+    if sys.platform != "win32":
+        node_shim.chmod(0o755)
+    assert cli_shim._is_python_entry_point(str(node_shim)) is False
 
 
 def test_find_real_cli_returns_none_when_only_shim_exists(tmp_path, monkeypatch):
