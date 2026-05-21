@@ -248,9 +248,21 @@ type ThreatHit struct {
 // ScanThreats walks data (string, []interface{}, or map[string]interface{}) and
 // returns the first threat hit found. Returns nil if no threat detected.
 //
-// Vector ordering matches the Node and Python SDKs for cross-SDK parity:
-// prototype/nosql key checks first (at any nesting), then per-string vector
-// checks in order: xss, sql, path, command.
+// Vector ordering matches Node + Python SDKs for cross-SDK parity (Pattern 7):
+//
+//	xss → ssti → xxe → email-header → ldap → sql → xpath → path → command
+//
+// Plus prototype/nosql key checks at any nesting (before string vectors).
+//
+// LDAP-strict + email-header fire BEFORE command because their attack
+// shapes don't overlap with command/SQL syntax; XPath fires AFTER SQL
+// because `1' OR '1'='1` matches both patterns and SQL is the canonical
+// attribution.
+//
+// Broad LDAP filter rule `[*()\\x00]` deliberately stays out (every
+// parenthesised string trips it). Generic header CRLF stays out for the
+// same reason. Use DetectLdapInjection / DetectHeaderInjection at the
+// LDAP / response-header call sites directly when needed.
 func ScanThreats(data interface{}) *ThreatHit {
 	return scanThreatsDepth(data, 0, 10)
 }
@@ -295,8 +307,23 @@ func scanThreatsDepth(data interface{}, depth, maxDepth int) *ThreatHit {
 		if DetectXXE(v) {
 			return &ThreatHit{Vector: "xxe", Rule: "xxe/match", MatchedPattern: sample}
 		}
+		// Email-header CRLF + SMTP keyword: very specific.
+		if DetectEmailHeaderInjection(v) {
+			return &ThreatHit{Vector: "email-header", Rule: "email-header/match", MatchedPattern: sample}
+		}
+		// LDAP-strict: before command so LDAP doesn't misclass as
+		// command on the `*` chars (Raghav's Responza pilot 2026-05-20
+		// regression — closed by this ordering in Python; mirrored here).
+		if DetectLdapInjectionStrict(v) {
+			return &ThreatHit{Vector: "ldap", Rule: "ldap/match", MatchedPattern: sample}
+		}
+		// SQL before XPath: `1' OR '1'='1` matches both, SQL wins as
+		// canonical attribution.
 		if DetectSQL(v) {
 			return &ThreatHit{Vector: "sql", Rule: "sql/match", MatchedPattern: sample}
+		}
+		if DetectXPathInjection(v) {
+			return &ThreatHit{Vector: "xpath", Rule: "xpath/match", MatchedPattern: sample}
 		}
 		if DetectPathTraversal(v) {
 			return &ThreatHit{Vector: "path", Rule: "path/match", MatchedPattern: sample}
