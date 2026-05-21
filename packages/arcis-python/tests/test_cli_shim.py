@@ -5,12 +5,17 @@ defer to the real `@arcis/cli` binary whenever that binary is on the
 system, so users see the Rust CLI's rich welcome screen rather than the
 shim's plain-text install hint.
 
-The bug this guards: before v1.5.3 the no-args branch incorrectly
-required `args` to be non-empty before calling `os.execv`, which meant
-typing bare `arcis` always rendered the shim welcome even after
-`npm install -g @arcis/cli`.
+Bugs these guard (both shipped in v1.5.3):
+1. The no-args branch incorrectly required `args` to be non-empty
+   before calling `os.execv`, which meant typing bare `arcis` always
+   rendered the shim welcome even after `npm install -g @arcis/cli`.
+2. `_find_real_cli` relied on `shutil.which`, which returns only the
+   first PATH hit. On Windows where Python's `Scripts/` sits ahead of
+   npm's prefix, that first hit is the shim itself, and the npm
+   binary further down PATH was never considered.
 """
 
+import os
 import sys
 from unittest.mock import patch
 
@@ -102,3 +107,93 @@ def test_unknown_subcommand_without_real_cli_prints_install_hint(no_real_cli, mo
     err = capsys.readouterr().err
     assert rc == 127
     assert "npm install -g @arcis/cli" in err
+
+
+# ---------------------------------------------------------------------------
+# _path_matches + _find_real_cli PATH-walk regression coverage.
+# Guards bug #2 from v1.5.3: on Windows shutil.which("arcis") returns the
+# Python shim first, and we need to keep walking PATH to find the npm
+# binary one directory later.
+# ---------------------------------------------------------------------------
+
+
+def test_path_matches_returns_all_hits_in_path_order(tmp_path, monkeypatch):
+    """Two PATH entries both holding `arcis` should both appear in result."""
+    dir_a = tmp_path / "a"
+    dir_b = tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    (dir_a / "arcis").write_text("#!/bin/sh\necho a\n")
+    (dir_b / "arcis").write_text("#!/bin/sh\necho b\n")
+    if sys.platform != "win32":
+        (dir_a / "arcis").chmod(0o755)
+        (dir_b / "arcis").chmod(0o755)
+
+    monkeypatch.setenv("PATH", os.pathsep.join([str(dir_a), str(dir_b)]))
+    results = cli_shim._path_matches("arcis")
+    assert len(results) == 2
+    assert results[0].endswith(os.path.join("a", "arcis")) or results[0].endswith(
+        os.path.join("a", "arcis.exe")
+    )
+    assert results[1].endswith(os.path.join("b", "arcis")) or results[1].endswith(
+        os.path.join("b", "arcis.exe")
+    )
+
+
+def test_path_matches_dedupes_repeated_directories(tmp_path, monkeypatch):
+    """A PATH with the same directory listed twice still returns one match."""
+    d = tmp_path / "only"
+    d.mkdir()
+    (d / "arcis").write_text("#!/bin/sh\n")
+    if sys.platform != "win32":
+        (d / "arcis").chmod(0o755)
+
+    monkeypatch.setenv("PATH", os.pathsep.join([str(d), str(d)]))
+    results = cli_shim._path_matches("arcis")
+    assert len(results) == 1
+
+
+def test_find_real_cli_skips_python_shim_and_returns_npm_binary(tmp_path, monkeypatch):
+    """The fix: when Python's Scripts/ comes first, the npm prefix wins."""
+    python_scripts = tmp_path / "Scripts"
+    npm_prefix = tmp_path / "npm"
+    python_scripts.mkdir()
+    npm_prefix.mkdir()
+    (python_scripts / "arcis").write_text("#!/bin/sh\n# pip shim\n")
+    (npm_prefix / "arcis").write_text("#!/bin/sh\n# real cli\n")
+    if sys.platform != "win32":
+        (python_scripts / "arcis").chmod(0o755)
+        (npm_prefix / "arcis").chmod(0o755)
+
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join([str(python_scripts), str(npm_prefix)])
+    )
+    # Force _is_python_entry_point to match ONLY the Scripts/ path.
+    real_python_shim = str(python_scripts / "arcis")
+    monkeypatch.setattr(
+        cli_shim,
+        "_is_python_entry_point",
+        lambda p: os.path.normcase(p) == os.path.normcase(real_python_shim),
+    )
+
+    result = cli_shim._find_real_cli()
+    assert result is not None
+    assert os.path.normcase(result).endswith(
+        os.path.normcase(os.path.join("npm", "arcis"))
+    )
+
+
+def test_find_real_cli_returns_none_when_only_shim_exists(tmp_path, monkeypatch):
+    """No npm binary anywhere on PATH => `_find_real_cli` returns None."""
+    python_scripts = tmp_path / "Scripts"
+    python_scripts.mkdir()
+    (python_scripts / "arcis").write_text("#!/bin/sh\n")
+    if sys.platform != "win32":
+        (python_scripts / "arcis").chmod(0o755)
+
+    monkeypatch.setenv("PATH", str(python_scripts))
+    monkeypatch.setattr(cli_shim, "_is_python_entry_point", lambda p: True)
+    # Disable _candidate_paths fallback so the test is hermetic.
+    monkeypatch.setattr(cli_shim, "_candidate_paths", lambda: [])
+
+    assert cli_shim._find_real_cli() is None

@@ -138,6 +138,43 @@ def _is_python_entry_point(path: str) -> bool:
     return False
 
 
+def _path_matches(name: str) -> List[str]:
+    """Return every `name` hit on PATH, in PATH order.
+
+    `shutil.which` stops at the first match. On Windows when Python's
+    `Scripts/` sits ahead of npm's prefix on PATH, that first match is
+    our own shim and we'd never get to consider the npm binary further
+    down. Walking the full PATH and returning all matches lets the
+    caller skip past the shim. PATHEXT (the Windows list of executable
+    extensions) is honored so `arcis.cmd`, `arcis.exe`, etc. all count.
+    """
+    matches: List[str] = []
+    seen: set = set()
+
+    if sys.platform == "win32":
+        pathext = os.environ.get("PATHEXT", ".EXE;.CMD;.BAT;.COM").split(";")
+        extensions = [""] + [e for e in pathext if e]
+    else:
+        extensions = [""]
+
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        d = d.strip().strip('"')
+        if not d:
+            continue
+        for ext in extensions:
+            candidate = os.path.join(d, name + ext)
+            if not os.path.isfile(candidate):
+                continue
+            key = os.path.normcase(os.path.abspath(candidate))
+            if key in seen:
+                continue
+            seen.add(key)
+            matches.append(candidate)
+            break  # only the first valid extension per directory
+
+    return matches
+
+
 def _find_real_cli() -> Optional[str]:
     """Return the path to the real @arcis/cli binary, or None.
 
@@ -146,13 +183,16 @@ def _find_real_cli() -> Optional[str]:
     loop on systems where Python's Scripts/ dir comes before npm's
     global bin on PATH (common on Windows).
     """
-    # Check PATH first; fast path when the npm bin is ahead of Python's
-    # Scripts/.
-    found = shutil.which("arcis")
-    if found and not _is_python_entry_point(found):
-        return found
+    # Walk PATH for ALL `arcis` matches and pick the first that isn't
+    # this shim. shutil.which would stop at the first match (our own
+    # shim) and we'd never see the npm binary one directory later.
+    for found in _path_matches("arcis"):
+        if not _is_python_entry_point(found):
+            return found
 
-    # Probe well-known npm install locations.
+    # Belt-and-suspenders: probe well-known npm install locations in
+    # case the binary lives somewhere not on PATH (broken setups,
+    # custom prefixes, etc.).
     for candidate in _candidate_paths():
         if not os.path.isfile(candidate):
             continue
