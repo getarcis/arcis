@@ -214,7 +214,7 @@ def _sdk_self_test(payload: str) -> int:
         return 0
 
     vector, rule, matched = result
-    print(f"THREAT detected")
+    print("THREAT detected")
     print(f"  vector:  {vector}")
     print(f"  rule:    {rule}")
     print(f"  matched: {matched[:80]}")

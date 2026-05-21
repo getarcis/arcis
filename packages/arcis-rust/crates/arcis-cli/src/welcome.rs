@@ -131,15 +131,30 @@ fn build_left(version: &str, cwd: &str) -> Vec<String> {
     // The center glyph U+2738 (heavy 8-pointed star) renders as a
     // single column on every Unicode terminal we've tested.
     rows.push(center(
-        &format!("{EMERALD}\\  {V}  /{RESET}", EMERALD = EMERALD, V = V, RESET = RESET),
+        &format!(
+            "{EMERALD}\\  {V}  /{RESET}",
+            EMERALD = EMERALD,
+            V = V,
+            RESET = RESET
+        ),
         LEFT_INNER,
     ));
     rows.push(center(
-        &format!("{EMERALD}{H}{H} \u{2738} {H}{H}{RESET}", EMERALD = EMERALD, H = H, RESET = RESET),
+        &format!(
+            "{EMERALD}{H}{H} \u{2738} {H}{H}{RESET}",
+            EMERALD = EMERALD,
+            H = H,
+            RESET = RESET
+        ),
         LEFT_INNER,
     ));
     rows.push(center(
-        &format!("{EMERALD}/  {V}  \\{RESET}", EMERALD = EMERALD, V = V, RESET = RESET),
+        &format!(
+            "{EMERALD}/  {V}  \\{RESET}",
+            EMERALD = EMERALD,
+            V = V,
+            RESET = RESET
+        ),
         LEFT_INNER,
     ));
     rows.push(String::new());
@@ -168,7 +183,9 @@ fn build_right() -> Vec<String> {
     rows.push("Python SDK shim restored: 'pip install arcis' exposes 'arcis' again".to_string());
     rows.push("Daily cli-install-smoke workflow catches publish-channel breakage".to_string());
     rows.push("Auto-published on every nwl to main release via publish.yml".to_string());
-    rows.push(format!("{DIM}arcis --help for the full command reference{RESET}"));
+    rows.push(format!(
+        "{DIM}arcis --help for the full command reference{RESET}"
+    ));
     rows.push(String::new());
     rows
 }
