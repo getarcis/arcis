@@ -26,20 +26,29 @@ mod welcome;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Best-effort terminal column count without adding a dep.
+/// Terminal column count, in priority order:
+///   1. `$COLUMNS` if a shell exported it (rare on Windows, common on bash).
+///   2. Native terminal-size syscall (ioctl `TIOCGWINSZ` on Unix,
+///      `GetConsoleScreenBufferInfo` on Windows).
+///   3. Conservative default of 132 (the welcome screen's minimum) so
+///      a piped or detached invocation still picks the welcome branch.
 ///
-/// Reads `$COLUMNS` if exported (most shells set this on interactive
-/// sessions); otherwise returns 120 as a reasonable default that's
-/// wider than the welcome panel's minimum. If the welcome screen
-/// renders wider than the real terminal, lines wrap and the user sees
-/// a slightly mangled box. That's acceptable; the catalog fallback
-/// only triggers below 80 cols and we trust users to have a normal
-/// terminal width.
+/// Previous version returned 120 when `$COLUMNS` was unset, which
+/// guaranteed PowerShell users always fell back to the plain catalog
+/// because the welcome panel requires 132+ cols. The native query
+/// works on every modern terminal (Windows Terminal, conhost.exe,
+/// iTerm2, Alacritty, GNOME Terminal, tmux).
 fn terminal_cols() -> usize {
-    std::env::var("COLUMNS")
+    if let Some(cols) = std::env::var("COLUMNS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(120)
+    {
+        return cols;
+    }
+    if let Some((terminal_size::Width(w), _)) = terminal_size::terminal_size() {
+        return w as usize;
+    }
+    132
 }
 
 fn main() -> ExitCode {
