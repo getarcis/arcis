@@ -39,10 +39,9 @@ const TOTAL_WIDTH: usize = 130;
 /// on each side).
 const LEFT_INNER: usize = 34;
 
-/// Inner content width of the right panel. TOTAL_WIDTH minus:
-/// left border (1) + left pad (1) + LEFT_INNER (34) + left pad (1)
-/// + divider (1) + right pad (1) + right pad (1) + right border (1) = 41
-/// remaining for right inner = 130 - 41 = 89.
+/// Inner content width of the right panel. Computed as TOTAL_WIDTH (130)
+/// minus the fixed structural columns: 2 borders, 4 padding spaces, 1
+/// divider, and LEFT_INNER (34). Leaves 89 columns for right-side text.
 const RIGHT_INNER: usize = 89;
 
 /// Terminals narrower than this fall back to the catalog. We need at
@@ -336,7 +335,7 @@ mod tests {
         // Should not panic on multi-byte chars.
         let unicode = "/тест/проект/файл";
         let result = truncate_cwd(unicode, 10);
-        assert!(result.len() > 0);
+        assert!(!result.is_empty());
     }
 
     #[test]
