@@ -41,7 +41,7 @@ from typing import List, Optional
 
 # Version of the SDK shipping this shim. Kept in sync with
 # arcis/__init__.py:__version__ — both should bump together.
-SDK_VERSION = "1.5.2"
+SDK_VERSION = "1.5.3"
 
 
 # Locations where npm install -g writes binaries. We check these in
@@ -235,13 +235,14 @@ def main() -> int:
     """
     args = sys.argv[1:]
 
-    # Fast path for self-help / version. Don't probe for the CLI
-    # binary on these because the Python SDK can answer them honestly.
+    # No-args and `--help` / `-h`: prefer the real CLI's own surface
+    # whenever it's installed. The Rust binary prints a richer welcome
+    # screen (with the burst mascot + commands list) on no-args, and a
+    # full per-command flag reference on --help. The shim's plain-text
+    # welcome is only a fallback for when the binary isn't installed.
     if not args or args[0] in ("-h", "--help"):
-        # If the real CLI is on the system, defer to its help rather
-        # than printing the shim's welcome.
         real_cli = _find_real_cli()
-        if real_cli and args:
+        if real_cli:
             try:
                 os.execv(real_cli, [real_cli] + args)
             except OSError:
