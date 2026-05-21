@@ -10,14 +10,16 @@
 
 use std::io::{self, Write};
 
-// Arcis Signal Orange #FF5300, the primary brand color used in the
-// dashboard. Encoded as 24-bit ANSI true color. Modern terminals
-// (Windows Terminal, iTerm2, Alacritty, all modern Linux terminals)
-// support this. Older Windows cmd.exe before Win10 1607 may render
-// the escape as literal text, but we only emit this on TTY, and the
-// user explicitly invoked an interactive command. Anyone hitting that
-// edge case can pipe to `cat` or set NO_COLOR.
-const ORANGE: &str = "\x1b[38;2;255;83;0m";
+// Arcis Emerald #00996D, the brand color used on the website + docs
+// per `documents/arcis-brand.md`. The dashboard uses Signal Orange
+// #FF5300 instead; CLI is marketing-surface so it picks emerald.
+// Encoded as 24-bit ANSI true color. Modern terminals (Windows
+// Terminal, iTerm2, Alacritty, all modern Linux terminals) support
+// this. Older Windows cmd.exe before Win10 1607 may render the
+// escape as literal text, but we only emit this on TTY, and the
+// user explicitly invoked an interactive command. Anyone hitting
+// that edge case can pipe to `cat` or set NO_COLOR.
+const EMERALD: &str = "\x1b[38;2;0;153;109m";
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
 
@@ -78,7 +80,7 @@ fn top_border(title: &str) -> String {
     // The title sits 2 cols in from the left corner. The rest of the
     // top is filled with horizontal lines until the right corner.
     let mut s = String::new();
-    s.push_str(ORANGE);
+    s.push_str(EMERALD);
     s.push_str(TL);
     s.push_str(H);
     s.push_str(title);
@@ -94,7 +96,7 @@ fn top_border(title: &str) -> String {
 
 fn bottom_border() -> String {
     let mut s = String::new();
-    s.push_str(ORANGE);
+    s.push_str(EMERALD);
     s.push_str(BL);
     for _ in 0..(TOTAL_WIDTH - 2) {
         s.push_str(H);
@@ -111,7 +113,7 @@ fn render_row<W: Write>(w: &mut W, left: &str, right: &str) -> io::Result<()> {
     writeln!(
         w,
         "{O}{V}{R} {l} {O}{V}{R} {r} {O}{V}{R}",
-        O = ORANGE,
+        O = EMERALD,
         V = V,
         R = RESET,
         l = left_padded,
@@ -129,15 +131,15 @@ fn build_left(version: &str, cwd: &str) -> Vec<String> {
     // The center glyph U+2738 (heavy 8-pointed star) renders as a
     // single column on every Unicode terminal we've tested.
     rows.push(center(
-        &format!("{ORANGE}\\  {V}  /{RESET}", ORANGE = ORANGE, V = V, RESET = RESET),
+        &format!("{EMERALD}\\  {V}  /{RESET}", EMERALD = EMERALD, V = V, RESET = RESET),
         LEFT_INNER,
     ));
     rows.push(center(
-        &format!("{ORANGE}{H}{H} \u{2738} {H}{H}{RESET}", ORANGE = ORANGE, H = H, RESET = RESET),
+        &format!("{EMERALD}{H}{H} \u{2738} {H}{H}{RESET}", EMERALD = EMERALD, H = H, RESET = RESET),
         LEFT_INNER,
     ));
     rows.push(center(
-        &format!("{ORANGE}/  {V}  \\{RESET}", ORANGE = ORANGE, V = V, RESET = RESET),
+        &format!("{EMERALD}/  {V}  \\{RESET}", EMERALD = EMERALD, V = V, RESET = RESET),
         LEFT_INNER,
     ));
     rows.push(String::new());
@@ -156,12 +158,12 @@ fn build_left(version: &str, cwd: &str) -> Vec<String> {
 fn build_right() -> Vec<String> {
     let mut rows = Vec::new();
     rows.push(String::new());
-    rows.push(format!("{ORANGE}Tips for getting started{RESET}"));
+    rows.push(format!("{EMERALD}Tips for getting started{RESET}"));
     rows.push("Run 'arcis audit .' to scan your code for unsafe patterns".to_string());
     rows.push("Run 'arcis sca .' to match deps against the threat database".to_string());
     rows.push("Run 'arcis scan <url>' to probe a live endpoint".to_string());
     rows.push(String::new());
-    rows.push(format!("{ORANGE}What's new{RESET}"));
+    rows.push(format!("{EMERALD}What's new{RESET}"));
     rows.push("Two-panel welcome screen on 'arcis' with no arguments".to_string());
     rows.push("Python SDK shim restored: 'pip install arcis' exposes 'arcis' again".to_string());
     rows.push("Daily cli-install-smoke workflow catches publish-channel breakage".to_string());
@@ -295,13 +297,13 @@ mod tests {
     #[test]
     fn visible_cols_ignores_ansi_sequences() {
         assert_eq!(visible_cols("hello"), 5);
-        assert_eq!(visible_cols(&format!("{ORANGE}hello{RESET}")), 5);
+        assert_eq!(visible_cols(&format!("{EMERALD}hello{RESET}")), 5);
         assert_eq!(visible_cols("\x1b[38;2;255;0;0mred\x1b[0m"), 3);
     }
 
     #[test]
     fn pad_uses_visible_width_not_byte_count() {
-        let colored = format!("{ORANGE}abc{RESET}");
+        let colored = format!("{EMERALD}abc{RESET}");
         let padded = pad(&colored, 10);
         // 3 visible chars + 7 spaces of padding
         assert_eq!(visible_cols(&padded), 10);
