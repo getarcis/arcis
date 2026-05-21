@@ -147,10 +147,17 @@ def _is_python_entry_point(path: str) -> bool:
     # script at ~/.local/bin/arcis with no sibling python interpreter,
     # and that location is never under sys.exec_prefix or /Scripts/.
     # The script itself starts with `#!/.../python...`, which is the
-    # cleanest signal we have for that layout. We only read the first
-    # 256 bytes (enough for any reasonable shebang) and fail open so a
-    # binary or unreadable file falls through to the non-shim branch.
+    # cleanest signal we have for that layout.
+    #
+    # We skip the probe when the file is larger than 64 KiB: pip-generated
+    # entry-point scripts are well under 4 KiB, while native Arcis binaries
+    # are several MB. The size gate caps disk I/O so that PATH dirs on slow
+    # filesystems (network drives, fuse mounts) don't make every `arcis`
+    # invocation block on a multi-MB read. Fail open on any OSError so
+    # unreadable files still fall through to the non-shim branch.
     try:
+        if os.path.getsize(path) > 64 * 1024:
+            return False
         with open(path, "rb") as f:
             head = f.read(256)
         if head.startswith(b"#!"):

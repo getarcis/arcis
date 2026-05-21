@@ -327,6 +327,21 @@ def test_is_python_entry_point_does_not_flag_node_shim(tmp_path):
     assert cli_shim._is_python_entry_point(str(node_shim)) is False
 
 
+def test_is_python_entry_point_size_gate_skips_large_files(tmp_path):
+    """A multi-MB file should never trigger a full read. The size gate
+    bails before opening so PATH walks on slow filesystems (network
+    drives, fuse mounts) don't add latency to every `arcis` invocation."""
+    big = tmp_path / "arcis-bin"
+    # Write a 128 KiB file that starts with a python shebang. Without
+    # the size gate the probe would match and incorrectly flag it as
+    # a shim. With the gate, the function returns False before reading.
+    payload = b"#!/usr/bin/python3\n" + b"\x00" * (128 * 1024)
+    big.write_bytes(payload)
+    if sys.platform != "win32":
+        big.chmod(0o755)
+    assert cli_shim._is_python_entry_point(str(big)) is False
+
+
 def test_find_real_cli_returns_none_when_only_shim_exists(tmp_path, monkeypatch):
     """No npm binary anywhere on PATH => `_find_real_cli` returns None."""
     python_scripts = tmp_path / "Scripts"
