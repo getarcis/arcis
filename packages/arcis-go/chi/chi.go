@@ -214,6 +214,17 @@ type Config struct {
 	// patterns and respond 403 instead of running the handler. Opt-in.
 	Block bool
 
+	// DryRun: when true (and Block is also true), run the block-mode
+	// detection pipeline but do NOT respond 403. The threat is logged +
+	// the OnSanitize callback fires + telemetry records the would-have-
+	// blocked decision. Use for safe rollout.
+	DryRun bool
+
+	// OnSanitize fires when a threat is detected in block mode. Receives
+	// a SanitizeEvent describing the vector + path. Must not panic; the
+	// middleware swallows panics via defer/recover.
+	OnSanitize func(SanitizeEvent)
+
 	// Rate limiter options
 	RateLimit       bool
 	RateLimitMax    int
@@ -264,6 +275,17 @@ func DefaultConfig() Config {
 		CacheControl:      true,
 		IsDev:             false,
 	}
+}
+
+// SanitizeEvent is the payload passed to Config.OnSanitize when a
+// block-mode scan matches a threat. DryRun indicates whether the request
+// was actually denied or only logged.
+type SanitizeEvent struct {
+	Vector  string
+	Rule    string
+	Matched string
+	Path    string
+	DryRun  bool
 }
 
 // arcisInstance holds the Arcis components for cleanup.
@@ -486,19 +508,38 @@ func MiddlewareWithConfig(config Config) func(http.Handler) http.Handler {
 
 			if config.Block {
 				if hit := scanRequestForThreats(r); hit != nil {
-					decision = telemetry.DecisionDeny
+					if config.DryRun {
+						decision = telemetry.Decision("would_deny")
+					} else {
+						decision = telemetry.DecisionDeny
+					}
 					evtVector = hit.Vector
 					evtRule = hit.Rule
 					evtMatched = hit.MatchedPattern
 					evtSeverity = telemetry.SeverityHigh
 					evtReason = "Detected " + hit.Vector + " pattern"
 
-					writeJSON(sw, http.StatusForbidden, map[string]interface{}{
-						"error":  "Request blocked for security reasons",
-						"code":   "SECURITY_THREAT",
-						"vector": hit.Vector,
-					})
-					return
+					if config.OnSanitize != nil {
+						func() {
+							defer func() { _ = recover() }()
+							config.OnSanitize(SanitizeEvent{
+								Vector:  hit.Vector,
+								Rule:    hit.Rule,
+								Matched: hit.MatchedPattern,
+								Path:    r.URL.Path,
+								DryRun:  config.DryRun,
+							})
+						}()
+					}
+
+					if !config.DryRun {
+						writeJSON(sw, http.StatusForbidden, map[string]interface{}{
+							"error":  "Request blocked for security reasons",
+							"code":   "SECURITY_THREAT",
+							"vector": hit.Vector,
+						})
+						return
+					}
 				}
 			}
 

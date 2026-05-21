@@ -32,12 +32,15 @@ send)`` triple — Starlette, FastAPI, Litestar, Quart, Hypercorn.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs
 
 from .middleware.headers import SecurityHeaders
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
 from .sanitizers.sanitize import Sanitizer, scan_threats
+
+logger = logging.getLogger(__name__)
 
 # ASGI typing surface — kept narrow enough that we don't need ``litestar``
 # imports for runtime correctness. ``Receive`` and ``Send`` are awaitable
@@ -210,6 +213,8 @@ class ArcisMiddleware:
         app: ASGIApp,
         *,
         block: bool = False,
+        dry_run: bool = False,
+        on_sanitize: Optional[Callable[[Dict[str, Any]], None]] = None,
         sanitize: bool = True,
         rate_limit: bool = True,
         rate_limit_max: int = 100,
@@ -222,6 +227,8 @@ class ArcisMiddleware:
     ) -> None:
         self.app = app
         self.block = block
+        self.dry_run = dry_run
+        self.on_sanitize = on_sanitize
         self._sanitizer: Optional[Sanitizer] = Sanitizer() if sanitize else None
         # The bundled RateLimiter expects a request object and delegates
         # key extraction to ``key_func``. Pass a passthrough so we can
@@ -242,6 +249,24 @@ class ArcisMiddleware:
         self._bot_enabled = bot
         self._bot_allow = set(bot_allow)
         self._bot_deny = set(bot_deny)
+
+    def _fire_on_sanitize(
+        self, vector: str, rule: str, matched: str, path: str
+    ) -> None:
+        """Fire the on_sanitize callback, swallowing exceptions so callbacks
+        cannot crash the middleware."""
+        if self.on_sanitize is None:
+            return
+        try:
+            self.on_sanitize({
+                "vector": vector,
+                "rule": rule,
+                "matched": matched,
+                "path": path,
+                "dry_run": self.dry_run,
+            })
+        except Exception:
+            logger.exception("on_sanitize callback raised")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         # Lifespan + websocket scopes pass straight through. We only
@@ -317,19 +342,28 @@ class ArcisMiddleware:
                     if threat is None:
                         threat = scan_threats(scope.get("path", "") or "")
                     if threat is not None:
-                        vector, rule, _matched = threat
-                        start, body = _json_response(
-                            403,
-                            {
-                                "error": "Request blocked for security reasons",
-                                "code": "SECURITY_THREAT",
-                                "vector": vector,
-                                "rule": rule,
-                            },
+                        vector, rule, matched = threat
+                        self._fire_on_sanitize(
+                            vector, rule, matched, scope.get("path", "") or ""
                         )
-                        await send(start)
-                        await send(body)
-                        return
+                        if self.dry_run:
+                            logger.info(
+                                "arcis dry-run: would block vector=%s rule=%s path=%s",
+                                vector, rule, scope.get("path", "") or "",
+                            )
+                        else:
+                            start, body = _json_response(
+                                403,
+                                {
+                                    "error": "Request blocked for security reasons",
+                                    "code": "SECURITY_THREAT",
+                                    "vector": vector,
+                                    "rule": rule,
+                                },
+                            )
+                            await send(start)
+                            await send(body)
+                            return
 
                 if self._sanitizer is not None and isinstance(body_obj, dict):
                     sanitised = self._sanitizer.sanitize_dict(body_obj)
@@ -372,19 +406,28 @@ class ArcisMiddleware:
                 if threat is None:
                     threat = scan_threats(scope.get("path", "") or "")
                 if threat is not None:
-                    vector, rule, _ = threat
-                    start, body = _json_response(
-                        403,
-                        {
-                            "error": "Request blocked for security reasons",
-                            "code": "SECURITY_THREAT",
-                            "vector": vector,
-                            "rule": rule,
-                        },
+                    vector, rule, matched = threat
+                    self._fire_on_sanitize(
+                        vector, rule, matched, scope.get("path", "") or ""
                     )
-                    await send(start)
-                    await send(body)
-                    return
+                    if self.dry_run:
+                        logger.info(
+                            "arcis dry-run: would block vector=%s rule=%s path=%s",
+                            vector, rule, scope.get("path", "") or "",
+                        )
+                    else:
+                        start, body = _json_response(
+                            403,
+                            {
+                                "error": "Request blocked for security reasons",
+                                "code": "SECURITY_THREAT",
+                                "vector": vector,
+                                "rule": rule,
+                            },
+                        )
+                        await send(start)
+                        await send(body)
+                        return
 
         # 4. Wrap send so we can splice security headers into the
         #    response start message before the inner app's bytes flush

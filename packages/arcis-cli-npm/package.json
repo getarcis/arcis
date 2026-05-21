@@ -1,6 +1,6 @@
 {
   "name": "@arcis/cli",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Arcis security CLI — scan running apps, audit source, and check dependencies. Native Rust binary distributed via npm.",
   "keywords": [
     "security",

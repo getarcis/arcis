@@ -1,0 +1,68 @@
+name: Rust data vendoring sync check
+
+# Verifies that the vendored JSON data files inside the Rust workspace
+# at packages/arcis-rust/crates/arcis-data/data/ match the canonical
+# Python copies at packages/arcis-python/arcis/data/.
+#
+# WHY: the Rust CLI release build (rust-release.yml) uses `cross` for
+# Linux musl targets, which runs Cargo inside a Docker container that
+# only mounts packages/arcis-rust/ as /project. That breaks any
+# include_bytes!() path that reaches outside the crate root. The
+# vendored copy fixes the build; this job stops the two copies from
+# drifting after a Python-side edit.
+#
+# Fails on any sha256 mismatch. Fix is a one-liner: copy the Python
+# canonical files into the vendored location, commit. The fix is
+# also printed in the failure message.
+
+on:
+  pull_request:
+    paths:
+      - "packages/arcis-python/arcis/data/threat-db.json"
+      - "packages/arcis-python/arcis/data/patterns.json"
+      - "packages/arcis-rust/crates/arcis-data/data/**"
+  push:
+    branches: [main, nwl]
+    paths:
+      - "packages/arcis-python/arcis/data/threat-db.json"
+      - "packages/arcis-python/arcis/data/patterns.json"
+      - "packages/arcis-rust/crates/arcis-data/data/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Compare sha256
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Verify vendored data matches Python canonical
+        shell: bash
+        run: |
+          set -e
+          for f in threat-db.json patterns.json; do
+            canonical="packages/arcis-python/arcis/data/$f"
+            vendored="packages/arcis-rust/crates/arcis-data/data/$f"
+            if [ ! -f "$canonical" ]; then
+              echo "::error file=$canonical::canonical file missing"
+              exit 1
+            fi
+            if [ ! -f "$vendored" ]; then
+              echo "::error file=$vendored::vendored file missing"
+              exit 1
+            fi
+            c_hash=$(sha256sum "$canonical" | awk '{print $1}')
+            v_hash=$(sha256sum "$vendored" | awk '{print $1}')
+            if [ "$c_hash" != "$v_hash" ]; then
+              echo "::error::vendored $vendored has drifted from canonical $canonical"
+              echo "  canonical sha256: $c_hash"
+              echo "  vendored  sha256: $v_hash"
+              echo "  fix:"
+              echo "    cp $canonical $vendored"
+              echo "    git add $vendored && git commit -m 'chore(rust): resync vendored $f'"
+              exit 1
+            fi
+            echo "ok: $f matches ($c_hash)"
+          done

@@ -15,7 +15,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
 authors = ["Gagan CM <cm.g@northeastern.edu>"]
@@ -24,8 +24,8 @@ description = "Native Rust CLI for Arcis security middleware"
 rust-version = "1.75"
 
 [workspace.dependencies]
-arcis-engine = { path = "crates/arcis-engine", version = "0.1.0" }
-arcis-data = { path = "crates/arcis-data", version = "0.1.0" }
+arcis-engine = { path = "crates/arcis-engine", version = "1.0.0" }
+arcis-data = { path = "crates/arcis-data", version = "1.0.0" }
 
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -39,18 +39,18 @@ thiserror = "2.0"
 regex = "1.10"
 # Async stack for `arcis scan`. `rt-multi-thread` matches Python's
 # ThreadPoolExecutor model; `macros` gives us `tokio::test`.
-tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
 # `rustls-tls` keeps us off system OpenSSL (no Windows ssl headers
 # needed). `json` enables ergonomic body construction but we mostly hand
 # over raw bytes for parity with http.client output.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 # Cross-platform home-dir resolution for the OSV cache file at
 # `~/.arcis/osv-cache.json`. cli-sca.md Phase B (designed 2026-05-07).
-dirs = "5.0"
+dirs = "6.0"
 # SHA-256 for deterministic finding IDs in `arcis audit`. Inputs are
 # `(rule_id, relpath, line, snippet)`; first 8 bytes (16 hex chars) form
 # the fingerprint. cli-audit.md Phase B item 10.
-sha2 = "0.10"
+sha2 = "0.11"
 # `.arcisignore` + `.gitignore` path exclusion for `arcis audit`
 # (cli-audit.md Phase B item 7). BurntSushi's crate, the same one
 # ripgrep uses; gives us native gitignore stacking semantics including

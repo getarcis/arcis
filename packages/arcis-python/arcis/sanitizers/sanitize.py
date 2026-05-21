@@ -109,23 +109,63 @@ def detect_prototype_pollution(data: Any) -> bool:
     return False
 
 
+# LDAP-strict pre-compile — uses the narrow attack-specific pattern from
+# patterns.json. The broad rule (ldap-special / `[()\\\\*]`) deliberately
+# stays out of this list because every parenthesised string would trip it.
+_LDAP_STRICT_DETECT = [
+    re.compile(rule.get('pattern_safe') or rule.get('pattern'),
+               re.IGNORECASE if 'i' in rule.get('flags', '') else 0)
+    for rule in PATTERNS.get('patterns', {}).get('ldap_injection', {}).get('rules', [])
+    if rule.get('request_boundary_safe')
+]
+
+# XPath request-boundary pattern. The full sanitizers/xpath.py module has
+# the bigger contract (fast-path control-char check + the boolean pattern);
+# here we only need the boolean pattern as a string-vector rule for scan_threats.
+_XPATH_STRICT_DETECT = [
+    re.compile(rule.get('pattern_safe') or rule.get('pattern'),
+               re.IGNORECASE if 'i' in rule.get('flags', '') else 0)
+    for rule in PATTERNS.get('patterns', {}).get('xpath_injection', {}).get('rules', [])
+    if rule.get('request_boundary_safe')
+]
+
+# Email-header CRLF — narrow enough to wire at request boundary.
+# Generic `header_injection` stays out because CRLF in a request body is
+# only attack-shaped when it carries an SMTP header keyword after it.
+_EMAIL_HEADER_DETECT = [
+    re.compile(rule.get('pattern_safe') or rule.get('pattern'),
+               re.IGNORECASE if 'i' in rule.get('flags', '') else 0)
+    for rule in PATTERNS.get('patterns', {}).get('email_header_injection', {}).get('rules', [])
+    if rule.get('request_boundary_safe')
+]
+
+
 def scan_threats(data: Any) -> Optional[Tuple[str, str, str]]:
     """Walk dict/list/str and return the first (vector, rule, matched_pattern)
     triple found, or None if nothing matched. Vector names match the dashboard
     taxonomy.
 
-    Coverage: prototype, nosql (key-based, any nesting); xss, sql, path,
-    command, ssti, xxe (string-based).
+    Coverage: prototype, nosql (key-based, any nesting); xss, ssti, xxe,
+    email-header (CRLF + SMTP keyword), ldap (filter-break shapes only),
+    xpath (boolean-injection only), sql, path, command (string-based).
 
-    NOT included — sink-context vectors that produce too many false positives
-    when applied to arbitrary request strings:
-        * ldap — every parens-containing string trips ``[*()\\\\\\x00]``
-        * header — CRLF/null bytes are only attacks when reflected into a
-                   response header, not when present in a request body
+    Order matters: most specific patterns fire before less specific ones so
+    that a payload classifies under the highest-severity bucket. LDAP-strict
+    and XPath-strict are evaluated BEFORE command-injection so an LDAP
+    payload like ``*)(uid=*))(|(uid=*`` gets ``vector="ldap"`` instead of
+    being absorbed by the command-injection regex (which would otherwise
+    catch the ``*`` character).
 
-    These should be enforced at the call sites that pass user input to LDAP
-    filters or response header writes (use ``detect_ldap_injection`` /
-    ``detect_header_injection`` directly).
+    NOT included — sink-context patterns that false-positive at the request
+    boundary:
+        * Broad LDAP filter rule ``[*()\\\\\\x00]`` — every parenthesised
+          string would trip it. Use ``detect_ldap_injection()`` at the LDAP
+          filter call site instead.
+        * Generic header CRLF — only an attack when reflected into a response
+          header. Use ``detect_header_injection()`` at the response-write
+          call site. The narrow ``email_header_injection`` pattern (CRLF +
+          SMTP keyword) IS wired here because that shape is attack-specific
+          enough to be safe.
     """
     # Lazy imports avoid a circular dependency: ssti/xxe share core.constants
     # which is loaded by this module's top.
@@ -163,9 +203,29 @@ def scan_threats(data: Any) -> Optional[Tuple[str, str, str]]:
         return ("ssti", "ssti/match", data[:80])
     if detect_xxe(data):
         return ("xxe", "xxe/match", data[:80])
+    # Email-header CRLF + SMTP keyword. Very specific shape (CRLF + a
+    # known SMTP header keyword) so it fires early.
+    m = _first_match(data, _EMAIL_HEADER_DETECT)
+    if m:
+        return ("email-header", "email-header/match", m)
+    # LDAP-strict — fires before command-injection. Without this, the
+    # command regex catches `*` chars in LDAP payloads and misattributes them
+    # (verified against Raghav's Responza pilot 2026-05-20). LDAP shape
+    # ')(' and '*)(' doesn't overlap with SQL syntax, so safe before SQL.
+    m = _first_match(data, _LDAP_STRICT_DETECT)
+    if m:
+        return ("ldap", "ldap/match", m)
+    # SQL fires before XPath because `1' OR '1'='1` matches both the
+    # SQL OR/UNION pattern AND the XPath boolean-injection pattern, and
+    # SQL is the canonical attribution for that payload shape. XPath
+    # afterward still catches uniquely-XPath shapes like `) or (` and
+    # the union-step `| /`.
     m = _first_match(data, _SQL_DETECT)
     if m:
         return ("sql", "sql/match", m)
+    m = _first_match(data, _XPATH_STRICT_DETECT)
+    if m:
+        return ("xpath", "xpath/match", m)
     normalized = unicodedata.normalize('NFKC', data)
     m = _first_match(normalized, _PATH_DETECT)
     if m:

@@ -28,18 +28,21 @@ Usage:
 """
 
 import json
+import logging
 from typing import Callable, Optional, Dict, Any
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.deprecation import MiddlewareMixin
 
-from .sanitizers.sanitize import Sanitizer
+from .sanitizers.sanitize import Sanitizer, scan_threats
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
 from .middleware.headers import SecurityHeaders
 from .middleware.error_handler import ErrorHandler
 from .stores.memory import InMemoryStore
 from .logging.safe_logger import SafeLogger
+
+logger = logging.getLogger(__name__)
 
 
 def get_client_ip(request: HttpRequest) -> str:
@@ -82,7 +85,14 @@ class ArcisMiddleware(MiddlewareMixin):
 
         # Load configuration from Django settings
         config = getattr(settings, 'ARCIS_CONFIG', {})
-        
+
+        # E1 — block / dry-run / on_sanitize knobs match FastAPI + Litestar.
+        self.block: bool = config.get('block', False)
+        self.dry_run: bool = config.get('dry_run', False)
+        self.on_sanitize: Optional[Callable[[Dict[str, Any]], None]] = (
+            config.get('on_sanitize')
+        )
+
         # Initialize sanitizer
         sanitize_enabled = config.get('sanitize', True)
         if sanitize_enabled:
@@ -137,17 +147,66 @@ class ArcisMiddleware(MiddlewareMixin):
                 response['Retry-After'] = str(e.retry_after)
                 return response
         
-        # Sanitize request body for POST/PUT/PATCH with JSON
-        if self.sanitizer and request.method in ('POST', 'PUT', 'PATCH'):
+        # Read JSON body once. Used by both block-mode scan and sanitizer.
+        body_obj: Any = None
+        body_read = False
+        if (self.block or self.sanitizer) and request.method in ('POST', 'PUT', 'PATCH'):
             content_type = request.content_type or ''
             if 'application/json' in content_type.lower():
                 try:
-                    body = json.loads(request.body.decode('utf-8'))
-                    request._arcis_sanitized_body = self.sanitizer(body)
-                    # Also accessible as request.arcis_json
-                    request.arcis_json = request._arcis_sanitized_body
+                    body_obj = json.loads(request.body.decode('utf-8'))
+                    body_read = True
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
+
+        # Block mode: scan body / query / path for attack patterns. Same
+        # dry-run + on_sanitize semantics as FastAPI / Litestar.
+        if self.block:
+            threat = None
+            if body_read and body_obj is not None:
+                threat = scan_threats(body_obj)
+            if threat is None:
+                qp = dict(request.GET.items()) if request.GET else {}
+                if qp:
+                    threat = scan_threats(qp)
+            if threat is None:
+                threat = scan_threats(request.path or '')
+            if threat is not None:
+                vector, rule, matched = threat
+                if self.on_sanitize is not None:
+                    try:
+                        self.on_sanitize({
+                            'vector': vector,
+                            'rule': rule,
+                            'matched': matched,
+                            'path': request.path or '',
+                            'dry_run': self.dry_run,
+                        })
+                    except Exception:
+                        logger.exception('on_sanitize callback raised')
+                if self.dry_run:
+                    logger.info(
+                        'arcis dry-run: would block vector=%s rule=%s path=%s',
+                        vector, rule, request.path or '',
+                    )
+                else:
+                    return JsonResponse(
+                        {
+                            'error': 'Request blocked for security reasons',
+                            'code': 'SECURITY_THREAT',
+                            'vector': vector,
+                        },
+                        status=403,
+                    )
+
+        # Sanitize request body
+        if self.sanitizer and body_read and body_obj is not None:
+            try:
+                request._arcis_sanitized_body = self.sanitizer(body_obj)
+                # Also accessible as request.arcis_json
+                request.arcis_json = request._arcis_sanitized_body
+            except Exception:
+                pass
         
         # Process request
         try:

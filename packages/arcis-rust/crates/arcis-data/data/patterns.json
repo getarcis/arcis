@@ -1,0 +1,336 @@
+{
+  "version": "1.1.0",
+  "description": "Arcis Core Security Patterns - Language Agnostic",
+  "config": {
+    "max_input_size": 1000000,
+    "max_recursion_depth": 10,
+    "enable_redos_protection": true
+  },
+  "patterns": {
+    "xss": {
+      "name": "Cross-Site Scripting (XSS)",
+      "severity": "critical",
+      "owasp": "A03:2021",
+      "rules": [
+        {
+          "id": "xss-script-tag",
+          "pattern": "<script\\b[^<]*(?:(?!</script>)<[^<]*)*</script>",
+          "pattern_safe": "<script[^>]*>[\\s\\S]*?</script>",
+          "flags": "gi",
+          "description": "Detects script tags",
+          "redos_safe": false
+        },
+        {
+          "id": "xss-javascript-protocol",
+          "pattern": "javascript:",
+          "flags": "gi",
+          "description": "Detects javascript: protocol",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-event-handler",
+          "pattern": "on\\w+\\s*=",
+          "flags": "gi",
+          "description": "Detects inline event handlers",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-iframe",
+          "pattern": "<iframe",
+          "flags": "gi",
+          "description": "Detects iframe tags",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-object",
+          "pattern": "<object",
+          "flags": "gi",
+          "description": "Detects object tags",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-embed",
+          "pattern": "<embed",
+          "flags": "gi",
+          "description": "Detects embed tags",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-data-uri",
+          "pattern": "data:",
+          "flags": "gi",
+          "description": "Detects data: URIs",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-vbscript",
+          "pattern": "vbscript:",
+          "flags": "gi",
+          "description": "Detects vbscript: protocol",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-url-encoded",
+          "pattern": "%3Cscript",
+          "flags": "gi",
+          "description": "Detects URL-encoded script tags",
+          "redos_safe": true
+        },
+        {
+          "id": "xss-svg-onload",
+          "pattern": "<svg[^>]*onload",
+          "flags": "gi",
+          "description": "Detects SVG with onload",
+          "redos_safe": true
+        }
+      ],
+      "encoding": {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#x27;"
+      }
+    },
+    "sql_injection": {
+      "name": "SQL Injection",
+      "severity": "critical",
+      "owasp": "A03:2021",
+      "rules": [
+        {
+          "id": "sqli-keywords",
+          "pattern": "\\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE)\\b",
+          "flags": "gi",
+          "description": "Detects SQL keywords",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-comments",
+          "pattern": "(--|/\\*|\\*/)",
+          "flags": "g",
+          "description": "Detects SQL comments",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-operators",
+          "pattern": "(;|\\|\\||&&)",
+          "flags": "g",
+          "description": "Detects SQL operators",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-boolean-numeric",
+          "pattern": "\\bOR\\s+\\d+\\s*=\\s*\\d+",
+          "flags": "gi",
+          "description": "Detects OR 1=1 style injection",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-boolean-string",
+          "pattern": "\\bOR\\s+['\"][^'\"]+['\"]\\s*=\\s*['\"][^'\"]+['\"]",
+          "flags": "gi",
+          "description": "Detects OR 'a'='a' style injection",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-and-numeric",
+          "pattern": "\\bAND\\s+\\d+\\s*=\\s*\\d+",
+          "flags": "gi",
+          "description": "Detects AND 1=1 style injection",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-and-string",
+          "pattern": "\\bAND\\s+['\"][^'\"]+['\"]\\s*=\\s*['\"][^'\"]+['\"]",
+          "flags": "gi",
+          "description": "Detects AND 'a'='a' style injection",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-sleep",
+          "pattern": "\\bSLEEP\\s*\\(\\s*\\d+\\s*\\)",
+          "flags": "gi",
+          "description": "Detects time-based blind SQLi via SLEEP",
+          "redos_safe": true
+        },
+        {
+          "id": "sqli-benchmark",
+          "pattern": "\\bBENCHMARK\\s*\\(",
+          "flags": "gi",
+          "description": "Detects time-based blind SQLi via BENCHMARK",
+          "redos_safe": true
+        }
+      ]
+    },
+    "nosql_injection": {
+      "name": "NoSQL Injection",
+      "severity": "critical",
+      "owasp": "A03:2021",
+      "rules": [
+        {
+          "id": "nosql-operators",
+          "pattern": "\\$(?:gt|gte|lt|lte|ne|eq|in|nin|and|or|not|exists|type|regex|where|expr)",
+          "flags": "i",
+          "description": "Detects MongoDB operators",
+          "redos_safe": true
+        }
+      ],
+      "dangerous_keys": ["$gt", "$gte", "$lt", "$lte", "$ne", "$eq", "$in", "$nin", "$and", "$or", "$not", "$exists", "$type", "$regex", "$where", "$expr"]
+    },
+    "command_injection": {
+      "name": "Command Injection",
+      "severity": "critical",
+      "owasp": "A03:2021",
+      "rules": [
+        {
+          "id": "cmdi-shell-chars",
+          "pattern": "[;&|`$()]",
+          "flags": "g",
+          "description": "Detects shell metacharacters",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-commands",
+          "pattern": "\\b(cat|ls|rm|mv|cp|wget|curl|nc|bash|sh|python|perl|ruby|php|node|powershell|cmd)\\b",
+          "flags": "gi",
+          "description": "Detects common shell commands",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-redirection",
+          "pattern": "(>>|<<|>|<)\\s*[/\\w]",
+          "flags": "g",
+          "description": "Detects shell redirection",
+          "redos_safe": true
+        }
+      ]
+    },
+    "path_traversal": {
+      "name": "Path Traversal",
+      "severity": "high",
+      "owasp": "A01:2021",
+      "rules": [
+        {
+          "id": "path-dotdot",
+          "pattern": "\\.\\./",
+          "flags": "g",
+          "description": "Detects ../ sequences",
+          "redos_safe": true
+        },
+        {
+          "id": "path-dotdot-backslash",
+          "pattern": "\\.\\.\\\\",
+          "flags": "g",
+          "description": "Detects ..\\ sequences",
+          "redos_safe": true
+        },
+        {
+          "id": "path-encoded",
+          "pattern": "%2e%2e",
+          "flags": "gi",
+          "description": "Detects URL-encoded traversal",
+          "redos_safe": true
+        },
+        {
+          "id": "path-double-encoded",
+          "pattern": "%252e",
+          "flags": "gi",
+          "description": "Detects double URL-encoded traversal",
+          "redos_safe": true
+        },
+        {
+          "id": "path-null-byte",
+          "pattern": "%00",
+          "flags": "gi",
+          "description": "Detects null byte injection",
+          "redos_safe": true
+        }
+      ]
+    },
+    "prototype_pollution": {
+      "name": "Prototype Pollution",
+      "severity": "high",
+      "owasp": "A03:2021",
+      "languages": ["javascript", "typescript"],
+      "dangerous_keys": ["__proto__", "constructor", "prototype"]
+    },
+    "ldap_injection": {
+      "name": "LDAP Injection",
+      "severity": "high",
+      "owasp": "A03:2021",
+      "rules": [
+        {
+          "id": "ldap-special",
+          "pattern": "[()\\\\*]",
+          "flags": "g",
+          "description": "Detects LDAP special characters",
+          "redos_safe": true
+        }
+      ]
+    },
+    "xml_injection": {
+      "name": "XML/XXE Injection",
+      "severity": "critical",
+      "owasp": "A03:2021",
+      "rules": [
+        {
+          "id": "xxe-doctype",
+          "pattern": "<!DOCTYPE",
+          "flags": "gi",
+          "description": "Detects DOCTYPE declarations",
+          "redos_safe": true
+        },
+        {
+          "id": "xxe-entity",
+          "pattern": "<!ENTITY",
+          "flags": "gi",
+          "description": "Detects ENTITY declarations",
+          "redos_safe": true
+        },
+        {
+          "id": "xxe-system",
+          "pattern": "SYSTEM\\s+[\"']",
+          "flags": "gi",
+          "description": "Detects SYSTEM references",
+          "redos_safe": true
+        }
+      ]
+    }
+  },
+  "security_headers": {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; object-src 'none'; frame-ancestors 'none';",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "0",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    "X-Permitted-Cross-Domain-Policies": "none",
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0"
+  },
+  "rate_limiting": {
+    "default_max": 100,
+    "default_window_ms": 60000,
+    "headers": {
+      "limit": "X-RateLimit-Limit",
+      "remaining": "X-RateLimit-Remaining",
+      "reset": "X-RateLimit-Reset"
+    }
+  },
+  "sensitive_keys": [
+    "password", "passwd", "pwd", "secret", "token", "apikey",
+    "api_key", "apiKey", "auth", "authorization", "credit_card",
+    "creditcard", "cc", "ssn", "social_security", "private_key",
+    "privateKey", "access_token", "accessToken", "refresh_token",
+    "refreshToken", "bearer", "jwt", "session", "cookie",
+    "x-api-key", "x-auth-token", "credentials"
+  ],
+  "validation": {
+    "email": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+    "url": "^https?://[^\\s/$.?#].[^\\s]*$",
+    "uuid": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    "ipv4": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+  }
+}
