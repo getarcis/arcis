@@ -153,5 +153,23 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag "${TAG}"
             git push origin "${TAG}"
-            echo "pushed tag ${TAG} — Go SDK now resolvable via go get github.com/GagancM/arcis@${TAG}"
+            echo "pushed tag ${TAG}. Go SDK now resolvable via go get github.com/GagancM/arcis@${TAG}"
+          fi
+
+      - name: Create GitHub Release for SDK version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.version }}"
+          VERSION="${TAG#v}"
+          # Skip if release already exists (re-run safety). The CLI has
+          # its own release flow at cli-v* tags; this one is the unified
+          # SDK release (Node + Python + Go consumers).
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists, skipping"
+          else
+            gh release create "${TAG}" \
+              --title "Arcis ${TAG}" \
+              --generate-notes
+            echo "created GitHub Release at https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
           fi
