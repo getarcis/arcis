@@ -139,6 +139,15 @@ from .sanitizers import (
     PromptInjectionMatch,
     DetectPromptInjectionResult,
 )
+# V33 deserialization marker detection (improvements.md §1.2).
+# Standalone helper — not wired into sanitize_string because the right
+# response to a serialized-payload signal is "refuse the request"
+# not "strip the bytes and continue."
+from .sanitizers.deserialization import (
+    detect_deserialization,
+    is_serialized_payload,
+    DeserializeRuntime,
+)
 
 from .validation.email import (
     validate_email_address,
@@ -157,6 +166,11 @@ from .middleware.rate_limit_sliding import SlidingWindowLimiter
 from .middleware.rate_limit_token import TokenBucketLimiter
 from .middleware.bot_detection import BotProtection, BotDenied, BotDetectionResult, detect_bot
 from .middleware.token_budget import TokenBudget, TokenBudgetExceeded, token_budget
+from .middleware.correlation import (
+    CorrelationEvent,
+    CorrelationDetections,
+    CorrelationWindow,
+)
 from .guards import Guards, GuardsDecision
 from .middleware.hpp import HppProtection, create_hpp
 from .middleware.csrf import CsrfProtection, create_csrf, generate_csrf_token, validate_csrf_token
@@ -183,7 +197,7 @@ try:
 except ImportError:
     _HAS_ASYNC = False
 
-__version__ = "1.5.4"
+__version__ = "1.5.5"
 __all__ = [
     # Main class
     "Arcis",
@@ -255,6 +269,10 @@ __all__ = [
     "TokenBudget",
     "TokenBudgetExceeded",
     "token_budget",
+    # Stateful per-IP correlation window (improvements.md §1.3)
+    "CorrelationEvent",
+    "CorrelationDetections",
+    "CorrelationWindow",
     # Guards API (non-HTTP contexts)
     "Guards",
     "GuardsDecision",

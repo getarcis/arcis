@@ -40,6 +40,82 @@ import type { CorsOptions } from './cors';
 import { signupProtection, type SignupProtectionOptions } from './signup-protection';
 import { createSanitizer } from '../sanitizers';
 import type { RateLimitOptions, SanitizeOptions } from '../core/types';
+import { CorrelationWindow } from './correlation';
+
+/**
+ * Per-protect-helper correlation-window wiring (improvements.md §1.4).
+ *
+ * Pass an instance of `CorrelationWindow` plus the vector tag this
+ * route represents ("login" / "signup" / "api"). The middleware
+ * records every request in the window and refuses the request when
+ * the window flags the IP as a scanner / credential stuffer / race
+ * probe. Detection-only otherwise.
+ *
+ * Pull-out fields:
+ *  - `usernameField`: body key whose value is the distinct-value
+ *    tracked for credential-stuffing detection. Defaults to
+ *    `'username'`.
+ *  - `route`: route label recorded in the window (so cross-route
+ *    aggregation is meaningful). Defaults to the request path.
+ *  - `statusCode` / `message`: response shape on a correlation block.
+ */
+export interface CorrelationOptions {
+  window: CorrelationWindow;
+  vector?: string;
+  usernameField?: string;
+  route?: string;
+  statusCode?: number;
+  message?: string;
+}
+
+function getClientIp(req: any): string {
+  // Best-effort. Matches the helper Arcis uses elsewhere.
+  const xff =
+    req?.headers?.['x-forwarded-for'] ?? req?.headers?.['X-Forwarded-For'];
+  if (typeof xff === 'string' && xff.length > 0) {
+    const first = xff.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  if (typeof req?.ip === 'string') return req.ip;
+  const remote = req?.socket?.remoteAddress;
+  return typeof remote === 'string' ? remote : '';
+}
+
+function correlationMiddleware(opts: CorrelationOptions): RequestHandler {
+  const vector = opts.vector ?? 'request';
+  const usernameField = opts.usernameField ?? 'username';
+  const statusCode = opts.statusCode ?? 429;
+  const message = opts.message ?? 'Suspicious request pattern detected.';
+  return function (req, res, next) {
+    const ip = getClientIp(req);
+    if (!ip) return next();
+    const route = opts.route ?? (req.path || req.url || '/');
+    const username = req?.body?.[usernameField];
+    const distinctValue =
+      typeof username === 'string' && username.length > 0 ? username : undefined;
+    const detections = opts.window.record(
+      ip,
+      vector,
+      route,
+      req.method || 'GET',
+      distinctValue,
+    );
+    if (
+      detections.scanner ||
+      detections.credentialStuffing ||
+      detections.raceWindow
+    ) {
+      res.status(statusCode).json({
+        error: message,
+        scanner: detections.scanner,
+        credential_stuffing: detections.credentialStuffing,
+        race_window: detections.raceWindow,
+      });
+      return;
+    }
+    next();
+  };
+}
 
 /**
  * Per-layer override knob: pass `false` to disable, an options object
@@ -53,6 +129,8 @@ export interface ProtectLoginOptions {
   bot?: LayerOverride<BotProtectionOptions>;
   csrf?: LayerOverride<CsrfOptions>;
   sanitize?: LayerOverride<SanitizeOptions>;
+  /** Optional correlation-window wiring (improvements.md §1.4). */
+  correlation?: CorrelationOptions;
 }
 
 export interface ProtectSignupOptions {
@@ -61,6 +139,8 @@ export interface ProtectSignupOptions {
   sanitize?: LayerOverride<SanitizeOptions>;
   /** signupProtection options (email-style validation, disposable-mail block, etc.). */
   signup?: LayerOverride<SignupProtectionOptions>;
+  /** Optional correlation-window wiring (improvements.md §1.4). */
+  correlation?: CorrelationOptions;
 }
 
 export interface ProtectApiOptions {
@@ -68,6 +148,8 @@ export interface ProtectApiOptions {
   /** CORS is required to take an Origin/Methods config — no default origin. */
   cors?: LayerOverride<CorsOptions>;
   sanitize?: LayerOverride<SanitizeOptions>;
+  /** Optional correlation-window wiring (improvements.md §1.4). */
+  correlation?: CorrelationOptions;
 }
 
 /**
@@ -105,6 +187,12 @@ export function protectLogin(options: ProtectLoginOptions = {}): RequestHandler[
   const sanitize = resolve<SanitizeOptions>(options.sanitize, {});
   if (sanitize) middlewares.push(createSanitizer(sanitize));
 
+  if (options.correlation) {
+    middlewares.push(
+      correlationMiddleware({ vector: 'login', ...options.correlation }),
+    );
+  }
+
   return middlewares;
 }
 
@@ -132,6 +220,12 @@ export function protectSignup(options: ProtectSignupOptions = {}): RequestHandle
 
   const signup = resolve<SignupProtectionOptions>(options.signup, {});
   if (signup) middlewares.push(signupProtection(signup));
+
+  if (options.correlation) {
+    middlewares.push(
+      correlationMiddleware({ vector: 'signup', ...options.correlation }),
+    );
+  }
 
   return middlewares;
 }
@@ -162,6 +256,12 @@ export function protectApi(options: ProtectApiOptions = {}): RequestHandler[] {
 
   const sanitize = resolve<SanitizeOptions>(options.sanitize, {});
   if (sanitize) middlewares.push(createSanitizer(sanitize));
+
+  if (options.correlation) {
+    middlewares.push(
+      correlationMiddleware({ vector: 'api', ...options.correlation }),
+    );
+  }
 
   return middlewares;
 }

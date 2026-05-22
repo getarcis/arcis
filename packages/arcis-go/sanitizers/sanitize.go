@@ -1,6 +1,8 @@
 package sanitizers
 
 import (
+	"html"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -8,59 +10,34 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Pre-compiled XSS patterns for performance (ReDoS-safe)
-var xssPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)<script[^>]*>[\s\S]*?</script>`),
-	regexp.MustCompile(`(?i)javascript:`),
-	regexp.MustCompile(`(?i)vbscript:`),
-	regexp.MustCompile(`(?i)on\w+\s*=`),
-	regexp.MustCompile(`(?i)<iframe`),
-	regexp.MustCompile(`(?i)<style[\s>]`),
-	regexp.MustCompile(`(?i)<object`),
-	regexp.MustCompile(`(?i)<embed`),
-	regexp.MustCompile(`(?i)(?:^|[\s"'=])data:`),
-	regexp.MustCompile(`(?i)%3Cscript`),
-	regexp.MustCompile(`(?i)<svg[^>]*onload`),
-	// HTML injection vectors — form/meta/base/link can be used for phishing,
-	// CSP bypass, base-href hijack, and stylesheet injection
-	regexp.MustCompile(`(?i)<form[\s>]`),
-	regexp.MustCompile(`(?i)<meta[\s>]`),
-	regexp.MustCompile(`(?i)<base[\s>]`),
-	regexp.MustCompile(`(?i)<link[\s>]`),
+// multiDecode peels off URL + HTML entity layers until the string is
+// stable or maxPasses is hit (improvements.md §1.1.b). Closes the
+// encoding-stack bypass class: `%2526%2523x3c%253bscript%2526%2523x3e%253b`
+// is a triple-encoded `<script>` that needs three decode rounds before
+// the literal ASCII shape appears for the XSS regex to match. Bounded
+// at 4 passes to keep pathological inputs from looping forever. Base64
+// is intentionally not in the chain (false-positive rate on arbitrary
+// text would be too high).
+func multiDecode(value string, maxPasses int) string {
+	for i := 0; i < maxPasses; i++ {
+		prev := value
+		if decoded, err := url.QueryUnescape(value); err == nil {
+			value = decoded
+		}
+		value = html.UnescapeString(value)
+		if value == prev {
+			break
+		}
+	}
+	return value
 }
 
-// Pre-compiled SQL injection patterns
-var sqlPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE)\b`),
-	regexp.MustCompile(`(--|/\*|\*/)`),
-	regexp.MustCompile(`(;|\|\||&&)`),
-	regexp.MustCompile(`(?i)\bOR\s+\d+\s*=\s*\d+`),
-	regexp.MustCompile(`(?i)\bOR\s+['"][^'"]+['"]\s*=\s*['"][^'"]+['"]`),
-	regexp.MustCompile(`(?i)\bAND\s+\d+\s*=\s*\d+`),
-	regexp.MustCompile(`(?i)\bAND\s+['"][^'"]+['"]\s*=\s*['"][^'"]+['"]`),
-	regexp.MustCompile(`(?i)\bSLEEP\s*\(\s*\d+\s*\)`),
-	regexp.MustCompile(`(?i)\bBENCHMARK\s*\(`),
-	regexp.MustCompile(`(?i)\bpg_sleep\s*\(`),
-	regexp.MustCompile(`(?i)\bWAITFOR\s+DELAY\b`),
-}
-
-// Pre-compiled path traversal patterns
-var pathPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\.\.\/`),
-	regexp.MustCompile(`\.\.\\`),
-	regexp.MustCompile(`(?i)%2e%2e`),
-	regexp.MustCompile(`(?i)%252e`),
-	regexp.MustCompile(`(?i)%00`), // null byte injection — truncates file paths (file.txt%00.jpg)
-	regexp.MustCompile(`\x00`),    // literal null byte
-}
-
-// Pre-compiled command injection patterns
-var cmdPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`[;&|` + "`" + `]`),
-	regexp.MustCompile(`\$\(`),
-	regexp.MustCompile(`(?i)%0[0-9a-fA-F]`),
-	regexp.MustCompile(`(>>|<<|[<>]\s+[/\w])`),
-}
+// XSS / SQL / path / command patterns moved to `loader.go` —
+// loaded from the embedded `data/patterns.json` (a sync'd copy of
+// `packages/core/patterns.json`) at startup. The package-scope
+// slices `xssPatterns`, `sqlPatterns`, `pathPatterns`,
+// `commandPatterns` are declared and populated there.
+// improvements.md §1.1.c.
 
 // Pre-compiled SSTI (Server-Side Template Injection) detection patterns.
 // Matches Node.js/Python SSTI implementation for cross-SDK parity.
@@ -200,7 +177,20 @@ func (s *Sanitizer) SanitizeString(value string) string {
 		value = value[:s.maxInputSize]
 	}
 
-	result := value
+	// SECURITY: Normalize Unicode to NFKC BEFORE every detector runs.
+	// Fullwidth glyphs (`＜script＞`, `１+１＝２`) collapse to their ASCII
+	// equivalents, closing the entire fullwidth-bypass class for XSS,
+	// SQL, command-injection, and path-traversal in a single pass.
+	// improvements.md §1.1.a. Bypass example closed:
+	//   `＜script＞alert(1)＜/script＞`  →  `<script>alert(1)</script>`
+	result := norm.NFKC.String(value)
+
+	// SECURITY: Multi-pass URL + HTML decode (improvements.md §1.1.b).
+	// Closes the encoding-stack bypass class. After NFKC,
+	// `%2526%2523x3c%253bscript%2526%2523x3e%253b` (triple-encoded
+	// `<script>`) decodes all the way to `<script>` and hits the
+	// normal XSS strip below. Bounded at 4 passes.
+	result = multiDecode(result, 4)
 
 	// XSS prevention - remove patterns FIRST (while detectable), then encode
 	if s.xss {
@@ -229,10 +219,9 @@ func (s *Sanitizer) SanitizeString(value string) string {
 
 	// Path traversal prevention — loop until stable to prevent bypass via
 	// nested sequences: "....//".replace("../","") → "../"
+	// NFKC normalization happens at the top of SanitizeString (above);
+	// don't double-normalize here — input is already in NFKC form.
 	if s.path {
-		// SECURITY: Normalize Unicode to NFKC before path pattern matching.
-		// Fullwidth dot U+FF0E normalizes to '.', preventing bypass of ../ detection.
-		result = norm.NFKC.String(result)
 		for {
 			prev := result
 			for _, pattern := range pathPatterns {
@@ -246,7 +235,7 @@ func (s *Sanitizer) SanitizeString(value string) string {
 
 	// Command injection prevention
 	if s.cmd {
-		for _, pattern := range cmdPatterns {
+		for _, pattern := range commandPatterns {
 			result = pattern.ReplaceAllString(result, "[BLOCKED]")
 		}
 	}

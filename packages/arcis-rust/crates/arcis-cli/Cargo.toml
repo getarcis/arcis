@@ -26,6 +26,11 @@ tokio = { workspace = true }
 # on Windows). Required so the no-args welcome screen picks the right
 # branch on PowerShell, which never exports COLUMNS.
 terminal_size = "0.4"
+# Interactive REPL (cli-bugs.md Part B / improvements.md §1.5). Drops
+# users into a Claude-Code-shaped TUI on bare `arcis`. Backend is
+# crossterm (ratatui's default).
+ratatui = { workspace = true }
+crossterm = { workspace = true }
 
 [dev-dependencies]
 # End-to-end CLI tests under `tests/` need scratch dirs for fixtures

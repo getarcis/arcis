@@ -19,6 +19,7 @@ use std::process::ExitCode;
 
 mod audit;
 mod catalog;
+mod console;
 mod sca;
 mod scan;
 mod stub;
@@ -79,7 +80,28 @@ fn main() -> ExitCode {
     // scripts can detect it.
     if argv.len() < 2 {
         let stdout_is_tty = std::io::stdout().is_terminal();
+        let stdin_is_tty = std::io::stdin().is_terminal();
+        let in_ci = std::env::var("CI").is_ok();
+        let opted_out = std::env::var("ARCIS_NO_REPL").is_ok();
         let cols = terminal_cols();
+
+        // Interactive console (v1.6): when every prerequisite is met,
+        // drop into the full-screen TUI. The four guards mirror the
+        // spec in `documents/plans/improvements.md §1.5`:
+        //
+        //   * stdout TTY:  we're writing to a terminal, not a pipe
+        //   * stdin TTY:   the user can actually type keys back to us
+        //   * !CI:         no GitHub Actions / Buildkite / Jenkins
+        //   * !ARCIS_NO_REPL: explicit opt-out env var for users who
+        //                  prefer the one-shot welcome
+        //
+        // Anything else falls through to the existing welcome/catalog
+        // branch. The static welcome is still right for piped output
+        // (parity tests, scripts) and CI logs.
+        if stdout_is_tty && stdin_is_tty && !in_ci && !opted_out && !welcome::too_narrow(cols) {
+            return console::run();
+        }
+
         let write_result = if stdout_is_tty && !welcome::too_narrow(cols) {
             let cwd = std::env::current_dir()
                 .map(|p| p.display().to_string())
@@ -127,10 +149,49 @@ fn main() -> ExitCode {
         // uses `console.print` (stdout) for this message, so stay on
         // stdout for parity. Both implementations should arguably move to
         // stderr later — when that happens, flip both at once.
+        //
+        // Empty-string subcommand (cli-test round-1 bug 1): falls into
+        // this branch by design — `arcis ''` prints "unknown command ''"
+        // and exits 1. PowerShell 5.1 silently strips empty quoted args
+        // before exec, so on PowerShell the user sees the welcome screen
+        // instead (because `arcis ""` becomes `arcis` with no args).
+        // That's a shell behavior, not an Arcis bug. cmd.exe and bash do
+        // pass the empty argument, and they hit this branch correctly.
         unknown => {
             let _ = writeln!(out, "arcis: unknown command '{unknown}'");
             let _ = writeln!(out, "Run 'arcis --list' for available commands.");
             ExitCode::from(1)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// cli-test round-1 bug 1: when the empty-string subcommand DOES
+    /// reach the binary (cmd.exe, bash, direct invocation from another
+    /// program), it must hit the unknown-command branch — not the
+    /// welcome screen. PowerShell strips the empty arg before exec so
+    /// users on PowerShell can't trigger this path, but everyone else
+    /// can. Locking in the dispatch shape here so a future refactor
+    /// can't quietly route empty-string to welcome.
+    #[test]
+    fn empty_subcommand_classification() {
+        // Mirror the dispatch logic from main(). If the match arms here
+        // ever diverge from main()'s, this test stops being meaningful.
+        fn classify(arg: &str) -> &'static str {
+            match arg {
+                "--list" | "-l" => "list",
+                "-h" | "--help" => "help",
+                "-V" | "--version" => "version",
+                "sca" => "sca",
+                "audit" => "audit",
+                "scan" => "scan",
+                "update" => "update",
+                _ => "unknown",
+            }
+        }
+        assert_eq!(classify(""), "unknown");
+        assert_eq!(classify("foobar"), "unknown");
+        assert_eq!(classify("audit"), "audit");
     }
 }

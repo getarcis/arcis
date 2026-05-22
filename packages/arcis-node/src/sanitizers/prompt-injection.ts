@@ -187,6 +187,49 @@ const SIGNATURES: PromptInjectionSignature[] = [
     description: 'ROT13 / Caesar-cipher decode hint',
   },
 
+  // ── V32: AI agent toolcall injection (improvements.md §1.2) ────────
+  // Modern LLM agents (Claude tool-use, OpenAI function-calling,
+  // ReAct loops) read tool definitions from the system prompt and
+  // JSON-shaped requests from the model. A malicious user can embed
+  // those shapes in their input to make the host think they invoked
+  // a tool, or to trick the model into echoing a synthesized
+  // tool_call that the runtime then executes.
+  //
+  // Narrow patterns — match the literal JSON keys and inline
+  // tool-name shapes. Won't false-positive on plain English text
+  // discussing tools.
+  {
+    rule: 'agent-toolcall-marker',
+    pattern: /"(?:tool_call|function_call|call_tool|tool_use|toolUse)"\s*:\s*\{/i,
+    severity: 'high',
+    description: 'Injected agent tool-call JSON shape (e.g. {"tool_call":{...}})',
+  },
+  {
+    rule: 'agent-tool-name-spoof',
+    pattern:
+      /"name"\s*:\s*"(?:exec|shell|run_command|system|bash|cmd|python|eval|read_file|write_file|delete_file)"/i,
+    severity: 'high',
+    description: 'Forged tool-name attempting privileged tool invocation',
+  },
+  {
+    rule: 'agent-tool-result-marker',
+    pattern: /"(?:tool_result|function_result|tool_output)"\s*:\s*[\{\["]/i,
+    severity: 'high',
+    description: 'Injected fake tool-result block (trick agent into trusting fabricated output)',
+  },
+  {
+    rule: 'ansi-escape-sequence',
+    pattern: /\x1b\[/,
+    severity: 'medium',
+    description: 'ANSI escape sequence (terminal hijack / output spoofing on CLI agents)',
+  },
+  {
+    rule: 'claude-tool-use-tags',
+    pattern: /<\/?\s*(?:tool_use|tool_result|invoke|function_calls?|parameter)\b/i,
+    severity: 'high',
+    description: 'Claude/OpenAI tool-use XML-style tag forgery',
+  },
+
   // --- LOW severity: ambiguous but worth flagging in strict mode ---
   {
     rule: 'from-now-on',

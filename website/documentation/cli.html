@@ -49,25 +49,31 @@
       <ul>
         <li><a href="./">Introduction</a></li>
         <li><a href="./getting-started.html">Getting Started</a></li>
+        <li><a href="./coverage.html">Stack Coverage</a></li>
+        <li><a href="./parity.html">Cross-SDK Parity</a></li>
       </ul>
       <h3>Guides</h3>
       <ul>
         <li><a href="./frameworks.html">Framework Adapters</a></li>
         <li><a href="./configuration.html">Configuration</a></li>
         <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+        <li><a href="./detectors/">Detector Reference</a></li>
+      </ul>
+      <h3>CLI</h3>
+      <ul>
+        <li><a href="./cli.html" class="active">CLI Overview</a></li>
+        <li><a href="./repl.html">Interactive Console</a></li>
+        <li><a href="./threats-db.html">Supply-chain Threat DB</a></li>
       </ul>
       <h3>Reference</h3>
       <ul>
         <li><a href="./api-reference.html">API Reference</a></li>
-        <li><a href="./cli.html" class="active">CLI Tools</a></li>
+        <li><a href="./control-plane.html">Control Plane</a></li>
+        <li><a href="./release-notes.html">Release Notes</a></li>
       </ul>
-      <h3>Comparisons</h3>
+      <h3>Why Arcis</h3>
       <ul>
-        <li><a href="./comparisons/vs-arcjet.html">vs Arcjet</a></li>
-        <li><a href="./comparisons/vs-aikido.html">vs Aikido Zen</a></li>
-        <li><a href="./comparisons/vs-snyk.html">vs Snyk</a></li>
-        <li><a href="./comparisons/vs-cloudflare-waf.html">vs Cloudflare WAF</a></li>
-        <li><a href="./comparisons/vs-captchas.html">vs CAPTCHAs</a></li>
+        <li><a href="./why-arcis.html">Compared with...</a></li>
       </ul>
       <h3>Resources</h3>
       <ul>
@@ -97,8 +103,8 @@ arcis
 arcis --list
 
 <span class="c"># Per-command coverage</span>
-arcis scan --list      <span class="c"># all 8 attack categories + payloads</span>
-arcis audit --list     <span class="c"># all 14 detection rules, grouped by language</span>
+arcis scan --list      <span class="c"># all 17 attack categories + payloads</span>
+arcis audit --list     <span class="c"># all 24 detection rules, grouped by language</span>
 arcis sca --list       <span class="c"># full bundled threat database</span>
 
 <span class="c"># Stay current</span>
@@ -108,67 +114,118 @@ arcis update --check   <span class="c"># CI mode: exit 1 if outdated</span></cod
 
       <p>Each command also streams live progress to stderr (per-route status for <code>scan</code>, a progress bar for <code>audit</code>, current manifest for <code>sca</code>) and ends with a per-severity summary block.</p>
 
-      <h3>Interactive mode</h3>
-      <p>Running <code>arcis</code> with no args opens an arrow-key picker for scan / audit / sca, then prompts for a path or URL. Non-TTY runs (CI, piped input) skip the picker and fall back to the static catalog automatically. scripts never hang.</p>
+      <h3 id="console">Interactive Console (v1.6)</h3>
+      <p>Running <code>arcis</code> with no args in a TTY drops into a full-screen interactive console. A persistent welcome banner sits at the top with the version, working directory, available adapters, and quick-start commands. Type any of <code>audit .</code>, <code>sca .</code>, <code>scan &lt;url&gt;</code>, or a slash command. Output streams into the scrollback in real time, and the prompt stays pinned at the bottom.</p>
+<pre><code><span class="c"># Drop into the REPL</span>
+$ arcis
+
+<span class="c"># Inside the console</span>
+audit .            <span class="c"># run the static analyzer; findings stream into the scrollback</span>
+sca .              <span class="c"># match dependencies against the embedded threat DB</span>
+scan http://...    <span class="c"># probe a live endpoint</span>
+
+<span class="c"># Slash commands</span>
+/help              <span class="c"># show the welcome banner again</span>
+/clear             <span class="c"># wipe the scrollback</span>
+/cwd ~/projects    <span class="c"># change working directory without leaving</span>
+/export session.md <span class="c"># save the current session as markdown</span>
+/exit              <span class="c"># Ctrl-D also works</span></code></pre>
+
+      <table>
+        <thead><tr><th>Key</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>F2</code> / <code>Shift-F2</code></td><td>Jump to the next / previous finding (any line starting with <code>CRITICAL</code> / <code>HIGH</code> / <code>MEDIUM</code> / <code>LOW</code>)</td></tr>
+          <tr><td><code>PgUp</code> / <code>PgDn</code></td><td>Scroll the scrollback by a page</td></tr>
+          <tr><td><code>Up</code> / <code>Down</code></td><td>Walk through command history (persisted at <code>~/.arcis/history</code>, 200 entries)</td></tr>
+          <tr><td><code>Ctrl-C</code></td><td>Cancel the running command (does not exit the console)</td></tr>
+          <tr><td><code>Esc</code></td><td>Clear current input and snap back to the tail</td></tr>
+        </tbody>
+      </table>
+
+      <p>ANSI color from subprocesses is preserved. Auto-launch is gated on stdout+stdin being TTYs, <code>CI</code> unset, and <code>ARCIS_NO_REPL</code> unset. Any other shape (pipes, redirects, CI runners, scripts) falls through to the static welcome screen so scripts never hang.</p>
 
       <h2 id="install">Installation</h2>
-      <p>The CLI ships as a single static binary distributed via npm:</p>
+      <p>The CLI ships as a single static native-Rust binary distributed via npm:</p>
 <pre><code>npm install -g @arcis/cli
 
 <span class="c"># Verify</span>
 arcis --version</code></pre>
-      <p>No Python required. The binary works on Linux (x64 / arm64 musl), macOS (arm64), and Windows (x64).</p>
+      <p>No Python required. The npm package bundles five platform binaries: Linux x86_64, Linux ARM64, macOS x86_64, macOS ARM64 (Apple Silicon), and Windows x86_64. Cold start is ~30-60ms (vs ~700ms for the legacy Python CLI). The threat database is embedded; the binary runs fully offline by default.</p>
+
+      <p>On WSL, <code>bin/arcis</code> detects a Windows-mounted invocation and prints a friendly error pointing at the Linux binary instead, so you do not get a cryptic <code>spawn ENOENT</code> when invoking the wrong slice.</p>
 
       <h2 id="sca">arcis sca: Supply Chain Attack Scanner</h2>
       <p>Detects compromised packages from known supply chain attacks. Scans your project's lockfiles, <code>node_modules</code>, and Python environments for malicious versions and backdoor artifacts.</p>
 
       <h3>Usage</h3>
-<pre><code><span class="c"># Scan current directory</span>
+<pre><code><span class="c"># Scan current directory against the embedded threat DB (offline)</span>
 arcis sca
 
 <span class="c"># Scan a specific path</span>
 arcis sca /path/to/project
 
-<span class="c"># Also check globally installed packages and .pth backdoors</span>
-arcis sca --system
+<span class="c"># Layer live OSV advisories on top of the embedded DB (24h cached)</span>
+arcis sca . --osv
+arcis sca . --no-cache              <span class="c"># bypass the OSV cache</span>
 
-<span class="c"># List all threats in the database</span>
+<span class="c"># Also check globally installed packages and .pth backdoors</span>
+arcis sca . --system
+
+<span class="c"># Machine-readable / GitHub-compatible output</span>
+arcis sca . --json
+arcis sca . --sarif
+
+<span class="c"># Inventory only: generate a CycloneDX SBOM</span>
+arcis sca . --sbom
+
+<span class="c"># List every threat in the embedded DB with source advisory links</span>
 arcis sca --list-threats</code></pre>
 
       <h3>What it checks</h3>
       <ul>
-        <li><code>package-lock.json</code> (v1 and v3), <code>yarn.lock</code></li>
+        <li><code>package-lock.json</code> (v1 and v3), <code>yarn.lock</code>, <code>pnpm-lock.yaml</code></li>
         <li><code>node_modules/</code> on disk</li>
         <li><code>requirements.txt</code>, <code>Pipfile.lock</code>, <code>poetry.lock</code></li>
         <li>Currently installed pip packages (<code>--system</code>)</li>
         <li>Python <code>site-packages</code> for suspicious <code>.pth</code> backdoor files (<code>--system</code>)</li>
+        <li>Transitive dependency graphs (npm v1/v3 + yarn + pnpm) with full path-to-root reporting</li>
       </ul>
 
-      <h3>Currently detects</h3>
-      <table>
-        <thead><tr><th>Attack</th><th>Versions</th><th>Vector</th></tr></thead>
-        <tbody>
-          <tr>
-            <td><strong>axios (npm)</strong>. March 2026</td>
-            <td>1.14.1, 0.30.4</td>
-            <td>Trojanized dependency deploys a RAT via postinstall</td>
-          </tr>
-          <tr>
-            <td><strong>litellm (PyPI)</strong>. March 2026</td>
-            <td>1.82.7, 1.82.8</td>
-            <td>Credential harvester with persistent <code>.pth</code> backdoor</td>
-          </tr>
-        </tbody>
-      </table>
+      <h3>Threat database</h3>
+      <p><strong>100 curated supply chain advisories</strong> ship embedded in the binary. <strong>59 npm</strong>, <strong>41 PyPI</strong>. <strong>47 critical, 46 high, 7 medium.</strong> Maintained at <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener"><code>Gagancm/arcis</code></a>. Last refresh shipped in the binary: 2026-05-07.</p>
+
+      <p>Sample of notable advisories in the embedded DB:</p>
+      <div class="comparison-table">
+        <table>
+          <thead><tr><th>Package</th><th>Ecosystem</th><th>Attack class</th><th>Reference</th></tr></thead>
+          <tbody>
+            <tr><td><code>axios</code></td><td>npm</td><td>Trojanized <code>plain-crypto-js</code> dependency deploys a RAT via <code>postinstall</code></td><td>2026 advisory</td></tr>
+            <tr><td><code>litellm</code></td><td>PyPI</td><td>Credential harvester + persistent <code>.pth</code> backdoor that survives <code>pip uninstall</code></td><td>2026 advisory</td></tr>
+            <tr><td><code>colourama</code></td><td>PyPI</td><td>Typosquat of <code>colorama</code>, exfiltrates wallet keys</td><td>CVE-2018-1000877</td></tr>
+            <tr><td><code>event-stream</code></td><td>npm</td><td>Trojanized <code>flatmap-stream</code> dependency targeting bitcoin wallets</td><td>CVE-2018-1000620</td></tr>
+            <tr><td><code>ua-parser-js</code></td><td>npm</td><td>Maintainer credentials stolen; trojanized versions deployed cryptominers</td><td>CVE-2021-3962</td></tr>
+            <tr><td><code>peacenotwar</code></td><td>npm</td><td>Protestware sabotage of <code>node-ipc</code></td><td>CVE-2022-23812</td></tr>
+            <tr><td><code>@solana/web3.js</code></td><td>npm</td><td>Wallet-connect hijack via maintainer compromise</td><td>2024 advisory</td></tr>
+            <tr><td><code>torch</code> / <code>torchtriton</code></td><td>PyPI</td><td>PyPI typosquat shipping a credential exfiltrator that survived the index</td><td>CVE-2024-31580 / CVE-2022-45907</td></tr>
+            <tr><td><code>faker</code></td><td>npm</td><td>Maintainer self-sabotage shipped empty/protestware versions</td><td>CVE-2022-42003</td></tr>
+            <tr><td><code>rc</code></td><td>npm</td><td>Maintainer-credential compromise shipped trojanized versions</td><td>CVE-2021-43138</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Run <code>arcis sca --list-threats</code> to dump the full 100-entry list with severities, versions, and source advisory URLs.</p>
+
+      <h3>Live OSV layer (<code>--osv</code>)</h3>
+      <p>With <code>--osv</code>, the scanner also queries the <a href="https://osv.dev" target="_blank" rel="noopener">OSV API</a> for each package in your lockfiles and merges its advisories on top of the embedded DB. Responses are cached at <code>~/.arcis/osv-cache.json</code> with a 24h TTL. <code>--no-cache</code> bypasses the cache when you want a fresh pull. This is the only flag that makes a network call. Everything else runs fully offline.</p>
 
       <h3>Exit codes</h3>
       <ul>
         <li><strong>0</strong>. no compromised packages found</li>
-        <li><strong>1</strong>. compromised package detected</li>
+        <li><strong>1</strong>. compromised package detected (CI-friendly)</li>
+        <li><strong>2</strong>. invalid arguments or unreadable manifest</li>
       </ul>
 
       <div class="callout note">
-        <p><strong>Offline by design.</strong> No network calls, no telemetry. The threat database is bundled with the package. Every detection is auditable in <code>arcis/data/threat-db.json</code>.</p>
+        <p><strong>Offline by default.</strong> The 100-entry threat database is bundled with the binary. Every embedded detection is auditable in <code>packages/arcis-rust/crates/arcis-data/data/threat-db.json</code> with a source advisory link. Use <code>--osv</code> to layer live OSV.dev advisories on top.</p>
       </div>
 
       <div class="callout">
@@ -198,7 +255,7 @@ arcis audit /path/to/project --format json</code></pre>
         <li>TypeScript</li>
       </ul>
 
-      <h3>Detection rules (14 total)</h3>
+      <h3>Detection rules (24 total)</h3>
       <table>
         <thead><tr><th>Rule</th><th>What it flags</th></tr></thead>
         <tbody>

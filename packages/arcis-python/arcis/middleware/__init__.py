@@ -12,6 +12,7 @@ from .rate_limit_sliding import SlidingWindowLimiter
 from .rate_limit_token import TokenBucketLimiter
 from .bot_detection import BotProtection, BotDenied, BotDetectionResult, detect_bot
 from .token_budget import TokenBudget, TokenBudgetExceeded, token_budget
+from .correlation import CorrelationEvent, CorrelationDetections, CorrelationWindow
 
 __all__ = [
     "Arcis",
@@ -33,4 +34,7 @@ __all__ = [
     "TokenBudget",
     "TokenBudgetExceeded",
     "token_budget",
+    "CorrelationEvent",
+    "CorrelationDetections",
+    "CorrelationWindow",
 ]

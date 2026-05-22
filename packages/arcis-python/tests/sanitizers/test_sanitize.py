@@ -91,6 +91,118 @@ class TestSanitizeStringTimingSQL:
         assert "BENCHMARK" not in result.upper()
 
 
+class TestSanitizeStringEncodingChainBypass:
+    """improvements.md §1.1.b: multi-pass URL + HTML decode applied at
+    the top of sanitize_string closes the encoding-stack bypass class.
+    A payload encoded N times with mixed URL + HTML wrappers decodes
+    all the way back to the plain ASCII threat before any detector
+    regex runs.
+
+    All three SDKs share this contract — see Node's `nfkc-bypass`
+    sibling test file for the parallel cases."""
+
+    def test_url_encoded_script_decoded_and_stripped(self):
+        payload = "%3Cscript%3Ealert(1)%3C/script%3E"
+        result = sanitize_string(payload)
+        assert "<script" not in result.lower()
+        # The %3C/%3E shouldn't survive either — they were the encoded
+        # form that's now been decoded + stripped.
+        assert "%3c" not in result.lower()
+
+    def test_double_url_encoded_script_decoded_and_stripped(self):
+        payload = "%253Cscript%253Ealert(1)%253C/script%253E"
+        result = sanitize_string(payload)
+        assert "<script" not in result.lower()
+        assert "%253c" not in result.lower()
+
+    def test_triple_encoded_script_decoded_and_stripped(self):
+        # The mixed-encoding case from improvements.md §1.1.b:
+        # pass 1 URL-decode, pass 2 URL-decode, pass 3 HTML-decode.
+        payload = "%2526%2523x3c%253bscript%2526%2523x3e%253b"
+        result = sanitize_string(payload)
+        assert "<script" not in result.lower()
+        assert "%2526" not in result
+
+    def test_html_hex_entity_script_decoded_and_stripped(self):
+        payload = "&#x3c;script&#x3e;alert(1)&#x3c;/script&#x3e;"
+        result = sanitize_string(payload)
+        assert "<script" not in result.lower()
+        # The literal hex-entity form should also be gone (it decoded).
+        assert "&#x3c" not in result.lower()
+
+    def test_html_named_entity_script_decoded_and_stripped(self):
+        payload = "&lt;script&gt;alert(1)&lt;/script&gt;"
+        result = sanitize_string(payload)
+        assert "<script" not in result.lower()
+        assert "&lt;" not in result.lower()
+
+    def test_safe_url_encoded_text_passes_through(self):
+        # `John%20Doe` should decode to `John Doe`. That's the right
+        # behavior: the encoded form was just a transport detail.
+        result = sanitize_string("John%20Doe")
+        assert result == "John Doe"
+
+    def test_max_passes_bounded_at_four(self):
+        # A pathological deeply-encoded chain should still terminate.
+        # Five layers of URL-encoding: the inner three layers get
+        # decoded; the outermost two remain. The XSS regex won't fire
+        # on those, but the helper must not loop forever.
+        payload = "%" + "25" * 8 + "3Cscript%" + "25" * 8 + "3E"
+        # Just assert it returns (doesn't hang); content depends on
+        # decode pass count which is implementation-bounded.
+        result = sanitize_string(payload)
+        assert isinstance(result, str)
+
+
+class TestSanitizeStringNfkcBypass:
+    """improvements.md §1.1.a: NFKC normalization applied at the top of
+    sanitize_string closes the entire fullwidth-bypass class across all
+    detector categories. Pre-v1.6 only path traversal was NFKC-normalised;
+    bringing every vector under NFKC means a single attack class no
+    longer needs per-vector defence."""
+
+    def test_strips_fullwidth_script_tag(self):
+        # `＜script＞...＜/script＞` should NFKC-normalize
+        # to `<script>...</script>` then hit the XSS strip.
+        payload = "＜script＞alert(1)＜/script＞"
+        result = sanitize_string(payload)
+        assert "<script" not in result.lower()
+        assert "alert(1)" not in result or "<" not in result
+
+    def test_strips_fullwidth_javascript_protocol(self):
+        # Fullwidth lowercase s + fullwidth colon in `javaｓcript：`.
+        payload = "javaｓcript：alert(1)"
+        result = sanitize_string(payload)
+        assert "javascript:" not in result.lower()
+
+    def test_strips_fullwidth_path_traversal(self):
+        # Fullwidth `..／` (dot dot fullwidth-slash) bypasses ASCII
+        # `../` regex without NFKC. After NFKC it becomes literal `../`
+        # and the path-traversal strip catches it.
+        payload = "．．／etc／passwd"
+        result = sanitize_string(payload)
+        assert "../" not in result
+
+    def test_strips_fullwidth_iframe(self):
+        payload = "＜iframe src=\"evil.com\"＞"
+        result = sanitize_string(payload)
+        assert "<iframe" not in result.lower()
+
+    def test_safe_unicode_passes_through(self):
+        # Real-world non-ASCII text shouldn't get touched. Use a normal
+        # Greek letter that NFKC leaves alone.
+        result = sanitize_string("αβγ hello")  # αβγ hello
+        assert result == "αβγ hello"
+
+    def test_safe_ligature_decomposes_but_passes(self):
+        # NFKC DOES decompose ligatures: `ﬃ` (ffi) becomes `ffi`.
+        # That's intentional — security regexes need plain ASCII to
+        # match. Confirm the decomposition happens but no threat tokens
+        # appear in the result.
+        result = sanitize_string("oﬃce.txt")  # `office.txt`
+        assert result == "office.txt"
+
+
 class TestSanitizeStringPathTraversal:
     """Test path traversal prevention in sanitize_string."""
 

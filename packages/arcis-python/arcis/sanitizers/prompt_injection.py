@@ -237,6 +237,64 @@ _SIGNATURES = [
         "ROT13 / Caesar-cipher decode hint",
     ),
 
+    # ── V32: AI agent toolcall injection (improvements.md §1.2) ──────
+    # Modern LLM agents (Claude tool-use, OpenAI function-calling,
+    # ReAct loops) read tool definitions from the system prompt and
+    # JSON-shaped requests from the model. A malicious user can embed
+    # those shapes in their input to trick the host into either:
+    #
+    #   (a) thinking the user already invoked a tool ("here is the
+    #       tool result"), or
+    #   (b) tricking the model into echoing a synthesized tool_call
+    #       that the host runtime will then execute.
+    #
+    # These patterns are NARROW — they match the literal JSON keys
+    # `"tool_call"`, `"function_call"`, `"call_tool"` and inline
+    # `"name":"<dangerous-tool>"` shapes. Won't false-positive on
+    # plain English text discussing tools.
+    (
+        "agent-toolcall-marker",
+        re.compile(
+            r'"(?:tool_call|function_call|call_tool|tool_use|toolUse)"\s*:\s*\{',
+            re.IGNORECASE,
+        ),
+        "high",
+        'Injected agent tool-call JSON shape (e.g. {"tool_call":{...}})',
+    ),
+    (
+        "agent-tool-name-spoof",
+        re.compile(
+            r'"name"\s*:\s*"(?:exec|shell|run_command|system|bash|cmd|python|eval|read_file|write_file|delete_file)"',
+            re.IGNORECASE,
+        ),
+        "high",
+        'Forged tool-name attempting privileged tool invocation',
+    ),
+    (
+        "agent-tool-result-marker",
+        re.compile(
+            r'"(?:tool_result|function_result|tool_output)"\s*:\s*[\{\[\"]',
+            re.IGNORECASE,
+        ),
+        "high",
+        'Injected fake tool-result block (trick agent into trusting fabricated output)',
+    ),
+    (
+        "ansi-escape-sequence",
+        re.compile(r"\x1b\["),
+        "medium",
+        "ANSI escape sequence (terminal hijack / output spoofing on CLI agents)",
+    ),
+    (
+        "claude-tool-use-tags",
+        re.compile(
+            r"</?\s*(?:tool_use|tool_result|invoke|function_calls?|parameter)\b",
+            re.IGNORECASE,
+        ),
+        "high",
+        "Claude/OpenAI tool-use XML-style tag forgery",
+    ),
+
     # --- LOW severity: ambiguous but worth flagging in strict mode ---
     (
         "from-now-on",

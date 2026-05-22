@@ -14,7 +14,6 @@
 //! confined to `probe.rs` where the actual scan fan-out happens.
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
@@ -153,7 +152,7 @@ pub fn read_env_files(cwd: &Path) -> HashMap<String, String> {
     let mut out: HashMap<String, String> = HashMap::new();
     for name in [".env", ".env.local"] {
         let path = cwd.join(name);
-        let Ok(text) = fs::read_to_string(&path) else {
+        let Ok(text) = crate::fs_util::read_to_string_stripped(&path) else {
             continue;
         };
         for raw in text.lines() {
@@ -485,7 +484,7 @@ pub fn discover_routes(cwd: &Path, max_files: usize) -> Vec<DiscoveredRoute> {
         }
         count += 1;
 
-        let Ok(text) = fs::read_to_string(path) else {
+        let Ok(text) = crate::fs_util::read_to_string_stripped(path) else {
             continue;
         };
         let rel = safe_relpath(path, cwd);

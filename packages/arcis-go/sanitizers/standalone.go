@@ -62,7 +62,7 @@ func SanitizeCommand(input string) string {
 		input = input[:core.DefaultMaxInputSize]
 	}
 	result := input
-	for _, pattern := range cmdPatterns {
+	for _, pattern := range commandPatterns {
 		result = pattern.ReplaceAllString(result, "[BLOCKED]")
 	}
 	return result
@@ -114,7 +114,7 @@ func DetectCommandInjection(input string) bool {
 	if input == "" {
 		return false
 	}
-	for _, pattern := range cmdPatterns {
+	for _, pattern := range commandPatterns {
 		if pattern.MatchString(input) {
 			return true
 		}

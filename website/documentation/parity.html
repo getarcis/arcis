@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+  <title>Cross-SDK Parity · Arcis Docs</title>
+  <meta name="description" content="The same payload gets the same block decision in Node, Python, and Go. Enforced by spec/TEST_VECTORS.json and a Python-Node conformance harness.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../#how-it-works">How It Works</a></li>
+        <li><a href="../#languages">Languages</a></li>
+        <li><a href="../#threats">Threats</a></li>
+        <li><a href="../#comparison">Compare</a></li>
+        <li><a href="./" class="active">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="./getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="./">Introduction</a></li>
+        <li><a href="./getting-started.html">Getting Started</a></li>
+        <li><a href="./coverage.html">Stack Coverage</a></li>
+        <li><a href="./parity.html" class="active">Cross-SDK Parity</a></li>
+      </ul>
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="./frameworks.html">Framework Adapters</a></li>
+        <li><a href="./configuration.html">Configuration</a></li>
+        <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+        <li><a href="./detectors/">Detector Reference</a></li>
+      </ul>
+      <h3>CLI</h3>
+      <ul>
+        <li><a href="./cli.html">CLI Overview</a></li>
+        <li><a href="./repl.html">Interactive Console</a></li>
+        <li><a href="./threats-db.html">Supply-chain Threat DB</a></li>
+      </ul>
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="./api-reference.html">API Reference</a></li>
+        <li><a href="./control-plane.html">Control Plane</a></li>
+        <li><a href="./release-notes.html">Release Notes</a></li>
+      </ul>
+      <h3>Why Arcis</h3>
+      <ul>
+        <li><a href="./why-arcis.html">Compared with...</a></li>
+      </ul>
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb"><a href="./">Docs</a> / Cross-SDK Parity</div>
+      <h1>Cross-SDK Parity</h1>
+      <p class="lead">
+        Same input gets the same answer in Node, Python, and Go. Enforced by a shared specification, shared test vectors, and a runtime conformance harness. This page shows you the contract.
+      </p>
+
+      <h2 id="contract">The contract</h2>
+      <p>Every public function in Arcis is governed by three files in the repo:</p>
+      <ol>
+        <li><code>spec/API_SPEC.md</code> &mdash; function signatures, parameter names per language convention, defaults, return shape</li>
+        <li><code>spec/TEST_VECTORS.json</code> &mdash; input strings and expected behavior every SDK must produce identically</li>
+        <li><code>packages/core/patterns.json</code> &mdash; the regex corpus loaded by every SDK at runtime (Node from source, Python from source, Go via <code>//go:embed</code>)</li>
+      </ol>
+      <p>A change that breaks parity fails CI loud. A pattern added to one SDK but not the other two cannot be merged.</p>
+
+      <h2 id="example-xss">Example: XSS sanitization</h2>
+      <p>The same payload through the same call across three runtimes:</p>
+
+      <h3>Input</h3>
+<pre><code><span class="s">"&lt;script&gt;alert(1)&lt;/script&gt;Hello"</span></code></pre>
+
+      <h3>Node</h3>
+<pre><code><span class="k">import</span> { sanitizeString } <span class="k">from</span> <span class="s">'@arcis/node'</span><span class="p">;</span>
+
+sanitizeString<span class="p">(</span><span class="s">'&lt;script&gt;alert(1)&lt;/script&gt;Hello'</span><span class="p">);</span>
+<span class="c">// => "Hello"</span></code></pre>
+
+      <h3>Python</h3>
+<pre><code><span class="k">from</span> arcis <span class="k">import</span> sanitize_string
+
+sanitize_string<span class="p">(</span><span class="s">'&lt;script&gt;alert(1)&lt;/script&gt;Hello'</span><span class="p">)</span>
+<span class="c"># => "Hello"</span></code></pre>
+
+      <h3>Go</h3>
+<pre><code><span class="k">import</span> <span class="s">"github.com/GagancM/arcis/sanitizers"</span>
+
+sanitizers.SanitizeString<span class="p">(</span><span class="s">"&lt;script&gt;alert(1)&lt;/script&gt;Hello"</span><span class="p">)</span>
+<span class="c">// => "Hello"</span></code></pre>
+
+      <h2 id="example-bypass">Example: NFKC + multi-decode</h2>
+      <p>A v1.6 bypass-resistance case. Fullwidth + URL-encoded variants reach the detector as the same string in all three SDKs.</p>
+
+      <h3>Input</h3>
+<pre><code><span class="s">"%EF%BC%9Cscript%EF%BC%9Ealert(1)%EF%BC%9C/script%EF%BC%9E"</span>
+<span class="c">// percent-encoded form of fullwidth &lt;script&gt;alert(1)&lt;/script&gt;</span></code></pre>
+
+      <p>After NFKC normalization the fullwidth glyphs collapse to ASCII <code>&lt;</code> <code>&gt;</code>. After the multi-decode chain the percent-encoded form decodes. The XSS pattern matches. All three SDKs return:</p>
+<pre><code><span class="c">// => "alert(1)"</span></code></pre>
+      <p>(Or the empty string, depending on whether sanitization or detect-then-block was wired up. Either way, identical across SDKs.)</p>
+
+      <h2 id="conformance-harness">Conformance harness</h2>
+      <p>A Python script at <code>documents/attacks/cross_sdk_conformance.py</code> runs 26 representative inputs through both <code>arcis.sanitize_string</code> (Python) and <code>sanitizeString</code> (Node, via a child process), and asserts byte-identical output.</p>
+<pre><code>$ python documents/attacks/cross_sdk_conformance.py
+loaded <span class="s">26</span> test vectors from spec/TEST_VECTORS.json
+running Python sanitize_string...
+<span class="p">  </span><span class="s">26</span> outputs
+running Node sanitizeString...
+<span class="p">  </span><span class="s">26</span> outputs
+
+OK: Python and Node produce identical output for all <span class="s">26</span> test vectors.</code></pre>
+
+      <p>The harness ran during every Arcis dev session in v1.5 and v1.6. The <a href="https://github.com/Gagancm/arcis/blob/main/spec/TEST_VECTORS.json" target="_blank" rel="noopener">TEST_VECTORS.json</a> grows as new vectors land.</p>
+
+      <h2 id="naming">Naming conventions</h2>
+      <p>Same semantics, language-idiomatic names:</p>
+
+      <table>
+        <thead><tr><th>Concept</th><th>Node</th><th>Python</th><th>Go</th></tr></thead>
+        <tbody>
+          <tr><td>Sanitize string</td><td><code>sanitizeString</code></td><td><code>sanitize_string</code></td><td><code>SanitizeString</code></td></tr>
+          <tr><td>Detect XSS</td><td><code>detectXss</code></td><td><code>detect_xss</code></td><td><code>DetectXSS</code></td></tr>
+          <tr><td>Sanitize object</td><td><code>sanitizeObject</code></td><td><code>sanitize_dict</code></td><td><code>SanitizeObject</code></td></tr>
+          <tr><td>Rate limiter</td><td><code>new RateLimiter()</code></td><td><code>RateLimiter()</code></td><td><code>NewRateLimiter()</code></td></tr>
+          <tr><td>Validate URL (SSRF)</td><td><code>validateUrl</code></td><td><code>validate_url_ssrf</code></td><td><code>ValidateURL</code></td></tr>
+          <tr><td>Detect prompt injection</td><td><code>detectPromptInjection</code></td><td><code>detect_prompt_injection</code></td><td><code>DetectPromptInjection</code></td></tr>
+          <tr><td>Correlation window (v1.6)</td><td><code>new CorrelationWindow(...)</code></td><td><code>CorrelationWindow(...)</code></td><td><em>v1.7</em></td></tr>
+          <tr><td>Detect deserialization (v1.6)</td><td><code>detectDeserialization</code></td><td><code>detect_deserialization</code></td><td><em>v1.7</em></td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout note">
+        <p><strong>Go SDK parity caveat.</strong> Most runtime middleware (sanitization, rate limit, CSRF, HPP, prompt injection) is at parity across all three SDKs today. The v1.6-only helpers (<code>CorrelationWindow</code>, <code>detectDeserialization</code>, mutation tester, V32-V34) land in Go in v1.7. The Go SDK already picks up all corpus-level improvements (NFKC, multi-decode, new patterns) because Go reads <code>patterns.json</code> at runtime.</p>
+      </div>
+
+      <h2 id="why">Why parity matters</h2>
+      <p>If a payload bypasses one SDK but not the others, it's a bug everywhere, not just in the SDK that missed it. The shared spec means a fix lands in one PR and propagates to all three SDKs at once. The shared test vectors mean the fix gets locked in for every future release.</p>
+
+      <p>This is the structural difference between Arcis and tools that bolt second-language SDKs on top of a primary one. Arcjet's Python is a sidecar; Aikido's Python is Django/Flask-only with no FastAPI; Snyk has no runtime SDK. Arcis enforces parity as a contract.</p>
+
+      <div class="docs-pagination">
+        <a href="./coverage.html" class="prev">
+          <span class="nav-label">← Previous</span>
+          <span class="nav-title">Stack Coverage</span>
+        </a>
+        <a href="./frameworks.html" class="next">
+          <span class="nav-label">Next →</span>
+          <span class="nav-title">Framework Adapters</span>
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <div class="footer-logo">Arcis<span>.</span></div>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, lean dependency footprint.</p>
+          <div class="footer-badges">
+            <span class="footer-badge"><svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>MIT License</span>
+            <span class="footer-badge">Open Source</span>
+          </div>
+        </div>
+        <div class="footer-columns">
+          <div class="footer-col"><h4>Product</h4><ul><li><a href="../#how-it-works">How It Works</a></li><li><a href="../#languages">Languages</a></li><li><a href="../#threats">Threat Coverage</a></li><li><a href="../#comparison">Comparison</a></li><li><a href="../#get-started">Get Started</a></li></ul></div>
+          <div class="footer-col"><h4>SDKs</h4><ul><li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li><li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li><li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li></ul></div>
+          <div class="footer-col"><h4>Resources</h4><ul><li><a href="./">Documentation</a></li><li><a href="./release-notes.html">Release Notes</a></li><li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li><li><a href="https://github.com/Gagancm/arcis/issues" target="_blank" rel="noopener">Issues</a></li></ul></div>
+        </div>
+      </div>
+      <div class="footer-bottom"><span>MIT License &middot; Built by <a href="https://github.com/Gagancm" target="_blank" rel="noopener" style="color: rgba(255,255,255,0.7);">Gagan</a></span></div>
+    </div>
+  </footer>
+
+  <script>
+    fetch('https://api.github.com/repos/Gagancm/arcis').then(r => r.json()).then(d => { if (d.stargazers_count !== undefined) { const el = document.getElementById('starCount'); if (el) el.textContent = d.stargazers_count; } }).catch(() => {});
+  </script>
+</body>
+</html>

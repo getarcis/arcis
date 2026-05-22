@@ -29,13 +29,16 @@ Mirrors Node's protectLogin(req, options).
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from .bot_detection import detect_bot
 from .signup_protection import _extract_field
 
+if TYPE_CHECKING:
+    from .correlation import CorrelationWindow
 
-LoginBlockReason = str  # 'bot' | 'rate_limited' | 'missing_credentials' | 'ok'
+
+LoginBlockReason = str  # 'bot' | 'rate_limited' | 'missing_credentials' | 'correlation' | 'ok'
 
 
 @dataclass
@@ -55,6 +58,9 @@ def check_login(
     require_credentials: bool = True,
     check_bot: bool = True,
     allowed_bot_categories: Optional[List[str]] = None,
+    correlation_window: "Optional[CorrelationWindow]" = None,
+    client_ip: Optional[str] = None,
+    route: str = "/login",
 ) -> LoginCheckResult:
     """Pure login check. No rate-limit mutation; safe to call repeatedly.
 
@@ -99,12 +105,47 @@ def check_login(
                 },
             )
 
+    username: Optional[str] = None
     if require_credentials:
         username = _extract_field(request, username_field)
         password = _extract_field(request, password_field)
         if not username or not password:
             return LoginCheckResult(
                 allowed=False, reason="missing_credentials"
+            )
+    else:
+        # Still pull the username for correlation tracking when present.
+        username = _extract_field(request, username_field)
+
+    # Correlation window opt-in (improvements.md §1.3 / §1.4). When the
+    # caller passes a window + client IP, record this attempt and refuse
+    # if the window flags the IP as a scanner, credential stuffer, or
+    # race-window probe. Detection-only otherwise; default behavior with
+    # no window passed is unchanged.
+    if correlation_window is not None and client_ip:
+        detections = correlation_window.record(
+            client_ip,
+            vector="login",
+            route=route,
+            method="POST",
+            distinct_value=username if isinstance(username, str) else None,
+        )
+        if (
+            detections.scanner
+            or detections.credential_stuffing
+            or detections.race_window
+        ):
+            return LoginCheckResult(
+                allowed=False,
+                reason="correlation",
+                details={
+                    "scanner": detections.scanner,
+                    "credential_stuffing": detections.credential_stuffing,
+                    "race_window": detections.race_window,
+                    "distinct_vectors": detections.distinct_vectors,
+                    "distinct_values": detections.distinct_values,
+                    "requests_in_window": detections.requests_in_window,
+                },
             )
 
     return LoginCheckResult(allowed=True, reason="ok")

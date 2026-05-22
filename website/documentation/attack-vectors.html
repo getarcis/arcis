@@ -49,25 +49,31 @@
       <ul>
         <li><a href="./">Introduction</a></li>
         <li><a href="./getting-started.html">Getting Started</a></li>
+        <li><a href="./coverage.html">Stack Coverage</a></li>
+        <li><a href="./parity.html">Cross-SDK Parity</a></li>
       </ul>
       <h3>Guides</h3>
       <ul>
         <li><a href="./frameworks.html">Framework Adapters</a></li>
         <li><a href="./configuration.html">Configuration</a></li>
         <li><a href="./attack-vectors.html" class="active">Attack Vectors</a></li>
+        <li><a href="./detectors/">Detector Reference</a></li>
+      </ul>
+      <h3>CLI</h3>
+      <ul>
+        <li><a href="./cli.html">CLI Overview</a></li>
+        <li><a href="./repl.html">Interactive Console</a></li>
+        <li><a href="./threats-db.html">Supply-chain Threat DB</a></li>
       </ul>
       <h3>Reference</h3>
       <ul>
         <li><a href="./api-reference.html">API Reference</a></li>
-        <li><a href="./cli.html">CLI Tools</a></li>
+        <li><a href="./control-plane.html">Control Plane</a></li>
+        <li><a href="./release-notes.html">Release Notes</a></li>
       </ul>
-      <h3>Comparisons</h3>
+      <h3>Why Arcis</h3>
       <ul>
-        <li><a href="./comparisons/vs-arcjet.html">vs Arcjet</a></li>
-        <li><a href="./comparisons/vs-aikido.html">vs Aikido Zen</a></li>
-        <li><a href="./comparisons/vs-snyk.html">vs Snyk</a></li>
-        <li><a href="./comparisons/vs-cloudflare-waf.html">vs Cloudflare WAF</a></li>
-        <li><a href="./comparisons/vs-captchas.html">vs CAPTCHAs</a></li>
+        <li><a href="./why-arcis.html">Compared with...</a></li>
       </ul>
       <h3>Resources</h3>
       <ul>
@@ -85,6 +91,22 @@
       <p class="lead">
         Every attack type Arcis blocks, what it is, and how the protection works. Use this as a reference when investigating a blocked request or auditing coverage.
       </p>
+
+      <h2 id="bypass-resistance">Bypass resistance (v1.6)</h2>
+      <p>Every detector below sits on top of three normalization passes that close the encoding-, casing-, and Unicode-bypass classes in one place. A fullwidth <code>＜script＞</code>, a URL-encoded <code>%3Cscript%3E</code>, and a plain <code>&lt;script&gt;</code> all reach the XSS detector as the same string.</p>
+
+      <h3>NFKC normalization</h3>
+      <p>Unicode NFKC compatibility normalization runs at the top of <code>sanitizeString</code> / <code>sanitize_string</code> / <code>SanitizeString</code> across all three SDKs. Fullwidth glyphs (<code>＜</code>, <code>＞</code>, <code>’</code>), ligatures, half-width katakana, mathematical alphanumeric symbols, and other Unicode variants collapse to their canonical ASCII forms before any pattern matches. This closes the entire fullwidth-bypass class for every detector in one pass.</p>
+
+      <h3>Multi-decode chain</h3>
+      <p>URL decoding plus HTML entity decoding, bounded at 4 passes, runs immediately after NFKC. Triple-encoded <code>%2526lt%253Bscript%2526gt%253B</code> resolves to plain <code>&lt;script&gt;</code> before pattern matching. The bound prevents pathological inputs from blowing up CPU.</p>
+
+      <div class="callout note">
+        <p><strong>Behavior change.</strong> After v1.6, <code>sanitizeString("John%20Doe")</code> returns <code>"John Doe"</code> instead of <code>"John%20Doe"</code>. If you were relying on percent-encoded literals reaching downstream code, decode at your own boundary instead.</p>
+      </div>
+
+      <h3>Mutation tester</h3>
+      <p>A test suite that runs every payload through 8 mutators (alternating case, uppercase, URL-encode once, URL-encode twice, HTML hex entity, HTML decimal entity, HTML named entity, fullwidth ASCII) across the XSS, SQL injection, and path traversal corpora. 142 mutation checks per SDK on Python + Node today; Go variant lands in v1.7. If a future pattern change re-opens any of these bypass classes, CI fails loud.</p>
 
       <h2 id="xss">XSS (Cross-Site Scripting)</h2>
       <p>Attackers inject malicious scripts into pages viewed by other users, stealing cookies, sessions, or defacing content.</p>
@@ -143,7 +165,7 @@
 
       <h2 id="bot">Bot Detection</h2>
       <p>Scrapers, crawlers, and scanner bots probe for vulnerabilities or scrape content.</p>
-      <p><strong>How Arcis stops it:</strong> 646 patterns across 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown). Behavioral fingerprinting on top of user-agent matching.</p>
+      <p><strong>How Arcis stops it:</strong> 635 patterns across 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown). Behavioral fingerprinting on top of user-agent matching.</p>
 
       <h2 id="headers">Security Headers</h2>
       <p>Response headers instruct browsers to enforce additional security policies.</p>
@@ -164,6 +186,22 @@
       <h2 id="hpp">HPP (HTTP Parameter Pollution)</h2>
       <p>Attackers send duplicate query/body parameters to bypass validation (<code>?role=user&amp;role=admin</code>).</p>
       <p><strong>How Arcis stops it:</strong> Normalizes duplicates using last-value-wins. Original multi-value array preserved in <code>req.queryPolluted</code> for auditing. Per-parameter whitelist supported.</p>
+
+      <h2 id="prompt-injection">Prompt Injection (LLM-handler routes)</h2>
+      <p>User-controlled text embeds jailbreak frameworks (DAN/STAN/DUDE), fake <code>&lt;system&gt;</code> tags, base64-smuggled instructions, or (v1.6) agent toolcall markers that pivot the LLM into invoking dangerous tools.</p>
+      <p><strong>How Arcis stops it:</strong> <code>detectPromptInjection</code> / <code>detect_prompt_injection</code> covers 28 signatures across HIGH/MEDIUM/LOW tiers, plus 5 v1.6 patterns for agent toolcall injection: <code>"tool_call"</code> / <code>"function_call"</code> markers, ANSI escape sequences, Claude <code>&lt;tool_use&gt;</code> XML tags, tool-name spoofing (<code>exec</code> / <code>shell</code> / <code>run_command</code>), and <code>"tool_result"</code> markers. <code>tokenBudget</code> middleware caps per-key LLM token spend over a sliding window.</p>
+
+      <h2 id="deserialization">Modern Deserialization (v1.6)</h2>
+      <p>Request bodies that look like serialized-object payloads for runtimes where deserialization equals code execution: Python pickle, Java FastJSON <code>@type</code>, PHP <code>unserialize</code>, Ruby Marshal, .NET <code>BinaryFormatter</code>.</p>
+      <p><strong>How Arcis stops it:</strong> <code>detectDeserialization(payload)</code> / <code>detect_deserialization(payload)</code> returns the runtime tag (<code>'python_pickle'</code>, <code>'java_fastjson'</code>, <code>'php_unserialize'</code>, <code>'ruby_marshal'</code>, <code>'dotnet_binary_formatter'</code>) or null. Detection-only because a forgiving parser might still deserialize the remainder to something dangerous if you strip the head bytes. Caller decides: refuse, log a security event, route to a sandboxed handler.</p>
+
+      <h2 id="graphql">GraphQL Abuse (depth, alias bomb, fragment cycle)</h2>
+      <p>Single GraphQL query asks for the same field thousands of times via aliases (<code>query { a:user{} b:user{} c:user{} ... }</code> repeated 1000x = 1000x backend cost). Or a self-referential fragment (<code>fragment A on User { ...A }</code>) causes the executor to spin.</p>
+      <p><strong>How Arcis stops it:</strong> <code>graphqlGuard</code> rejects oversize queries, deep selection sets, introspection in production, and (v1.6) alias bombs via <code>max_aliases</code> (default 50) and fragment cycles via <code>block_fragment_cycles</code> (default true). DFS walks fragment definitions with brace-matched body extraction so spreads inside a query operation do not pollute the dependency graph.</p>
+
+      <h2 id="correlation">Stateful per-IP Correlation (v1.6)</h2>
+      <p>Today's middleware judges each request alone. That misses scanner sweeps (one IP firing payloads from every category), credential stuffing (dozens of distinct usernames on /login from the same IP in a minute), and race-window probes (POST /transfer + GET /balance within 200ms).</p>
+      <p><strong>How Arcis stops it:</strong> <code>CorrelationWindow</code> middleware records a small rolling event log per IP (60s window, capped at 10,000 IPs, 200 events per IP, LRU eviction). Detection helpers: <code>detect_scanner(ip)</code>, <code>detect_credential_stuffing(ip, route)</code>, <code>detect_race_window(ip, (a, b))</code>. <code>protectLogin / protectSignup / protectApi</code> accept a <code>correlation: { window }</code> option to wire it through with one line and refuse with <code>429</code> + structured detection details on a hit.</p>
 
       <div class="docs-pagination">
         <a href="./configuration.html" class="prev">

@@ -5,18 +5,56 @@
 [![Python 3.9+](https://img.shields.io/pypi/pyversions/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**One-line security middleware for Python web applications. Zero runtime dependencies.**
+**Inside-the-app security middleware for Python. One line of code, 30+ attack vectors handled, zero runtime dependencies.**
 
-Arcis is a cross-platform security library that provides drop-in protection against common web vulnerabilities. Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem with implementations for Node.js, Python, and Go.
+```bash
+pip install arcis
+```
 
-**1,219+ tests passing.**
+```python
+# FastAPI
+from arcis.fastapi import ArcisMiddleware
+app.add_middleware(ArcisMiddleware, block=True)
 
-## What's new in v1.5.0
+# Flask
+from arcis import Arcis
+Arcis(app, block=True)
+
+# Django: settings.py MIDDLEWARE -> 'arcis.django.ArcisMiddleware'
+```
+
+That's it. XSS, SQL injection, NoSQL injection, command injection, path traversal, SSTI, XXE, SSRF, CSRF, HPP, prompt injection (V32), modern deserialization markers (V33), GraphQL alias bomb (V34), bot detection (635 patterns), rate limiting, security headers, error scrubbing, and a stateful per-IP correlation window all wired up before your handler runs.
+
+**Docs**: [Quickstart](https://gagancm.github.io/arcis/documentation/getting-started.html) · [Detector reference](https://gagancm.github.io/arcis/documentation/detectors/) · [Framework adapters](https://gagancm.github.io/arcis/documentation/frameworks.html) · [Why Arcis](https://gagancm.github.io/arcis/documentation/why-arcis.html) · [Release notes](https://gagancm.github.io/arcis/documentation/release-notes.html)
+
+**Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem.** Node + Python + Go SDKs at full parity from one shared specification. **1,688+ Python tests · 2,116+ Node · 483+ Go.** All passing in CI on every PR.
+
+## Framework support
+
+| Framework | Import | Status |
+|---|---|---|
+| FastAPI | `from arcis.fastapi import ArcisMiddleware` | Adapter |
+| Flask | `from arcis import Arcis` | Adapter |
+| Django | `'arcis.django.ArcisMiddleware'` in `MIDDLEWARE` | Adapter |
+| Litestar (and any ASGI host) | `from arcis.litestar import ArcisMiddleware` | Adapter |
+
+## What's new in v1.6.0
+
+- **NFKC normalization + multi-decode chain** at the top of `sanitize_string`. Fullwidth glyphs, URL-encoded `<script>`, and triple-encoded payloads now match the same patterns as their plain forms.
+- **Modern deserialization detection (V33)**: new `detect_deserialization(payload)` returns `'python_pickle'`, `'java_fastjson'`, `'php_unserialize'`, `'ruby_marshal'`, `'dotnet_binary_formatter'`, or `None`. Detection-only because the right response is to refuse the request, not strip the bytes.
+- **GraphQL alias bomb + fragment cycle (V34)**: `GraphqlGuardOptions` gains `max_aliases` (default 50) and `block_fragment_cycles` (default `True`). Brace-matched fragment dependency-graph walker catches self-reference and longer cycles.
+- **Toolcall-injection patterns (V32)**: 5 new patterns in `detect_prompt_injection` covering `"tool_call"` / `"function_call"` markers, ANSI escapes, Claude `<tool_use>` tags, tool-name spoofing.
+- **`CorrelationWindow` middleware**: stateful per-IP rolling window (60s default) with scanner / credential-stuffing / race-window detection. Memory-capped at 10,000 IPs, 200 events per IP, LRU eviction.
+- **`check_login` / `check_api` correlation wireup**: pass `correlation_window=` + `client_ip=` + `route=` and the helper records the attempt and returns `reason="correlation"` on a detection hit.
+- **Mutation tester**: 142 case-flip / URL-encode / HTML-entity / fullwidth variants ran against the XSS / SQLi / path corpora. Catches future pattern or normalization regressions that would re-open a bypass class.
+- **Interactive REPL (via `@arcis/cli`)**: `arcis` with no args drops into a full-screen TUI with persistent welcome banner, scrollback, slash commands, history file at `~/.arcis/history`, F2 jump-to-finding.
+
+## What was new in v1.5.0
 
 - **SDK-only release.** `pip install arcis` ships the runtime middleware with zero runtime dependencies. The CLI moved to its own package: `npm install -g @arcis/cli`.
 - **Litestar adapter** (`arcis.litestar.ArcisMiddleware`) — pure-ASGI, type-only `litestar` import. Composes with Litestar via `DefineMiddleware` and with any other ASGI host (Starlette, Quart, Hypercorn) via direct instantiation.
 - **`verify_email_mx_async`** — async-safe MX verification. The sync `verify_email_mx` was the one user-facing call that blocked the event loop on FastAPI handlers; the async variant uses `dns.asyncresolver` natively (or threads to `asyncio.to_thread` as fallback).
-- **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 646-pattern bot corpus, `Guards` API for non-HTTP contexts.
+- **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 635-pattern bot corpus, `Guards` API for non-HTTP contexts.
 - **Composite helpers**: `signup_protection` (rate-limit + bot + email-MX) — full recipe for protecting account creation.
 - The middleware API is unchanged. Existing `Arcis(app)` / `app.add_middleware(ArcisMiddleware, ...)` code keeps working.
 - See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
@@ -151,7 +189,7 @@ bucket = TokenBucketLimiter(capacity=100, refill_rate=10)  # 10 tokens/sec
 ```
 
 ### Bot Detection
-Detect and categorize bots with 80+ patterns across 7 categories:
+Detect and categorize bots with 635 patterns across 7 categories:
 
 ```python
 from arcis.middleware import BotDetector
@@ -280,7 +318,7 @@ pytest tests/ --cov=arcis --cov-report=html
 | `RateLimiter` | Fixed window rate limiting |
 | `SlidingWindowLimiter` | Sliding window rate limiting |
 | `TokenBucketLimiter` | Token bucket rate limiting |
-| `BotDetector` | Bot detection with 80+ patterns |
+| `BotDetector` | Bot detection with 635 patterns |
 | `CsrfProtection` | CSRF double-submit cookie protection |
 | `SecurityHeaders` | Security headers |
 | `Validator` | Input validation |

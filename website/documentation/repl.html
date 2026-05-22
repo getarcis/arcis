@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+  <title>Interactive Console (REPL) · Arcis Docs</title>
+  <meta name="description" content="Arcis Console: the interactive REPL on the @arcis/cli binary. Welcome banner, scrollback, slash commands, F2 jump-to-finding, history at ~/.arcis/history.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../#how-it-works">How It Works</a></li>
+        <li><a href="../#languages">Languages</a></li>
+        <li><a href="../#threats">Threats</a></li>
+        <li><a href="../#comparison">Compare</a></li>
+        <li><a href="./" class="active">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="./getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="./">Introduction</a></li>
+        <li><a href="./getting-started.html">Getting Started</a></li>
+        <li><a href="./coverage.html">Stack Coverage</a></li>
+        <li><a href="./parity.html">Cross-SDK Parity</a></li>
+      </ul>
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="./frameworks.html">Framework Adapters</a></li>
+        <li><a href="./configuration.html">Configuration</a></li>
+        <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+        <li><a href="./detectors/">Detector Reference</a></li>
+      </ul>
+      <h3>CLI</h3>
+      <ul>
+        <li><a href="./cli.html">CLI Overview</a></li>
+        <li><a href="./repl.html" class="active">Interactive Console</a></li>
+        <li><a href="./threats-db.html">Supply-chain Threat DB</a></li>
+      </ul>
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="./api-reference.html">API Reference</a></li>
+        <li><a href="./control-plane.html">Control Plane</a></li>
+        <li><a href="./release-notes.html">Release Notes</a></li>
+      </ul>
+      <h3>Why Arcis</h3>
+      <ul>
+        <li><a href="./why-arcis.html">Compared with...</a></li>
+      </ul>
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb"><a href="./">Docs</a> / <a href="./cli.html">CLI</a> / Interactive Console</div>
+      <h1>Interactive Console</h1>
+      <p class="lead">
+        Bare <code>arcis</code> in a TTY drops into a full-screen REPL. Persistent welcome banner, scrollback, slash commands, command history, jump-to-finding navigation. Built on <code>ratatui</code> + <code>crossterm</code>. New in v1.6.
+      </p>
+
+      <div class="callout note">
+        <p><strong>One-shot still works.</strong> Piping, scripting, CI runners, and explicit subcommands all bypass the REPL automatically. The console is a TTY-only addition, never a regression.</p>
+      </div>
+
+      <h2 id="auto-launch">Auto-launch rules</h2>
+      <p>The REPL only starts when <em>all</em> four of these are true:</p>
+      <ul>
+        <li>stdout is a TTY</li>
+        <li>stdin is a TTY</li>
+        <li>the <code>CI</code> environment variable is unset</li>
+        <li>the <code>ARCIS_NO_REPL</code> environment variable is unset</li>
+      </ul>
+      <p>Anything else (pipes, redirects, CI runners, scripts, explicit subcommand) falls through to the static welcome screen.</p>
+
+      <h2 id="banner">Welcome banner</h2>
+      <p>The console opens with a persistent banner pinned to the top of the scrollback. It carries:</p>
+      <ul>
+        <li>Mascot + wordmark</li>
+        <li>Current CLI version + working directory</li>
+        <li>Quick-start commands (<code>audit .</code> / <code>sca .</code> / <code>scan &lt;url&gt;</code>)</li>
+        <li>More commands (<code>arcis --help</code> / <code>arcis --version</code> / <code>arcis --list</code> / <code>arcis update</code>)</li>
+        <li>Available adapters per language: <code>node:</code>, <code>python:</code>, <code>go:</code></li>
+        <li>Console commands list (<code>/help</code>, <code>/clear</code>, <code>/cwd</code>, <code>/export</code>, <code>/exit</code>)</li>
+        <li>Keymap hint (Ctrl-C cancels; PgUp/PgDn scrolls; F2 jumps to next finding)</li>
+      </ul>
+      <p>The banner is part of scrollback (not a fixed header), so it slides off-screen as work accumulates. Same shape as Claude Code's session welcome.</p>
+
+      <h2 id="commands">Commands</h2>
+      <p>Anything that does not start with <code>/</code> runs as <code>arcis &lt;cmd&gt;</code>:</p>
+<pre><code>audit .                <span class="c"># static analysis of the current directory</span>
+sca .                  <span class="c"># supply-chain scan</span>
+scan http://localhost  <span class="c"># probe a live endpoint</span>
+audit --json            <span class="c"># flags pass through normally</span></code></pre>
+
+      <p>Slash commands:</p>
+
+      <table>
+        <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>/help</code></td><td>Re-render the welcome banner inline</td></tr>
+          <tr><td><code>/clear</code></td><td>Wipe scrollback (banner re-appears at top)</td></tr>
+          <tr><td><code>/cwd</code></td><td>Print current working directory</td></tr>
+          <tr><td><code>/cwd &lt;path&gt;</code></td><td>Change working directory without leaving the console</td></tr>
+          <tr><td><code>/export</code></td><td>Save the current session to <code>arcis-session-&lt;epoch&gt;.md</code> in the cwd</td></tr>
+          <tr><td><code>/export session.md</code></td><td>Save to an explicit filename</td></tr>
+          <tr><td><code>/exit</code> · <code>/quit</code></td><td>Leave the console (<code>Ctrl-D</code> on empty input also works)</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="keymap">Keymap</h2>
+
+      <table>
+        <thead><tr><th>Key</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>Enter</code></td><td>Submit the current line</td></tr>
+          <tr><td><code>↑</code> / <code>↓</code></td><td>Walk through command history (newest first)</td></tr>
+          <tr><td><code>←</code> / <code>→</code></td><td>Move cursor within the input</td></tr>
+          <tr><td><code>Home</code> / <code>End</code></td><td>Cursor to start / end of input</td></tr>
+          <tr><td><code>Backspace</code> / <code>Delete</code></td><td>Edit current input</td></tr>
+          <tr><td><code>PgUp</code> / <code>PgDn</code></td><td>Scroll the scrollback by a page (a "page" is the visible area)</td></tr>
+          <tr><td><code>F2</code></td><td>Jump to the next finding strictly below the current view top, wraps to first</td></tr>
+          <tr><td><code>Shift-F2</code></td><td>Jump to the previous finding above the current view top, wraps to last</td></tr>
+          <tr><td><code>Esc</code></td><td>Clear current input and snap back to the tail of scrollback</td></tr>
+          <tr><td><code>Ctrl-C</code></td><td>Cancel the running command if one is in flight; otherwise clear the current input</td></tr>
+          <tr><td><code>Ctrl-D</code></td><td>Exit when the input is empty</td></tr>
+        </tbody>
+      </table>
+
+      <p>A "finding" is any scrollback line whose trimmed start matches one of <code>CRITICAL </code>, <code>HIGH </code>, <code>MEDIUM </code>, <code>LOW </code>, <code>CRIT </code>, <code>WARN </code>, <code>INFO </code>. The detector is intentionally simple so it works against every Arcis CLI output format (plain text, verbose, etc.) without parsing JSON.</p>
+
+      <h2 id="history">Command history</h2>
+      <p>History is persisted across sessions at <code>~/.arcis/history</code> (Linux/macOS) or <code>%USERPROFILE%\.arcis\history</code> (Windows). Bounded at 200 entries; auto-compacted when the file grows past 2× the cap. Duplicate adjacent entries collapse to one. Slash commands are persisted too.</p>
+
+      <p>Override the file location with the <code>ARCIS_HISTORY_PATH</code> environment variable. Read-only home directories fall back silently to in-memory history.</p>
+
+      <h2 id="ansi">ANSI color preservation</h2>
+      <p>Subprocess output is piped through an SGR parser that converts inline ANSI escape sequences into ratatui spans. Supports:</p>
+      <ul>
+        <li>Reset (<code>0</code>), bold (<code>1</code>), dim (<code>2</code>), underline (<code>4</code>) and unset counterparts</li>
+        <li>8-color foreground (<code>30</code>-<code>37</code>) + bright foreground (<code>90</code>-<code>97</code>)</li>
+        <li>256-color foreground (<code>38;5;N</code>)</li>
+        <li>24-bit truecolor foreground (<code>38;2;R;G;B</code>) - what Arcis itself uses for emerald</li>
+      </ul>
+      <p>Background colors and cursor-movement sequences are silently dropped (the scrollback owns its own background; cursor positioning inside a TUI pane would corrupt the layout).</p>
+
+      <p>The console sets <code>CLICOLOR_FORCE=1</code> on child processes so well-behaved tools keep their color when piped. <code>ARCIS_NO_REPL=1</code> is also set on children to prevent recursive REPL boot.</p>
+
+      <h2 id="scrollback">Scrollback</h2>
+      <p>Bounded at 5,000 lines. Older lines drop off the top in 256-line chunks. New output streams in real time; the prompt stays pinned at the bottom. When you scroll up (PgUp, F2, Shift-F2), the view freezes there until you press <code>Esc</code>, <code>End</code>, or submit another command. A small dim status in the prompt row shows the scroll offset.</p>
+
+      <h2 id="export">Session export</h2>
+      <p><code>/export</code> writes the current scrollback to a markdown file. Default name is <code>arcis-session-&lt;unix-epoch&gt;.md</code> in the cwd; pass an explicit filename to override. The file opens with a header (version, cwd, ISO timestamp) and then the full scrollback wrapped in a single fenced code block so it renders monospaced in any markdown viewer.</p>
+
+      <h2 id="disable">Disabling the REPL</h2>
+      <p>Set <code>ARCIS_NO_REPL=1</code> in your shell, or invoke a subcommand directly. Both routes hit the static welcome screen instead. Examples:</p>
+<pre><code><span class="c"># Skip the REPL for this invocation</span>
+ARCIS_NO_REPL=<span class="s">1</span> arcis
+
+<span class="c"># Pipe-friendly invocation: REPL is auto-skipped because stdout is not a TTY</span>
+arcis audit . | tee audit.log
+
+<span class="c"># CI: ARCIS_NO_REPL is implied by the CI env var</span>
+CI=<span class="s">1</span> arcis audit .</code></pre>
+
+      <h2 id="recovery">Recovery from a stuck terminal</h2>
+      <p>The console uses raw mode + the alternate screen buffer. A panic mid-render would normally leave the terminal in raw mode. The console wraps every exit path in a <code>TerminalGuard</code> that restores cooked mode, leaves the alt-screen, and shows the cursor in its drop impl. If you still end up in a stuck terminal (e.g., the binary was hard-killed), run <code>reset</code> or <code>stty sane</code> to restore.</p>
+
+      <div class="docs-pagination">
+        <a href="./cli.html" class="prev">
+          <span class="nav-label">← Previous</span>
+          <span class="nav-title">CLI Overview</span>
+        </a>
+        <a href="./threats-db.html" class="next">
+          <span class="nav-label">Next →</span>
+          <span class="nav-title">Supply-chain Threat DB</span>
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <div class="footer-logo">Arcis<span>.</span></div>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, lean dependency footprint.</p>
+          <div class="footer-badges">
+            <span class="footer-badge">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+              MIT License
+            </span>
+            <span class="footer-badge">Open Source</span>
+          </div>
+        </div>
+        <div class="footer-columns">
+          <div class="footer-col">
+            <h4>Product</h4>
+            <ul>
+              <li><a href="../#how-it-works">How It Works</a></li>
+              <li><a href="../#languages">Languages</a></li>
+              <li><a href="../#threats">Threat Coverage</a></li>
+              <li><a href="../#comparison">Comparison</a></li>
+              <li><a href="../#get-started">Get Started</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>SDKs</h4>
+            <ul>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li>
+              <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Resources</h4>
+            <ul>
+              <li><a href="./">Documentation</a></li>
+              <li><a href="./release-notes.html">Release Notes</a></li>
+              <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+              <li><a href="https://github.com/Gagancm/arcis/issues" target="_blank" rel="noopener">Issues</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>MIT License &middot; Built by <a href="https://github.com/Gagancm" target="_blank" rel="noopener" style="color: rgba(255,255,255,0.7);">Gagan</a></span>
+        <div class="footer-social">
+          <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          </a>
+          <a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener" aria-label="npm">
+            <svg viewBox="0 0 16 16"><path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    fetch('https://api.github.com/repos/Gagancm/arcis')
+      .then(r => r.json())
+      .then(d => { if (d.stargazers_count !== undefined) { const el = document.getElementById('starCount'); if (el) el.textContent = d.stargazers_count; } })
+      .catch(() => {});
+  </script>
+</body>
+</html>

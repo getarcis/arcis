@@ -2,6 +2,55 @@
   "_comment": "Single source of truth for the website's Recently Shipped section + the standalone changelog page. The dashboard's 'Changelog' sidebar link also points at the rendered HTML view. Add new versions to the top of `releases`. Keep summaries one sentence; full bullets in `details`.",
   "releases": [
     {
+      "version": "1.6.0",
+      "date": "2026-05-21",
+      "summary": "Interactive REPL (Arcis Console). Welcome screen V2. Tier 1 detection hardening across all 3 SDKs (NFKC, multi-decode, mutation tester). New vectors V32 toolcall injection, V33 deserialization markers, V34 GraphQL alias bomb + fragment cycle. First stateful primitive: CorrelationWindow per-IP rolling window.",
+      "details": [
+        "Interactive REPL via bare `arcis` in a TTY: persistent welcome banner, scrollback, slash commands (`/help`, `/clear`, `/cwd`, `/export`, `/exit`), command history at `~/.arcis/history` (200-entry cap, override via `ARCIS_HISTORY_PATH`), F2 / Shift-F2 jump-to-finding, PgUp/PgDn page scroll, ANSI SGR color preservation in subprocess output. Auto-disabled under CI, when piped, or with `ARCIS_NO_REPL=1`.",
+        "Welcome screen V2: rounded box layout with the version title embedded in the top border, two-pane body (left identity panel with mascot + cwd, right command sections), in-box footer separator + centered help hint, prompt area below the box. The Available Adapters section lists `node` (10 adapters), `python` (4 adapters), and `go` (5 adapters) so the runtime SDK surface is visible at a glance.",
+        "NFKC Unicode normalization at the top of `sanitize_string` / `sanitizeString` / `SanitizeString` across all 3 SDKs. Closes the fullwidth-bypass class (`<script>` written with fullwidth characters now matches the same patterns as plain ASCII) for every detector in one pass.",
+        "Multi-decode chain (URL + HTML entity decode, bounded at 4 passes) layered after NFKC. Closes encoding-stack bypass (triple-encoded `<script>` now decodes to plain `<script>` before pattern matching). Behavior change: `John%20Doe` now decodes to `John Doe` inside sanitize.",
+        "Go SDK now embeds and parses `patterns.json` at `init()` via `//go:embed`. Hardcoded var blocks (XSS / SQL / path / command) removed from `sanitize.go`. SHA-256 sync-check test (`TestBundledPatternsMatchCanonical`) gates drift between the canonical `packages/core/patterns.json` and the bundled copy.",
+        "Mutation tester (Python + Node): 8 mutators × 18 base payloads × 3 categories = 142 mutation checks per SDK. Catches future pattern or normalization regressions that would re-open a bypass class. Go variant deferred to v1.7.",
+        "Pattern quality additions: Oracle `DBMS_*` package call detection (`sqli-oracle-dbms-packages`), shell `${IFS}` bypass (`cmdi-ifs-bypass`).",
+        "V32 AI agent toolcall injection: 5 new patterns in `detect_prompt_injection` / `detectPromptInjection` covering `\"tool_call\"` / `\"function_call\"` markers, tool-name spoofing (`exec` / `shell` / `run_command`), `\"tool_result\"` markers, ANSI escape sequences, Claude `<tool_use>` XML tags.",
+        "V33 modern deserialization markers: new `detectDeserialization` / `detect_deserialization` returning `python_pickle` (`\\x80` + protocol byte), `java_fastjson` (`\"@type\":\"...\"`), `php_unserialize` (`O:N:\"Class\":M:{`), `ruby_marshal` (`\\x04\\x08`), `dotnet_binary_formatter` (`\\x00\\x01\\x00\\x00\\x00`), or `null`. Detection-only: the right response is to refuse the request, not strip the bytes.",
+        "V34 GraphQL alias bomb + fragment cycle: `graphqlGuard` accepts `max_aliases` / `maxAliases` (default 50) and `block_fragment_cycles` / `blockFragmentCycles` (default true). DFS over fragment definitions with brace-matched body extraction so spreads inside a query operation do not pollute the dependency graph. Precedence: depth -> introspection -> aliases -> fragment_cycle -> length.",
+        "`CorrelationWindow` middleware: stateful per-IP rolling window (60s default), LRU eviction across IPs (max 10,000), per-IP event cap (max 200). Detection helpers: scanner (distinct vectors x min requests), credential stuffing (distinct values per route), race window (route-pair within 200ms). Read-only `detect_*` API + `stats()` for dashboards.",
+        "`protectLogin / protectSignup / protectApi` (Node) and `check_login` / `check_api` (Python) accept a `correlation` option / kwargs. When the window flags the IP as scanner / credential stuffer / race probe, the helper refuses with `429` + structured detection details. Per-framework factories (FastAPI / Litestar / Django / Gin / Echo / chi / Fiber / nethttp) deferred to v1.7.",
+        "Test count: Python 1,688+ (was 1,219), Node 2,116+ (was 1,869), Go 483+. Cross-SDK conformance harness at `documents/attacks/cross_sdk_conformance.py` enforces Python ↔ Node parity on 26 vectors."
+      ],
+      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)", "@arcis/cli (npm, native binary)"]
+    },
+    {
+      "version": "1.5.4",
+      "date": "2026-05-21",
+      "summary": "Python shim refinements (PyPI). Pip-install-arcis fallback installer hardened.",
+      "packages": ["arcis (PyPI)"]
+    },
+    {
+      "version": "1.5.3",
+      "date": "2026-05-21",
+      "summary": "@arcis/cli 1.0.2: first working CLI publish. Closes the v1.5.2 packaging bug where `bin/arcis` launcher was gitignored. Plus 13 pilot-found bug fixes.",
+      "details": [
+        "Critical packaging fix: `bin/arcis` launcher was previously excluded from npm pack via `.gitignore`. v1.0.2 is the first @arcis/cli publish where the launcher actually ships.",
+        "13 bugs closed from the 2026-05-21 pilot session: `arcis \"\"` now errors like any other unknown command; `arcis audit --fail-on <lvl>` implemented; `arcis audit --verbose` finding-by-finding output; `--baseline` strips UTF-8/UTF-16 BOM; shim catches `KeyboardInterrupt` and exits 130; `arcis sca` gains `--json` and `--sarif`; `arcis scan --csrf-from` semantics aligned with the spec; TLS errors differentiated from `host unreachable`; `arcis check` clean-input feedback now matches the THREAT block visual weight; WSL gets a friendly error when invoking the Windows binary; doc fix `cat` -> `Out-Host` in the PowerShell test playbook; sca now matches the colourama 0.1.6 supply chain attack."
+      ],
+      "packages": ["arcis (PyPI)", "@arcis/cli (npm, native binary)"]
+    },
+    {
+      "version": "1.5.2",
+      "date": "2026-05-21",
+      "summary": "arcis CLI welcome screen (Claude-Code-shape, emerald, burst mascot) + Python pip-install-arcis shim restoration.",
+      "packages": ["arcis (PyPI)", "@arcis/node", "@arcis/cli (npm, native binary)"]
+    },
+    {
+      "version": "1.5.1",
+      "date": "2026-05-21",
+      "summary": "v1.5 parity completion. 8 Tier-1 vectors landed Node-only in v1.5.0; v1.5.1 brings Python + Go to parity. E1+E2 ergonomics across all 8 adapters. Publish workflow auto-publishes Node + Python + CLI + Go tag on every main merge.",
+      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)", "@arcis/cli (npm, native binary)"]
+    },
+    {
       "version": "1.5.0",
       "date": "2026-05-10",
       "summary": "10 Node framework adapters, Litestar (Python), chi + Fiber (Go), 9 new attack vectors, AI-era protections, Guards API, native-Rust CLI.",
@@ -12,7 +61,7 @@
         "9 new attack vectors wired into block-mode middleware: #21 GraphQL depth-bombs (`graphqlGuard`), #22 LDAP injection, #23 XPath injection, #24 email-header injection, #25 mass assignment (`massAssign`), #26 HTTP method tampering (`methodAllowlist`), #27 response splitting (`responseSplittingGuard`), #30 event-loop overload (`eventLoopProtection`), #31 SSRF DNS TOCTOU (`validateUrlAsync` + `pinnedDnsLookup` + `safeFollowRedirect`).",
         "AI-era protections at parity across SDKs: 28-signature prompt-injection library covering jailbreak frameworks (DAN/STAN/DUDE), system-prompt extraction, fake `&lt;system&gt;` tags, conversation-replay forgeries, base64/ROT13 smuggling.",
         "`tokenBudget` middleware for LLM-handler routes: per-key sliding-window token cap with optional per-request size limit, custom estimator hook, `X-Token-Budget-*` response headers.",
-        "Bot corpus expanded to 646 patterns sourced from a curated MIT corpus + supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes).",
+        "Bot corpus expanded to 635 patterns sourced from a curated MIT corpus + supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes).",
         "Composite helpers: `protectLogin`, `protectSignup`, `protectApi` (Node) and `signup_protection` (Python). Full recipes for protecting common high-risk surfaces.",
         "Dry-run / `onSanitize` mode: observe attack surface without enforcing.",
         "Guards API: `arcis.guard({ input, context })` for queue consumers, agent tool handlers, and other non-HTTP contexts where there is no request object.",

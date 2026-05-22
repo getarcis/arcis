@@ -174,6 +174,15 @@ export const SQL_PATTERNS = [
   /\bpg_sleep\s*\(/gi,
   /** Time-based blind: MSSQL WAITFOR DELAY */
   /\bWAITFOR\s+DELAY\b/gi,
+  /**
+   * Oracle DBMS_* stdlib packages used for time-based blind SQLi
+   * (DBMS_LOCK.SLEEP, DBMS_PIPE.RECEIVE_MESSAGE) and other Oracle
+   * abuse paths. No legitimate user input contains these. Mirrors
+   * `sqli-oracle-dbms-packages` in packages/core/patterns.json —
+   * improvements.md §1.1.e Q3. Must stay in sync until Node
+   * migrates to patterns.json-at-runtime (planned v1.7).
+   */
+  /\bDBMS_(?:LOCK|PIPE|UTILITY|XSLPROCESSOR|JAVA|OUTPUT|SCHEDULER)\b/gi,
 ] as const;
 
 // =============================================================================
@@ -219,6 +228,15 @@ export const COMMAND_PATTERNS = [
   /[;&|`]/g,
   /** Command substitution: $( ... ) — matched as a pair to reduce false positives */
   /\$\(/g,
+  /**
+   * POSIX shell IFS-substitution: ${IFS} or ${IFS%??}.
+   * Attackers use this to inject spaces past metacharacter filters
+   * in payloads like `;cat${IFS}/etc/passwd`. Mirrors
+   * `cmdi-ifs-bypass` in packages/core/patterns.json — improvements.md
+   * §1.1.e Q5. Must stay in sync until Node migrates to
+   * patterns.json-at-runtime (planned v1.7).
+   */
+  /\$\{IFS(?:%[^}]*)?\}/g,
   /** URL-encoded control characters (%00-%0F): null, tab, vtab, formfeed, LF, CR */
   /%0[0-9a-f]/gi,
 ] as const;

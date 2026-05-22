@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arcis"
-version = "1.5.4"
+version = "1.5.5"
 description = "Inside-the-app security middleware for Python. One install protects FastAPI, Flask, and Django against XSS, SQL injection, CSRF, SSRF, HPP, prompt injection, bot traffic, rate limiting, and 20+ more attack types. Includes prompt-injection signature library, LLM token-budget middleware, and a 646-pattern bot corpus with consistent API across the Node and Go SDKs. The CLI ships separately at npm install -g @arcis/cli."
 readme = "README.md"
 license = "MIT"
