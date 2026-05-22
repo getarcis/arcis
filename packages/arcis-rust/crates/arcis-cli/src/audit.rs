@@ -1499,7 +1499,7 @@ mod tests {
 
         // Critical: only fail on Critical
         assert!(!should_fail(&high_and_low, FailOn::Critical));
-        assert!(should_fail(&vec![mk(Severity::Critical)], FailOn::Critical));
+        assert!(should_fail(&[mk(Severity::Critical)], FailOn::Critical));
 
         // High: fail on Critical or High, not Medium or Low
         assert!(should_fail(&high_and_low, FailOn::High));

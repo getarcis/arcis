@@ -205,6 +205,12 @@ struct RunningCommand {
 /// Messages from the reader thread to the main loop.
 enum ReaderEvent {
     Line(String),
+    /// Reserved for an explicit child-exit signal. Channel disconnection
+    /// currently delivers the same information (the receiver sees
+    /// `Disconnected` once both reader threads drop their senders), so
+    /// `Done` is not constructed today. Keeping the variant lets us add
+    /// explicit signalling later without a breaking enum change.
+    #[allow(dead_code)]
     Done,
 }
 
@@ -664,7 +670,6 @@ impl ReplState {
                                 "  (arcis {} exited {} in {ms}ms)",
                                 running.cmd_label, code
                             ));
-                            updated = true;
                             return true; // running stays None
                         }
                         Ok(None) => {
@@ -777,10 +782,8 @@ fn event_loop(
                             state.cursor = 0;
                         }
                     }
-                    KeyCode::Char('d') if ctrl => {
-                        if state.input.is_empty() {
-                            return Ok(());
-                        }
+                    KeyCode::Char('d') if ctrl && state.input.is_empty() => {
+                        return Ok(());
                     }
                     KeyCode::Char(c) if !ctrl => {
                         let byte_idx = char_pos_to_byte(&state.input, state.cursor);
@@ -788,14 +791,12 @@ fn event_loop(
                         state.cursor += 1;
                         state.history_cursor = None;
                     }
-                    KeyCode::Backspace => {
-                        if state.cursor > 0 {
-                            let prev_byte = char_pos_to_byte(&state.input, state.cursor - 1);
-                            let cur_byte = char_pos_to_byte(&state.input, state.cursor);
-                            state.input.replace_range(prev_byte..cur_byte, "");
-                            state.cursor -= 1;
-                            state.history_cursor = None;
-                        }
+                    KeyCode::Backspace if state.cursor > 0 => {
+                        let prev_byte = char_pos_to_byte(&state.input, state.cursor - 1);
+                        let cur_byte = char_pos_to_byte(&state.input, state.cursor);
+                        state.input.replace_range(prev_byte..cur_byte, "");
+                        state.cursor -= 1;
+                        state.history_cursor = None;
                     }
                     KeyCode::Delete => {
                         let total = state.input.chars().count();
@@ -806,10 +807,8 @@ fn event_loop(
                             state.history_cursor = None;
                         }
                     }
-                    KeyCode::Left => {
-                        if state.cursor > 0 {
-                            state.cursor -= 1;
-                        }
+                    KeyCode::Left if state.cursor > 0 => {
+                        state.cursor -= 1;
                     }
                     KeyCode::Right => {
                         let total = state.input.chars().count();
@@ -1177,24 +1176,22 @@ fn apply_sgr(mut style: Style, codes: &[i32]) -> Style {
             36 => style = style.fg(Color::Cyan),
             37 => style = style.fg(Color::Gray),
             39 => style = style.fg(Color::Reset),
-            38 => {
+            38 if i + 1 < codes.len() => {
                 // 38;2;R;G;B or 38;5;N. Anything else: drop.
-                if i + 1 < codes.len() {
-                    match codes[i + 1] {
-                        2 if i + 4 < codes.len() => {
-                            let r = codes[i + 2].clamp(0, 255) as u8;
-                            let g = codes[i + 3].clamp(0, 255) as u8;
-                            let b = codes[i + 4].clamp(0, 255) as u8;
-                            style = style.fg(Color::Rgb(r, g, b));
-                            i += 4;
-                        }
-                        5 if i + 2 < codes.len() => {
-                            let n = codes[i + 2].clamp(0, 255) as u8;
-                            style = style.fg(Color::Indexed(n));
-                            i += 2;
-                        }
-                        _ => {}
+                match codes[i + 1] {
+                    2 if i + 4 < codes.len() => {
+                        let r = codes[i + 2].clamp(0, 255) as u8;
+                        let g = codes[i + 3].clamp(0, 255) as u8;
+                        let b = codes[i + 4].clamp(0, 255) as u8;
+                        style = style.fg(Color::Rgb(r, g, b));
+                        i += 4;
                     }
+                    5 if i + 2 < codes.len() => {
+                        let n = codes[i + 2].clamp(0, 255) as u8;
+                        style = style.fg(Color::Indexed(n));
+                        i += 2;
+                    }
+                    _ => {}
                 }
             }
             90 => style = style.fg(Color::DarkGray),
