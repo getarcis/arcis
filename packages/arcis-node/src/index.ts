@@ -69,9 +69,16 @@ export type {
   ProtectLoginOptions,
   ProtectSignupOptions,
   ProtectApiOptions,
+  CorrelationOptions,
 } from './middleware/protect';
 export { graphqlGuard } from './middleware/graphql';
 export type { GraphqlGuardMiddlewareOptions } from './middleware/graphql';
+export { CorrelationWindow } from './middleware/correlation';
+export type {
+  CorrelationEvent,
+  CorrelationDetections,
+  CorrelationWindowOptions,
+} from './middleware/correlation';
 export {
   inspectGraphqlQuery,
   detectGraphqlAbuse,

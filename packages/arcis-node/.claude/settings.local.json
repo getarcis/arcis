@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd \"D:\\\\Projects\\\\cyber-security\\\\arcis\\\\packages\\\\arcis-python\" && pip install -e . -q && arcis --help)",
-      "Bash(arcis scan:*)"
-    ]
-  }
-}

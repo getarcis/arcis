@@ -17,8 +17,11 @@ use arcis_engine::sca::{
     scan_project_with_osv_paths, scan_project_with_paths, Finding, FindingType, LockfileGraphInfo,
     OsvOptions,
 };
+use arcis_engine::sca_render::{render_json, render_sarif, ScaJsonReport, ScaSarifReport};
 use arcis_engine::sca_sbom::{emit_cyclonedx, emit_spdx};
 use arcis_engine::threat_db::Threat;
+
+const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const WIDTH: usize = 64;
 const LINE_CHAR: &str = "\u{2500}"; // ─
@@ -66,6 +69,13 @@ struct Args {
     /// summary. `-v` (lowercase) — `-V` is reserved for `--version` per
     /// Unix convention.
     verbose: bool,
+    /// `--json`: emit results as a single JSON document. Suppresses the
+    /// human report. Mutually exclusive with `--sarif` and `--sbom`.
+    /// Closes cli-test round-1 bug 6 (CI parity gap with audit).
+    json_output: bool,
+    /// `--sarif`: emit results as SARIF 2.1.0 for GitHub Code Scanning.
+    /// Mutually exclusive with `--json` and `--sbom`.
+    sarif_output: bool,
 }
 
 /// Severity threshold for `arcis sca --fail-on <level>`. The CLI compares
@@ -159,6 +169,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut sbom: Option<Sbom> = None;
     let mut output: Option<PathBuf> = None;
     let mut verbose = false;
+    let mut json_output = false;
+    let mut sarif_output = false;
 
     let mut i = 0;
     while i < argv.len() {
@@ -171,6 +183,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--no-cache" => no_cache = true,
             "--quiet" | "-q" => quiet = true,
             "--verbose" | "-v" => verbose = true,
+            "--json" => json_output = true,
+            "--sarif" => sarif_output = true,
             "-h" | "--help" => return ParseOutcome::Help,
             "--fail-on" => {
                 i += 1;
@@ -265,8 +279,24 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         );
     }
 
-    // note: when `arcis sca --json` lands, error here if both `--sbom`
-    // and `--json` are supplied (different machine output modes).
+    // Three machine modes are mutually exclusive: `--json`, `--sarif`,
+    // and `--sbom`. Stack one error so the user fixes the conflict in a
+    // single edit instead of round-tripping through three separate errors.
+    let machine_flags = [
+        ("--json", json_output),
+        ("--sarif", sarif_output),
+        ("--sbom", sbom.is_some()),
+    ];
+    let set: Vec<&str> = machine_flags
+        .iter()
+        .filter_map(|(n, v)| if *v { Some(*n) } else { None })
+        .collect();
+    if set.len() > 1 {
+        return ParseOutcome::Err(format!(
+            "arcis sca: {} are mutually exclusive (pick one machine mode)",
+            set.join(" and ")
+        ));
+    }
 
     ParseOutcome::Args(Args {
         path: path.unwrap_or_else(|| PathBuf::from(".")),
@@ -280,6 +310,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         sbom,
         output,
         verbose,
+        json_output,
+        sarif_output,
     })
 }
 
@@ -788,7 +820,7 @@ fn print_threat_list<W: Write>(w: &mut W, threats: &[Threat], no_color: bool) ->
 fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
-        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--sbom <format> [-o <file>]] [--no-color] [-q] [-v]"
+        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--json|--sarif|--sbom <format> [-o <file>]] [--no-color] [-q] [-v]"
     )?;
     writeln!(w)?;
     writeln!(
@@ -862,6 +894,23 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
         "                      human report is suppressed; with -o the human"
     )?;
     writeln!(w, "                      report still prints to stdout.")?;
+    writeln!(
+        w,
+        "  --json              Emit results as a single JSON document on stdout."
+    )?;
+    writeln!(
+        w,
+        "                      Suppresses the human report. Mutually exclusive"
+    )?;
+    writeln!(w, "                      with --sarif and --sbom.")?;
+    writeln!(
+        w,
+        "  --sarif             Emit results as SARIF 2.1.0 for GitHub Code"
+    )?;
+    writeln!(
+        w,
+        "                      Scanning. Mutually exclusive with --json and --sbom."
+    )?;
     writeln!(w, "  --no-color          Disable colored output")?;
     writeln!(w, "  --quiet, -q         Suppress progress output")?;
     writeln!(
@@ -998,6 +1047,43 @@ pub fn run(argv: &[String]) -> ExitCode {
                 &lockfile_info,
             );
         }
+        return if should_fail(&findings, args.fail_on) {
+            ExitCode::from(1)
+        } else {
+            ExitCode::from(0)
+        };
+    }
+
+    // Machine output modes (closes cli-test round-1 bug 6). Emit one
+    // document on stdout, skip the human report entirely. Mutex with
+    // --sbom is enforced at parse time so only one of these branches
+    // ever fires per run.
+    if args.json_output {
+        let report = ScaJsonReport {
+            tool_version: TOOL_VERSION,
+            target: &abs.to_string_lossy(),
+            manifests: &manifests,
+            threat_db_size: threats.len(),
+            findings: &findings,
+            duration_ms: (duration * 1000.0) as u64,
+            mode: if args.osv { "osv-augmented" } else { "offline" },
+        };
+        let body = render_json(&report);
+        let _ = writeln!(out, "{body}");
+        return if should_fail(&findings, args.fail_on) {
+            ExitCode::from(1)
+        } else {
+            ExitCode::from(0)
+        };
+    }
+    if args.sarif_output {
+        let report = ScaSarifReport {
+            tool_version: TOOL_VERSION,
+            target_abspath: &abs.to_string_lossy(),
+            findings: &findings,
+        };
+        let body = render_sarif(&report);
+        let _ = writeln!(out, "{body}");
         return if should_fail(&findings, args.fail_on) {
             ExitCode::from(1)
         } else {
@@ -1454,6 +1540,96 @@ mod tests {
             }
             other => panic!("expected Args, got {other:?}"),
         }
+    }
+
+    // ── --json / --sarif (cli-test round-1 bug 6) ──────────────────────
+
+    #[test]
+    fn parse_args_json_flag() {
+        match parse_args(&["--json".to_string()]) {
+            ParseOutcome::Args(a) => {
+                assert!(a.json_output, "--json must enable JSON output");
+                assert!(!a.sarif_output);
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sarif_flag() {
+        match parse_args(&["--sarif".to_string()]) {
+            ParseOutcome::Args(a) => {
+                assert!(a.sarif_output, "--sarif must enable SARIF output");
+                assert!(!a.json_output);
+            }
+            other => panic!("expected Args, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_json_and_sarif_are_mutually_exclusive() {
+        let r = parse_args(&["--json".to_string(), "--sarif".to_string()]);
+        match r {
+            ParseOutcome::Err(msg) => {
+                assert!(
+                    msg.contains("mutually exclusive"),
+                    "error should explain the mutex: {msg}"
+                );
+                assert!(msg.contains("--json") && msg.contains("--sarif"));
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_json_and_sbom_are_mutually_exclusive() {
+        let r = parse_args(&[
+            "--json".to_string(),
+            "--sbom".to_string(),
+            "cyclonedx".to_string(),
+        ]);
+        match r {
+            ParseOutcome::Err(msg) => {
+                assert!(msg.contains("mutually exclusive"));
+                assert!(msg.contains("--json"));
+                assert!(msg.contains("--sbom"));
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_sarif_and_sbom_are_mutually_exclusive() {
+        let r = parse_args(&[
+            "--sarif".to_string(),
+            "--sbom".to_string(),
+            "spdx".to_string(),
+        ]);
+        match r {
+            ParseOutcome::Err(msg) => {
+                assert!(msg.contains("mutually exclusive"));
+                assert!(msg.contains("--sarif"));
+                assert!(msg.contains("--sbom"));
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn print_help_documents_json_and_sarif() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--json"), "help missing --json");
+        assert!(out.contains("--sarif"), "help missing --sarif");
+        assert!(
+            out.contains("SARIF 2.1.0"),
+            "help should pin the SARIF version"
+        );
+        assert!(
+            out.to_lowercase().contains("mutually exclusive"),
+            "help must mention the machine-mode mutex"
+        );
     }
 
     #[test]

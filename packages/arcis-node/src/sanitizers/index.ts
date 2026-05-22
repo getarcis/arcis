@@ -49,7 +49,7 @@ export { sanitizeLdapFilter, sanitizeLdapDn, detectLdapInjection } from './ldap'
 // XPath injection prevention
 export { sanitizeXpath, detectXpathInjection } from './xpath';
 
-// GraphQL injection / depth-bomb prevention
+// GraphQL injection / depth-bomb / alias-bomb / fragment-cycle prevention
 export {
   inspectGraphqlQuery,
   detectGraphqlAbuse,
@@ -59,6 +59,10 @@ export type {
   GraphqlGuardResult,
   GraphqlViolation,
 } from './graphql';
+
+// Deserialization-marker detection (V33 — improvements.md §1.2)
+export { detectDeserialization, isSerializedPayload } from './deserialization';
+export type { DeserializeRuntime } from './deserialization';
 
 // Utilities
 export { encodeHtmlEntities, isPlainObject } from './utils';

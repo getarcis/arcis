@@ -28,6 +28,61 @@ const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// tiny CI runners or beefy 16-core boxes override via `--jobs N`.
 const DEFAULT_JOBS: usize = 8;
 
+/// Severity threshold that gates non-zero exit codes. Mirrors
+/// `arcis sca`'s `FailOn` so CI configs can use the same vocabulary on
+/// both surfaces. Closes cli-test round-1 bug 2.
+///
+/// Semantics:
+/// * `--severity` filters which findings are **displayed** (or emitted
+///   in JSON/SARIF).
+/// * `--fail-on` gates the **exit code**: exit 1 when any displayed
+///   finding is at or above the threshold.
+///
+/// Default (`Any`) preserves legacy behaviour: any finding → exit 1.
+/// `None` is the "report only" mode for CI summaries that want the
+/// findings list logged but not gated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum FailOn {
+    Critical,
+    High,
+    Medium,
+    Low,
+    #[default]
+    Any,
+    None,
+}
+
+impl FailOn {
+    fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "critical" => Some(Self::Critical),
+            "high" => Some(Self::High),
+            "medium" => Some(Self::Medium),
+            "low" => Some(Self::Low),
+            "any" => Some(Self::Any),
+            "none" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
+const FAIL_ON_VALUES: &str = "critical|high|medium|low|any|none";
+
+/// Decide whether `findings` should produce a non-zero exit under the
+/// given threshold. `Severity` is `Ord` with Critical < Low, so "at or
+/// above the threshold" is `f.severity <= threshold` (Critical satisfies
+/// `<= High`).
+fn should_fail(findings: &[Finding], fail_on: FailOn) -> bool {
+    match fail_on {
+        FailOn::None => false,
+        FailOn::Any => !findings.is_empty(),
+        FailOn::Critical => findings.iter().any(|f| f.severity == Severity::Critical),
+        FailOn::High => findings.iter().any(|f| f.severity <= Severity::High),
+        FailOn::Medium => findings.iter().any(|f| f.severity <= Severity::Medium),
+        FailOn::Low => findings.iter().any(|f| f.severity <= Severity::Low),
+    }
+}
+
 #[derive(Debug)]
 struct Args {
     path: Option<PathBuf>,
@@ -61,6 +116,17 @@ struct Args {
     /// scanning. cli-audit.md item 11. `None` falls back to
     /// [`DEFAULT_JOBS`] (8). Zero is rejected at parse time.
     jobs: Option<usize>,
+    /// `--fail-on <level>`: severity threshold that triggers a non-zero
+    /// exit. Default `Any` preserves legacy "exit 1 on any finding".
+    /// `None` always exits 0 even with findings (report-only mode).
+    /// cli-test round-1 bug 2.
+    fail_on: FailOn,
+    /// `--verbose` / `-v`: show finding IDs under each finding in the
+    /// human report. IDs are always present in JSON/SARIF; verbose
+    /// surfaces them inline so a user can paste the ID into a baseline
+    /// or suppress comment without re-running with `--json`. cli-test
+    /// round-1 bug 3.
+    verbose: bool,
 }
 
 #[derive(Debug)]
@@ -86,6 +152,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut baseline: Option<PathBuf> = None;
     let mut baseline_write: Option<PathBuf> = None;
     let mut jobs: Option<usize> = None;
+    let mut fail_on = FailOn::default();
+    let mut verbose = false;
 
     let mut iter = argv.iter().enumerate();
     while let Some((_, arg)) = iter.next() {
@@ -94,10 +162,37 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--no-color" => no_color = true,
             "--list" => list = true,
             "--quiet" | "-q" => quiet = true,
+            "--verbose" | "-v" => verbose = true,
             "--json" => json_output = true,
             "--sarif" => sarif_output = true,
             "--no-ignore" => no_ignore = true,
             "--no-gitignore" => no_gitignore = true,
+            "--fail-on" => match iter.next() {
+                Some((_, v)) => match FailOn::parse(v) {
+                    Some(f) => fail_on = f,
+                    None => {
+                        return ParseOutcome::Err(format!(
+                            "arcis audit: invalid --fail-on value: {v} (expected {FAIL_ON_VALUES})"
+                        ));
+                    }
+                },
+                None => {
+                    return ParseOutcome::Err(format!(
+                        "arcis audit: --fail-on requires a value ({FAIL_ON_VALUES})"
+                    ));
+                }
+            },
+            other if other.starts_with("--fail-on=") => {
+                let val = &other["--fail-on=".len()..];
+                match FailOn::parse(val) {
+                    Some(f) => fail_on = f,
+                    None => {
+                        return ParseOutcome::Err(format!(
+                            "arcis audit: invalid --fail-on value: {val} (expected {FAIL_ON_VALUES})"
+                        ));
+                    }
+                }
+            }
             // cli-audit.md item 9: baseline mode (read). Mutex with
             // `--baseline-write` is enforced HERE at parse time, not
             // post-parse, so the error message can name the second
@@ -212,6 +307,8 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         baseline,
         baseline_write,
         jobs,
+        fail_on,
+        verbose,
     })
 }
 
@@ -265,6 +362,22 @@ fn print_help<W: Write>(out: &mut W) -> io::Result<()> {
         "      --list           List all detection rules and exit."
     )?;
     writeln!(out, "  -q, --quiet          Suppress progress output.")?;
+    writeln!(
+        out,
+        "  -v, --verbose        Show finding IDs under each finding in the human report."
+    )?;
+    writeln!(
+        out,
+        "      --fail-on LVL    Severity that triggers exit 1 ({FAIL_ON_VALUES})."
+    )?;
+    writeln!(
+        out,
+        "                       Default: any (exit 1 on any finding). 'none' exits 0 even"
+    )?;
+    writeln!(
+        out,
+        "                       with findings (report-only mode for CI summaries)."
+    )?;
     writeln!(
         out,
         "      --json           Emit results as a single JSON document. Suppresses human output."
@@ -677,7 +790,7 @@ pub fn run(argv: &[String]) -> ExitCode {
         // success). Otherwise, classic "exit 1 on findings, 0 on
         // clean" — and in baseline read mode `findings` IS diff.added
         // so the same expression already gates on new only.
-        return if baseline_write_succeeded || findings.is_empty() {
+        return if baseline_write_succeeded || !should_fail(&findings, args.fail_on) {
             ExitCode::from(0)
         } else {
             ExitCode::from(1)
@@ -701,12 +814,13 @@ pub fn run(argv: &[String]) -> ExitCode {
         ignored_count,
         baseline_summary.as_ref(),
         &resolved_entries,
+        args.verbose,
     );
 
-    if findings.is_empty() {
-        ExitCode::from(0)
-    } else {
+    if should_fail(&findings, args.fail_on) {
         ExitCode::from(1)
+    } else {
+        ExitCode::from(0)
     }
 }
 
@@ -725,6 +839,7 @@ fn print_human_report<W: Write>(
     ignored: usize,
     baseline_summary: Option<&BaselineSummary<'_>>,
     resolved_entries: &[BaselineEntry],
+    verbose: bool,
 ) -> io::Result<()> {
     writeln!(out)?;
     writeln!(out, "  Arcis Audit")?;
@@ -787,6 +902,14 @@ fn print_human_report<W: Write>(
                 writeln!(out, "      {}", f.message)?;
                 if !f.snippet.is_empty() {
                     writeln!(out, "      {}", f.snippet)?;
+                }
+                // cli-test round-1 bug 3: `--verbose` surfaces the
+                // deterministic finding ID under each entry. IDs are
+                // always emitted in JSON/SARIF; this just makes them
+                // visible in human mode so users can paste one into a
+                // baseline or a suppress comment without re-running.
+                if verbose && !f.id.is_empty() {
+                    writeln!(out, "      id: {}", f.id)?;
                 }
             }
             writeln!(out)?;
@@ -1008,6 +1131,7 @@ mod tests {
             0,
             None,
             &[],
+            false,
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -1039,6 +1163,7 @@ mod tests {
             0,
             None,
             &[],
+            false,
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -1133,6 +1258,7 @@ mod tests {
             5,
             None,
             &[],
+            false,
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -1161,6 +1287,7 @@ mod tests {
             0,
             None,
             &[],
+            false,
         )
         .unwrap();
         let out = String::from_utf8(buf).unwrap();
@@ -1270,6 +1397,206 @@ mod tests {
     fn parse_args_baseline_write_without_path_errors() {
         let r = parse_args(&[".".to_string(), "--baseline-write".to_string()]);
         assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("requires a path")));
+    }
+
+    // ── --fail-on + --verbose (cli-test round-1 bugs 2 + 3) ───────────
+
+    #[test]
+    fn parse_args_fail_on_critical() {
+        match parse_args(&[
+            ".".to_string(),
+            "--fail-on".to_string(),
+            "critical".to_string(),
+        ]) {
+            ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::Critical),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_none() {
+        match parse_args(&[".".to_string(), "--fail-on".to_string(), "none".to_string()]) {
+            ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::None),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_equals_form() {
+        match parse_args(&[".".to_string(), "--fail-on=high".to_string()]) {
+            ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::High),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_default_is_any() {
+        match parse_args(&[".".to_string()]) {
+            ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::Any),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_fail_on_invalid_value_errors() {
+        let r = parse_args(&[
+            ".".to_string(),
+            "--fail-on".to_string(),
+            "bogus".to_string(),
+        ]);
+        assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("invalid --fail-on")));
+    }
+
+    #[test]
+    fn parse_args_fail_on_without_value_errors() {
+        let r = parse_args(&[".".to_string(), "--fail-on".to_string()]);
+        assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("requires a value")));
+    }
+
+    #[test]
+    fn parse_args_verbose_short_and_long() {
+        match parse_args(&[".".to_string(), "--verbose".to_string()]) {
+            ParseOutcome::Args(a) => assert!(a.verbose),
+            other => panic!("unexpected {other:?}"),
+        }
+        match parse_args(&[".".to_string(), "-v".to_string()]) {
+            ParseOutcome::Args(a) => assert!(a.verbose),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_args_verbose_default_false() {
+        match parse_args(&[".".to_string()]) {
+            ParseOutcome::Args(a) => assert!(!a.verbose),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_fail_threshold_logic() {
+        use arcis_engine::audit::Finding;
+        let mk = |sev: Severity| Finding {
+            rule_id: "TEST",
+            severity: sev,
+            message: "test",
+            file: "f".into(),
+            line: 1,
+            snippet: String::new(),
+            id: String::new(),
+        };
+        let empty: Vec<Finding> = Vec::new();
+        let just_low = vec![mk(Severity::Low)];
+        let high_and_low = vec![mk(Severity::High), mk(Severity::Low)];
+
+        // None: never fail
+        assert!(!should_fail(&empty, FailOn::None));
+        assert!(!should_fail(&high_and_low, FailOn::None));
+
+        // Any: fail on anything, even Low
+        assert!(!should_fail(&empty, FailOn::Any));
+        assert!(should_fail(&just_low, FailOn::Any));
+
+        // Critical: only fail on Critical
+        assert!(!should_fail(&high_and_low, FailOn::Critical));
+        assert!(should_fail(&[mk(Severity::Critical)], FailOn::Critical));
+
+        // High: fail on Critical or High, not Medium or Low
+        assert!(should_fail(&high_and_low, FailOn::High));
+        assert!(!should_fail(&just_low, FailOn::High));
+    }
+
+    #[test]
+    fn help_documents_fail_on_and_verbose() {
+        let mut buf: Vec<u8> = Vec::new();
+        print_help(&mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("--fail-on"), "help must mention --fail-on");
+        assert!(out.contains("--verbose"), "help must mention --verbose");
+        assert!(
+            out.contains("critical|high|medium|low|any|none"),
+            "help must list all --fail-on values: {out}"
+        );
+    }
+
+    #[test]
+    fn verbose_human_report_includes_finding_id() {
+        use arcis_engine::audit::Finding;
+        let mut buf: Vec<u8> = Vec::new();
+        let by_lang: BTreeMap<String, usize> = [("python".to_string(), 1)].into_iter().collect();
+        let mut by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
+        by_sev.insert(Severity::High, 1);
+        let findings = vec![Finding {
+            rule_id: "INNERHTML",
+            severity: Severity::High,
+            message: "test message",
+            file: "a.py".into(),
+            line: 42,
+            snippet: "snippet".into(),
+            id: "INNERHTML-0123456789abcdef".into(),
+        }];
+        print_human_report(
+            &mut buf,
+            Path::new("/tmp"),
+            &[PathBuf::from("/tmp/a.py")],
+            &by_lang,
+            14,
+            None,
+            &findings,
+            &by_sev,
+            42,
+            0,
+            0,
+            None,
+            &[],
+            true, // verbose
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("id: INNERHTML-0123456789abcdef"),
+            "verbose mode must surface finding IDs in human report: {out}"
+        );
+    }
+
+    #[test]
+    fn non_verbose_human_report_omits_finding_id() {
+        use arcis_engine::audit::Finding;
+        let mut buf: Vec<u8> = Vec::new();
+        let by_lang: BTreeMap<String, usize> = [("python".to_string(), 1)].into_iter().collect();
+        let mut by_sev: BTreeMap<Severity, usize> = BTreeMap::new();
+        by_sev.insert(Severity::High, 1);
+        let findings = vec![Finding {
+            rule_id: "INNERHTML",
+            severity: Severity::High,
+            message: "test message",
+            file: "a.py".into(),
+            line: 42,
+            snippet: "snippet".into(),
+            id: "INNERHTML-0123456789abcdef".into(),
+        }];
+        print_human_report(
+            &mut buf,
+            Path::new("/tmp"),
+            &[PathBuf::from("/tmp/a.py")],
+            &by_lang,
+            14,
+            None,
+            &findings,
+            &by_sev,
+            42,
+            0,
+            0,
+            None,
+            &[],
+            false, // not verbose
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            !out.contains("id:"),
+            "default mode must not surface finding IDs: {out}"
+        );
     }
 
     // ── --jobs flag (cli-audit.md item 11) ─────────────────────────────

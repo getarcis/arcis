@@ -85,6 +85,12 @@ desktop.ini
 *.key
 *.p12
 secrets.json
+
+# ─── Local Claude Code / Cursor / IDE-agent settings (never commit) ────────────
+# The previous rule `*.claude` only matched files ending in `.claude`, not the
+# `.claude/` directory or its contents. The patterns below catch both forms.
+.claude/
+**/.claude/
 *.claude
 
 # ─── Local / Personal ────────────────────────────────────────────────────────

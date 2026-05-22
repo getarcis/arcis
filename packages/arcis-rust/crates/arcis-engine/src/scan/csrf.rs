@@ -149,8 +149,20 @@ pub fn parse_spec(input: &str) -> Result<CsrfSpec, CsrfError> {
         .find(':')
         .map(|i| (&trimmed[..i], &trimmed[i + 1..]))
     else {
+        // cli-test round-1 bug 8 (improved UX): pilots tried `cookie`
+        // and `response-header` as bare values (auto-extract modes that
+        // don't fetch a CSRF endpoint). Those aren't supported in v1
+        // — the only mode is "fetch a URL, extract token" — but the
+        // error must surface the supported shape clearly enough that a
+        // user self-corrects without docs. Three lines: what was given,
+        // what's expected, and a worked example.
         return Err(CsrfError::ParseError(format!(
-            "expected METHOD:PATH (e.g. GET:/csrf), got: {trimmed}"
+            "--csrf-from value '{trimmed}' is not a fetchable spec. \
+             Expected: GET:/path[:strategy:name] (the URL to fetch and \
+             extract the token from). Example: --csrf-from GET:/csrf, \
+             or --csrf-from GET:/csrf:json:csrfToken if the token comes \
+             back as a JSON field. Cookie-based and response-header \
+             extraction are not supported in v1."
         )));
     };
     let (method_raw, rest) = after_method;
