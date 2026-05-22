@@ -1420,24 +1420,33 @@ mod tests {
 
     #[test]
     fn state_submit_slash_exit_signals_sentinel() {
-        let mut s = ReplState::new();
-        s.submit("/exit".into());
-        assert!(s.should_exit(), "/exit must arm the sentinel");
+        // Any test that calls submit() must serialize through the same
+        // mutex as the history tests. ARCIS_HISTORY_PATH is a process-
+        // global env var; if a history test sets it while this test is
+        // running in parallel, submit() would write to that test's
+        // temp file and corrupt its cap assertion.
+        with_temp_history_path(|_| {
+            let mut s = ReplState::new();
+            s.submit("/exit".into());
+            assert!(s.should_exit(), "/exit must arm the sentinel");
+        });
     }
 
     #[test]
     fn state_submit_slash_clear_wipes_scrollback() {
-        let mut s = ReplState::new();
-        s.append_banner();
-        s.push_output("noise".to_string());
-        s.submit("/clear".into());
-        // After /clear, the banner is re-appended. Counting against the
-        // initial banner length verifies it was cleared then re-banner'd.
-        // We assert the previously-pushed "noise" line is gone.
-        assert!(
-            s.lines.iter().all(|l| l.text != "noise"),
-            "scrollback should not retain the cleared line"
-        );
+        with_temp_history_path(|_| {
+            let mut s = ReplState::new();
+            s.append_banner();
+            s.push_output("noise".to_string());
+            s.submit("/clear".into());
+            // After /clear, the banner is re-appended. Counting against the
+            // initial banner length verifies it was cleared then re-banner'd.
+            // We assert the previously-pushed "noise" line is gone.
+            assert!(
+                s.lines.iter().all(|l| l.text != "noise"),
+                "scrollback should not retain the cleared line"
+            );
+        });
     }
 
     #[test]
@@ -1565,27 +1574,31 @@ mod tests {
         // /export with no argument writes to a default-named file in
         // cwd. We can't easily test the default path without polluting
         // cwd, so pass an explicit path into the temp dir.
-        let tmp = std::env::temp_dir().join(format!(
-            "arcis-export-test-{}.md",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let mut s = ReplState::new();
-        s.append_banner();
-        s.push_echo("▶ audit .");
-        s.push_output("HIGH src/foo.py:42 SQL-CONCAT");
+        // Wrap in with_temp_history_path to serialize against any other
+        // history-touching test (submit() is called below).
+        with_temp_history_path(|_| {
+            let tmp = std::env::temp_dir().join(format!(
+                "arcis-export-test-{}.md",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let mut s = ReplState::new();
+            s.append_banner();
+            s.push_echo("▶ audit .");
+            s.push_output("HIGH src/foo.py:42 SQL-CONCAT");
 
-        let cmd = format!("/export {}", tmp.display());
-        s.submit(cmd);
+            let cmd = format!("/export {}", tmp.display());
+            s.submit(cmd);
 
-        assert!(tmp.is_file(), "/export must create the target file");
-        let body = std::fs::read_to_string(&tmp).unwrap();
-        assert!(body.contains("# Arcis Console session"));
-        assert!(body.contains("HIGH src/foo.py:42 SQL-CONCAT"));
-        assert!(body.contains("▶ audit ."));
-        let _ = std::fs::remove_file(&tmp);
+            assert!(tmp.is_file(), "/export must create the target file");
+            let body = std::fs::read_to_string(&tmp).unwrap();
+            assert!(body.contains("# Arcis Console session"));
+            assert!(body.contains("HIGH src/foo.py:42 SQL-CONCAT"));
+            assert!(body.contains("▶ audit ."));
+            let _ = std::fs::remove_file(&tmp);
+        });
     }
 
     #[test]
@@ -1750,24 +1763,28 @@ mod tests {
 
     #[test]
     fn submit_snaps_view_back_to_tail() {
-        let mut s = ReplState::new();
-        for i in 0..30 {
-            s.push_output(format!("line {i}"));
-        }
-        s.scroll_offset = 10;
-        s.submit("/help".into());
-        assert_eq!(s.scroll_offset, 0, "Enter must follow tail again");
+        with_temp_history_path(|_| {
+            let mut s = ReplState::new();
+            for i in 0..30 {
+                s.push_output(format!("line {i}"));
+            }
+            s.scroll_offset = 10;
+            s.submit("/help".into());
+            assert_eq!(s.scroll_offset, 0, "Enter must follow tail again");
+        });
     }
 
     #[test]
     fn slash_clear_resets_scroll_offset() {
-        let mut s = ReplState::new();
-        for i in 0..30 {
-            s.push_output(format!("line {i}"));
-        }
-        s.scroll_offset = 15;
-        s.submit("/clear".into());
-        assert_eq!(s.scroll_offset, 0);
+        with_temp_history_path(|_| {
+            let mut s = ReplState::new();
+            for i in 0..30 {
+                s.push_output(format!("line {i}"));
+            }
+            s.scroll_offset = 15;
+            s.submit("/clear".into());
+            assert_eq!(s.scroll_offset, 0);
+        });
     }
 
     #[test]
