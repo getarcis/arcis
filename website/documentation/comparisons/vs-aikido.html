@@ -52,6 +52,8 @@
       <ul>
         <li><a href="../">Introduction</a></li>
         <li><a href="../getting-started.html">Getting Started</a></li>
+        <li><a href="../coverage.html">Stack Coverage</a></li>
+        <li><a href="../parity.html">Cross-SDK Parity</a></li>
       </ul>
 
       <h3>Guides</h3>
@@ -59,16 +61,26 @@
         <li><a href="../frameworks.html">Framework Adapters</a></li>
         <li><a href="../configuration.html">Configuration</a></li>
         <li><a href="../attack-vectors.html">Attack Vectors</a></li>
+        <li><a href="../detectors/">Detector Reference</a></li>
+      </ul>
+
+      <h3>CLI</h3>
+      <ul>
+        <li><a href="../cli.html">CLI Overview</a></li>
+        <li><a href="../repl.html">Interactive Console</a></li>
+        <li><a href="../threats-db.html">Supply-chain Threat DB</a></li>
       </ul>
 
       <h3>Reference</h3>
       <ul>
         <li><a href="../api-reference.html">API Reference</a></li>
-        <li><a href="../cli.html">CLI Tools</a></li>
+        <li><a href="../control-plane.html">Control Plane</a></li>
+        <li><a href="../release-notes.html">Release Notes</a></li>
       </ul>
 
-      <h3>Comparisons</h3>
+      <h3>Why Arcis</h3>
       <ul>
+        <li><a href="../why-arcis.html">Compared with...</a></li>
         <li><a href="./vs-arcjet.html">vs Arcjet</a></li>
         <li><a href="./vs-aikido.html" class="active">vs Aikido Zen</a></li>
         <li><a href="./vs-snyk.html">vs Snyk</a></li>
@@ -130,7 +142,7 @@
             <tr><td>Detection model</td><td>Sink-based (intercept dangerous calls)</td><td>Source-based (sanitize at the request boundary)</td></tr>
             <tr><td>Bypass resistance</td><td>Higher on covered sinks</td><td>Higher on novel attack surfaces (no monkey-patch dependency)</td></tr>
             <tr><td>Coverage scope</td><td>Sinks Aikido knows about</td><td>20+ request-boundary vectors (XSS, SQL, NoSQL, path, command, SSTI, XXE, SSRF, prompt injection, etc.)</td></tr>
-            <tr><td>Bot detection</td><td>Yes</td><td>Yes (646 patterns + behavioral signals)</td></tr>
+            <tr><td>Bot detection</td><td>Yes</td><td>Yes (635 patterns + behavioral signals)</td></tr>
             <tr><td>Rate limiting</td><td>Yes</td><td>Yes (3 algorithms, optional Redis)</td></tr>
             <tr><td>Security headers</td><td>No</td><td>Yes (16 headers)</td></tr>
             <tr><td>CSRF protection</td><td>Yes</td><td>Yes (double-submit + HMAC)</td></tr>

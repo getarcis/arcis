@@ -13,14 +13,20 @@ Node and Python SDKs.
 go get github.com/GagancM/arcis@latest
 ```
 
-## What's new in v1.5.0
+## What's new in v1.6.0
+
+- **`patterns.json` shared with Node + Python**. The Go SDK now embeds and parses the canonical `packages/core/patterns.json` at `init()` via `//go:embed`. Hardcoded var blocks (XSS / SQL / path / command) removed from `sanitize.go`; the SHA-256 sync-check test (`TestBundledPatternsMatchCanonical`) gates drift between the canonical file and the bundled copy. Pattern 2 (Shared Pattern Repository) now holds for Go too.
+- **Oracle `DBMS_*` + shell `${IFS}` patterns** added to the shared corpus.
+- Go variants of mutation tester, V32/V33/V34 vectors, and `CorrelationWindow` deferred to **v1.7**. The runtime middleware in v1.6 picks up all pattern improvements; the new helper APIs land in Go next quarter.
+
+## What was new in v1.5.0
 
 - **chi adapter** (`github.com/GagancM/arcis/chi`) — granular helpers (Headers / Sanitizer / Validate / Csrf / SecureCookies / Cors / ErrorHandler) plus the bundle middleware. Stdlib-only at runtime; composes with any router that accepts `func(http.Handler) http.Handler`.
 - **Fiber adapter** (`github.com/GagancM/arcis/fiber`) — bundle middleware + standalone `RateLimit` helpers + `WithTelemetry` option, mirroring gin/echo/chi.
 - **net/http stdlib helper** (`github.com/GagancM/arcis/nethttp`) — drop-in for users without a third-party router. Re-exports the chi adapter (which is itself stdlib-only), no chi dep needed at runtime.
 - **Telemetry parity** with Node + Python — `telemetry.NewClient` + `MiddlewareWithConfig`'s `Telemetry` field stream allow / deny decisions to a self-hosted dashboard.
 - **Guards API** (`arcis.NewGuards`) — non-HTTP rule engine for queue consumers, agent tool handlers, background jobs.
-- **AI-era protections**: 28-signature prompt-injection library (`DetectPromptInjection`), per-key `TokenBudget`, 646-pattern bot corpus from `getarcis/well-known-bots`.
+- **AI-era protections**: 28-signature prompt-injection library (`DetectPromptInjection`), per-key `TokenBudget`, 635-pattern bot corpus from `getarcis/well-known-bots`.
 
 ## Quick start (Gin)
 

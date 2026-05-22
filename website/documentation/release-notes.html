@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+  <title>Release Notes · Arcis Docs</title>
+  <meta name="description" content="Per-package release notes for Arcis. Filter by @arcis/node, arcis (PyPI), @arcis/cli, @arcis/mcp, or arcis-go.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="docs.css">
+  <style>
+    .filter-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.5rem 0 2rem; }
+    .filter-chips button { font-family: var(--font-sans); font-size: 0.85rem; padding: 0.4rem 0.85rem; border: 1px solid rgba(255,255,255,0.12); background: transparent; color: var(--text-muted); border-radius: 999px; cursor: pointer; transition: all 0.15s ease; }
+    .filter-chips button:hover { color: var(--text); border-color: rgba(255,255,255,0.25); }
+    .filter-chips button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .release-entry { padding: 1.5rem 0; border-top: 1px solid rgba(255,255,255,0.08); }
+    .release-entry:first-of-type { border-top: none; }
+    .release-meta { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.5rem; }
+    .release-version { font-size: 1.4rem; font-weight: 600; color: var(--text); }
+    .release-date { color: var(--text-muted); font-size: 0.9rem; }
+    .release-packages { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+    .release-pkg { font-family: var(--font-mono); font-size: 0.75rem; padding: 0.15rem 0.55rem; background: rgba(0,153,109,0.08); color: var(--accent); border-radius: 999px; }
+    .release-summary { color: var(--text); margin: 0.5rem 0 0.75rem; }
+    .release-details { color: var(--text-muted); font-size: 0.95rem; }
+    .release-details li { margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body>
+
+  <nav class="docs-nav" id="nav">
+    <div class="docs-nav-inner">
+      <a href="../" class="docs-logo">Arcis<span>.</span></a>
+      <ul class="docs-nav-links">
+        <li><a href="../#how-it-works">How It Works</a></li>
+        <li><a href="../#languages">Languages</a></li>
+        <li><a href="../#threats">Threats</a></li>
+        <li><a href="../#comparison">Compare</a></li>
+        <li><a href="./" class="active">Docs</a></li>
+      </ul>
+      <div class="docs-nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="./getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="sidebar">
+      <h3>Overview</h3>
+      <ul>
+        <li><a href="./">Introduction</a></li>
+        <li><a href="./getting-started.html">Getting Started</a></li>
+        <li><a href="./coverage.html">Stack Coverage</a></li>
+        <li><a href="./parity.html">Cross-SDK Parity</a></li>
+      </ul>
+      <h3>Guides</h3>
+      <ul>
+        <li><a href="./frameworks.html">Framework Adapters</a></li>
+        <li><a href="./configuration.html">Configuration</a></li>
+        <li><a href="./attack-vectors.html">Attack Vectors</a></li>
+        <li><a href="./detectors/">Detector Reference</a></li>
+      </ul>
+      <h3>CLI</h3>
+      <ul>
+        <li><a href="./cli.html">CLI Overview</a></li>
+        <li><a href="./repl.html">Interactive Console</a></li>
+        <li><a href="./threats-db.html">Supply-chain Threat DB</a></li>
+      </ul>
+      <h3>Reference</h3>
+      <ul>
+        <li><a href="./api-reference.html">API Reference</a></li>
+        <li><a href="./control-plane.html">Control Plane</a></li>
+        <li><a href="./release-notes.html" class="active">Release Notes</a></li>
+      </ul>
+      <h3>Why Arcis</h3>
+      <ul>
+        <li><a href="./why-arcis.html">Compared with...</a></li>
+      </ul>
+      <h3>Resources</h3>
+      <ul>
+        <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm package</a></li>
+        <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI package</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open')">☰ Menu</button>
+
+      <div class="docs-breadcrumb"><a href="./">Docs</a> / Release Notes</div>
+      <h1>Release Notes</h1>
+      <p class="lead">
+        Every Arcis release across all packages: <code>@arcis/node</code>, <code>arcis</code> (PyPI), <code>@arcis/cli</code>, <code>@arcis/mcp</code>, and the Go SDK. Filter by package to see only the releases that affect you.
+      </p>
+
+      <div class="filter-chips" role="tablist">
+        <button data-filter="all" class="active">All releases</button>
+        <button data-filter="@arcis/node">@arcis/node</button>
+        <button data-filter="arcis (PyPI)">arcis (PyPI)</button>
+        <button data-filter="@arcis/cli (npm, native binary)">@arcis/cli</button>
+        <button data-filter="@arcis/mcp">@arcis/mcp</button>
+        <button data-filter="github.com/GagancM/arcis (Go)">arcis-go</button>
+      </div>
+
+      <div id="releases-container">
+        <p style="color: var(--text-muted);">Loading release notes...</p>
+      </div>
+
+      <div class="docs-pagination">
+        <a href="./control-plane.html" class="prev">
+          <span class="nav-label">← Previous</span>
+          <span class="nav-title">Control Plane</span>
+        </a>
+        <a href="./why-arcis.html" class="next">
+          <span class="nav-label">Next →</span>
+          <span class="nav-title">Why Arcis</span>
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <div class="footer-logo">Arcis<span>.</span></div>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, lean dependency footprint.</p>
+          <div class="footer-badges">
+            <span class="footer-badge"><svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,0.5)"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>MIT License</span>
+            <span class="footer-badge">Open Source</span>
+          </div>
+        </div>
+        <div class="footer-columns">
+          <div class="footer-col"><h4>Product</h4><ul><li><a href="../#how-it-works">How It Works</a></li><li><a href="../#languages">Languages</a></li><li><a href="../#threats">Threat Coverage</a></li><li><a href="../#comparison">Comparison</a></li><li><a href="../#get-started">Get Started</a></li></ul></div>
+          <div class="footer-col"><h4>SDKs</h4><ul><li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li><li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li><li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li></ul></div>
+          <div class="footer-col"><h4>Resources</h4><ul><li><a href="./">Documentation</a></li><li><a href="./release-notes.html">Release Notes</a></li><li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li><li><a href="https://github.com/Gagancm/arcis/issues" target="_blank" rel="noopener">Issues</a></li></ul></div>
+        </div>
+      </div>
+      <div class="footer-bottom"><span>MIT License &middot; Built by <a href="https://github.com/Gagancm" target="_blank" rel="noopener" style="color: rgba(255,255,255,0.7);">Gagan</a></span></div>
+    </div>
+  </footer>
+
+  <script>
+    fetch('https://api.github.com/repos/Gagancm/arcis').then(r => r.json()).then(d => { if (d.stargazers_count !== undefined) { const el = document.getElementById('starCount'); if (el) el.textContent = d.stargazers_count; } }).catch(() => {});
+
+    // Render release notes from changelog.json with package filter chips.
+    let allReleases = [];
+    let activeFilter = 'all';
+
+    function renderReleases() {
+      const container = document.getElementById('releases-container');
+      const releases = activeFilter === 'all'
+        ? allReleases
+        : allReleases.filter(r => (r.packages || []).includes(activeFilter));
+      if (releases.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted);">No releases match this filter yet.</p>';
+        return;
+      }
+      container.innerHTML = releases.map(r => {
+        const details = (r.details || []).map(d => '<li>' + escapeHtml(d) + '</li>').join('');
+        const detailsBlock = details ? '<ul class="release-details">' + details + '</ul>' : '';
+        const pkgs = (r.packages || []).map(p => '<span class="release-pkg">' + escapeHtml(p) + '</span>').join('');
+        return '<div class="release-entry">' +
+          '<div class="release-meta">' +
+            '<span class="release-version">v' + escapeHtml(r.version) + '</span>' +
+            '<span class="release-date">' + escapeHtml(r.date) + '</span>' +
+          '</div>' +
+          '<div class="release-summary">' + escapeHtml(r.summary) + '</div>' +
+          detailsBlock +
+          (pkgs ? '<div class="release-packages">' + pkgs + '</div>' : '') +
+        '</div>';
+      }).join('');
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    document.querySelectorAll('.filter-chips button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-chips button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeFilter = btn.dataset.filter;
+        renderReleases();
+      });
+    });
+
+    fetch('../changelog.json')
+      .then(r => r.json())
+      .then(d => {
+        allReleases = (d && d.releases) || [];
+        renderReleases();
+      })
+      .catch(() => {
+        document.getElementById('releases-container').innerHTML =
+          '<p style="color: var(--text-muted);">Could not load release notes. See <a href="https://github.com/Gagancm/arcis/releases" target="_blank" rel="noopener">GitHub Releases</a> instead.</p>';
+      });
+  </script>
+</body>
+</html>

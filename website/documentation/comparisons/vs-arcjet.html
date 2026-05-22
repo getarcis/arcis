@@ -56,6 +56,8 @@
       <ul>
         <li><a href="../">Introduction</a></li>
         <li><a href="../getting-started.html">Getting Started</a></li>
+        <li><a href="../coverage.html">Stack Coverage</a></li>
+        <li><a href="../parity.html">Cross-SDK Parity</a></li>
       </ul>
 
       <h3>Guides</h3>
@@ -63,16 +65,26 @@
         <li><a href="../frameworks.html">Framework Adapters</a></li>
         <li><a href="../configuration.html">Configuration</a></li>
         <li><a href="../attack-vectors.html">Attack Vectors</a></li>
+        <li><a href="../detectors/">Detector Reference</a></li>
+      </ul>
+
+      <h3>CLI</h3>
+      <ul>
+        <li><a href="../cli.html">CLI Overview</a></li>
+        <li><a href="../repl.html">Interactive Console</a></li>
+        <li><a href="../threats-db.html">Supply-chain Threat DB</a></li>
       </ul>
 
       <h3>Reference</h3>
       <ul>
         <li><a href="../api-reference.html">API Reference</a></li>
-        <li><a href="../cli.html">CLI Tools</a></li>
+        <li><a href="../control-plane.html">Control Plane</a></li>
+        <li><a href="../release-notes.html">Release Notes</a></li>
       </ul>
 
-      <h3>Comparisons</h3>
+      <h3>Why Arcis</h3>
       <ul>
+        <li><a href="../why-arcis.html">Compared with...</a></li>
         <li><a href="./vs-arcjet.html" class="active">vs Arcjet</a></li>
         <li><a href="./vs-aikido.html">vs Aikido Zen</a></li>
         <li><a href="./vs-snyk.html">vs Snyk</a></li>
@@ -136,7 +148,7 @@
             <tr><td>Node framework adapters</td><td>~11 first-party</td><td>10 first-party (Express, Fastify, Koa, Hono, Next.js, NestJS, SvelteKit, Astro, Nuxt, Bun)</td></tr>
             <tr><td>Python framework adapters</td><td>FastAPI, generic</td><td>FastAPI, Flask, Django, Litestar</td></tr>
             <tr><td>Go framework adapters</td><td>Generic</td><td>Gin, Echo, chi, Fiber, net/http</td></tr>
-            <tr><td>Bot corpus</td><td>Their MIT well-known-bots + cloud scoring</td><td>646 patterns sourced from the same MIT corpus + supplementary entries, all local</td></tr>
+            <tr><td>Bot corpus</td><td>Their MIT well-known-bots + cloud scoring</td><td>635 patterns sourced from the same MIT corpus + supplementary entries, all local</td></tr>
             <tr><td>AI/LLM defenses</td><td>Wasm ML model for prompt-injection scoring</td><td>~28 signature patterns across HIGH/MEDIUM/LOW tiers + tokenBudget middleware</td></tr>
             <tr><td>Rate limiting</td><td>Cloud-decisioned</td><td>In-process, fixed/sliding/token-bucket, optional Redis</td></tr>
             <tr><td>Supply chain scanner</td><td>No</td><td>Yes (<code>arcis sca</code>)</td></tr>
