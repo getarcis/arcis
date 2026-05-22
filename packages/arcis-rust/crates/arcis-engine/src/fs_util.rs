@@ -45,7 +45,7 @@ pub fn decode_bytes_stripping_bom(bytes: &[u8]) -> Result<String, String> {
 }
 
 fn decode_utf16(bytes: &[u8], little_endian: bool) -> Result<String, String> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(format!(
             "UTF-16 input must have even length, got {} bytes",
             bytes.len()

@@ -395,9 +395,9 @@ fn pathdiff_relative(target: &Path, base: &Path) -> Option<PathBuf> {
 }
 
 /// Python `json.dumps(..., ensure_ascii=True)` equivalent: every codepoint
-/// >= U+0080 emitted as `\uXXXX`. Mirrors the audit renderer's same-named
-/// helper so consumers can apply the same downstream validation pipeline
-/// to both surfaces.
+/// at or above U+0080 emitted as `\uXXXX`. Mirrors the audit renderer's
+/// same-named helper so consumers can apply the same downstream validation
+/// pipeline to both surfaces.
 fn escape_non_ascii(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_string = false;
