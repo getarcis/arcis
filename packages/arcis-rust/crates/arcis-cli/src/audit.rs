@@ -1403,7 +1403,11 @@ mod tests {
 
     #[test]
     fn parse_args_fail_on_critical() {
-        match parse_args(&[".".to_string(), "--fail-on".to_string(), "critical".to_string()]) {
+        match parse_args(&[
+            ".".to_string(),
+            "--fail-on".to_string(),
+            "critical".to_string(),
+        ]) {
             ParseOutcome::Args(a) => assert_eq!(a.fail_on, FailOn::Critical),
             other => panic!("unexpected {other:?}"),
         }
@@ -1435,7 +1439,11 @@ mod tests {
 
     #[test]
     fn parse_args_fail_on_invalid_value_errors() {
-        let r = parse_args(&[".".to_string(), "--fail-on".to_string(), "bogus".to_string()]);
+        let r = parse_args(&[
+            ".".to_string(),
+            "--fail-on".to_string(),
+            "bogus".to_string(),
+        ]);
         assert!(matches!(r, ParseOutcome::Err(msg) if msg.contains("invalid --fail-on")));
     }
 

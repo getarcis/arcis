@@ -268,7 +268,9 @@ fn build_right() -> Vec<String> {
     rows.push("  arcis update      Check for a newer Arcis release".to_string());
     rows.push(String::new());
     rows.push(format!("{EMERALD}Available Adapters{RESET}"));
-    rows.push("  node:    express, fastify, koa, nestjs, nextjs, sveltekit, astro, nuxt, bun".to_string());
+    rows.push(
+        "  node:    express, fastify, koa, nestjs, nextjs, sveltekit, astro, nuxt, bun".to_string(),
+    );
     rows.push("  python:  fastapi, litestar, django, flask".to_string());
     rows.push("  go:      gin, echo, chi, fiber, nethttp".to_string());
     rows.push(String::new());
@@ -408,10 +410,7 @@ mod tests {
         // The cursor row uses a literal `|`. Bounded count check —
         // exactly one line in the prompt area carries it.
         let lines: Vec<&str> = out.lines().collect();
-        let cursor_lines: Vec<&&str> = lines
-            .iter()
-            .filter(|l| l.trim() == "|")
-            .collect();
+        let cursor_lines: Vec<&&str> = lines.iter().filter(|l| l.trim() == "|").collect();
         assert_eq!(
             cursor_lines.len(),
             1,

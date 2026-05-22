@@ -210,8 +210,7 @@ enum ReaderEvent {
 
 impl ReplState {
     fn new() -> Self {
-        let self_exe =
-            std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arcis"));
+        let self_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arcis"));
         let cwd = std::env::current_dir()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| String::from("."));
@@ -238,7 +237,15 @@ impl ReplState {
     /// (CRITICAL/HIGH/MEDIUM/LOW/CRIT/WARN/INFO) followed by a space.
     /// Mirrors what `arcis audit / sca / scan` print in plain-text mode.
     fn finding_indices(&self) -> Vec<usize> {
-        let severities = ["CRITICAL ", "HIGH ", "MEDIUM ", "LOW ", "CRIT ", "WARN ", "INFO "];
+        let severities = [
+            "CRITICAL ",
+            "HIGH ",
+            "MEDIUM ",
+            "LOW ",
+            "CRIT ",
+            "WARN ",
+            "INFO ",
+        ];
         self.lines
             .iter()
             .enumerate()
@@ -361,7 +368,9 @@ impl ReplState {
         self.push_sys("  arcis update       check for a newer Arcis release");
         self.push_sys("");
         self.push_sys_header("Available adapters");
-        self.push_sys("  node:    express, fastify, koa, nestjs, nextjs, sveltekit, astro, nuxt, bun");
+        self.push_sys(
+            "  node:    express, fastify, koa, nestjs, nextjs, sveltekit, astro, nuxt, bun",
+        );
         self.push_sys("  python:  fastapi, litestar, django, flask");
         self.push_sys("  go:      gin, echo, chi, fiber, nethttp");
         self.push_sys("");
@@ -687,10 +696,7 @@ impl ReplState {
             return;
         };
         let _ = running.child.kill();
-        self.push_sys(format!(
-            "  ✗ cancelled `arcis {}`",
-            running.cmd_label
-        ));
+        self.push_sys(format!("  ✗ cancelled `arcis {}`", running.cmd_label));
         // Pull whatever's left in the channel synchronously so
         // partial output is preserved.
         for ev in running.receiver.iter() {
@@ -950,15 +956,10 @@ fn render_scrollback(f: &mut ratatui::Frame, area: Rect, state: &ReplState) {
                     Line::from(Span::raw(l.text.clone()))
                 }
             }
-            Origin::System => Line::from(Span::styled(
-                l.text.clone(),
-                Style::default().fg(DIM),
-            )),
+            Origin::System => Line::from(Span::styled(l.text.clone(), Style::default().fg(DIM))),
             Origin::SystemHeader => Line::from(Span::styled(
                 l.text.clone(),
-                Style::default()
-                    .fg(EMERALD)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(EMERALD).add_modifier(Modifier::BOLD),
             )),
         })
         .collect();
@@ -973,12 +974,12 @@ fn render_prompt(f: &mut ratatui::Frame, area: Rect, state: &ReplState) {
         .border_style(Style::default().fg(EMERALD));
 
     let status = if state.running.is_some() {
-        Span::styled(
-            "● running — Ctrl-C to cancel",
-            Style::default().fg(EMERALD),
-        )
+        Span::styled("● running — Ctrl-C to cancel", Style::default().fg(EMERALD))
     } else {
-        Span::styled("▶", Style::default().fg(EMERALD).add_modifier(Modifier::BOLD))
+        Span::styled(
+            "▶",
+            Style::default().fg(EMERALD).add_modifier(Modifier::BOLD),
+        )
     };
 
     // Scroll indicator: shown only when scrolled up. Helps the user
@@ -1000,7 +1001,10 @@ fn render_prompt(f: &mut ratatui::Frame, area: Rect, state: &ReplState) {
     // Prompt prefix is 2 chars ("● " or "▶ "); add the inner left edge
     // (1) and the cursor offset within the input.
     let prefix_chars: u16 = 4; // "▶ " or "● " plus 1 leading border + 1 padding
-    let x = area.x.saturating_add(prefix_chars).saturating_add(state.cursor as u16);
+    let x = area
+        .x
+        .saturating_add(prefix_chars)
+        .saturating_add(state.cursor as u16);
     let y = area.y.saturating_add(1);
     f.set_cursor_position((x, y));
 }
@@ -1253,8 +1257,8 @@ fn load_history() -> Vec<String> {
 /// ~50 chars per line, the file is bounded around 10KB anyway. We
 /// rewrite-on-overflow only when the file grows past 2× the cap.
 fn append_history(entry: &str) -> io::Result<()> {
-    let path = history_path()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no history path"))?;
+    let path =
+        history_path().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no history path"))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -1443,7 +1447,10 @@ mod tests {
         assert_eq!(s.input, "c");
 
         navigate_history(&mut s, 1);
-        assert_eq!(s.input, "", "going past newest history returns to empty buffer");
+        assert_eq!(
+            s.input, "",
+            "going past newest history returns to empty buffer"
+        );
         assert!(s.history_cursor.is_none());
     }
 
@@ -1451,10 +1458,7 @@ mod tests {
     fn cancel_running_with_no_child_is_safe() {
         let mut s = ReplState::new();
         s.cancel_running(); // must not panic
-        assert!(s
-            .lines
-            .iter()
-            .any(|l| l.text.contains("nothing to cancel")));
+        assert!(s.lines.iter().any(|l| l.text.contains("nothing to cancel")));
     }
 
     #[test]
@@ -1508,7 +1512,10 @@ mod tests {
             .map(|l| l.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.contains("node:"), "node adapter line must be present");
+        assert!(
+            joined.contains("node:"),
+            "node adapter line must be present"
+        );
         assert!(
             joined.contains("python:"),
             "python adapter line must be present"
@@ -1772,10 +1779,7 @@ mod tests {
     fn parse_sgr_bold_modifier_set_and_cleared() {
         let line = "\x1b[1mbold\x1b[22m normal";
         let spans = parse_sgr_line(line);
-        let bold = spans
-            .iter()
-            .find(|s| s.content.as_ref() == "bold")
-            .unwrap();
+        let bold = spans.iter().find(|s| s.content.as_ref() == "bold").unwrap();
         assert!(bold.style.add_modifier.contains(Modifier::BOLD));
         let normal = spans
             .iter()

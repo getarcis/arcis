@@ -86,10 +86,7 @@ pub fn render_json(report: &ScaJsonReport<'_>) -> String {
         })
         .collect();
     summary.insert("manifests".into(), Value::Array(manifests_arr));
-    summary.insert(
-        "manifestCount".into(),
-        Value::from(report.manifests.len()),
-    );
+    summary.insert("manifestCount".into(), Value::from(report.manifests.len()));
     summary.insert("threatDbSize".into(), Value::from(report.threat_db_size));
     summary.insert(
         "compromisedCount".into(),
@@ -136,7 +133,11 @@ pub fn render_json(report: &ScaJsonReport<'_>) -> String {
         *by_kind.entry(f.finding_type.label()).or_insert(0) += 1;
     }
     let mut kind_obj = Map::new();
-    for k in &["compromised_version", "trojanized_dep", "persistence_artifact"] {
+    for k in &[
+        "compromised_version",
+        "trojanized_dep",
+        "persistence_artifact",
+    ] {
         kind_obj.insert((*k).into(), Value::from(by_kind[k]));
     }
     summary.insert("byFindingType".into(), Value::Object(kind_obj));
@@ -164,9 +165,7 @@ pub fn render_json(report: &ScaJsonReport<'_>) -> String {
         let paths: Vec<Value> = f
             .paths
             .iter()
-            .map(|chain| {
-                Value::Array(chain.iter().map(|n| Value::from(n.as_str())).collect())
-            })
+            .map(|chain| Value::Array(chain.iter().map(|n| Value::from(n.as_str())).collect()))
             .collect();
         item.insert("paths".into(), Value::Array(paths));
         item.insert("pathCount".into(), Value::from(f.path_count));
@@ -291,10 +290,7 @@ pub fn render_sarif(report: &ScaSarifReport<'_>) -> String {
         );
         // Stable per-instance fingerprint. Versioned key so the hash
         // domain can rotate without colliding with audit's `arcis/v1`.
-        let fingerprint = format!(
-            "{}|{}|{}|{}",
-            f.ecosystem, f.package, f.version, f.location
-        );
+        let fingerprint = format!("{}|{}|{}|{}", f.ecosystem, f.package, f.version, f.location);
         let mut pf = Map::new();
         pf.insert("arcis/sca/v1".into(), Value::from(fingerprint));
         result.insert("partialFingerprints".into(), Value::Object(pf));

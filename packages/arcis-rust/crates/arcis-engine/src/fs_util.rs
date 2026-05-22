@@ -26,8 +26,7 @@ use std::path::Path;
 /// for any path that may have been touched by Windows tooling.
 pub fn read_to_string_stripped(path: impl AsRef<Path>) -> io::Result<String> {
     let bytes = fs::read(path)?;
-    decode_bytes_stripping_bom(&bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    decode_bytes_stripping_bom(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Decode a byte slice as text, handling UTF-8 / UTF-16 LE / UTF-16 BE
