@@ -268,9 +268,7 @@ pub(crate) fn classify_send_error(err: &reqwest::Error) -> &'static str {
 /// Format an error classifier back into a human message.
 pub(crate) fn format_send_error(class: &str) -> String {
     match class {
-        "tls:expired" => {
-            "TLS verification failed: server certificate has expired".to_string()
-        }
+        "tls:expired" => "TLS verification failed: server certificate has expired".to_string(),
         "tls:hostname" => {
             "TLS verification failed: certificate hostname does not match the requested URL"
                 .to_string()
@@ -602,7 +600,9 @@ mod tests {
         // change doesn't accidentally regress the differentiation.
         assert!(format_send_error("tls:expired").contains("expired"));
         assert!(
-            format_send_error("tls:hostname").to_lowercase().contains("hostname"),
+            format_send_error("tls:hostname")
+                .to_lowercase()
+                .contains("hostname"),
             "hostname classifier must surface the hostname-mismatch case"
         );
         assert!(

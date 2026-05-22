@@ -367,7 +367,14 @@
           "id": "path-null-byte",
           "pattern": "%00",
           "flags": "gi",
-          "description": "Detects null byte injection",
+          "description": "Detects URL-encoded null byte injection",
+          "redos_safe": true
+        },
+        {
+          "id": "path-null-byte-literal",
+          "pattern": "\\x00",
+          "flags": "g",
+          "description": "Detects literal NUL byte in path inputs",
           "redos_safe": true
         }
       ]

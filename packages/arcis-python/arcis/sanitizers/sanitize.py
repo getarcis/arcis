@@ -12,6 +12,9 @@ import unicodedata
 import urllib.parse
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from ..core.constants import PATTERNS, DEFAULT_MAX_INPUT_SIZE, MAX_RECURSION_DEPTH
+from ..core.errors import InputTooLargeError
+
 
 def _multi_decode(value: str, max_passes: int = 4) -> str:
     """Decode URL + HTML entity layers until the string is stable.
@@ -41,9 +44,6 @@ def _multi_decode(value: str, max_passes: int = 4) -> str:
         if value == prev:
             break
     return value
-
-from ..core.constants import PATTERNS, DEFAULT_MAX_INPUT_SIZE, MAX_RECURSION_DEPTH
-from ..core.errors import InputTooLargeError
 
 
 # ── Module-level compiled detectors ────────────────────────────────────

@@ -50,8 +50,8 @@ var embeddedPatternsJSON []byte
 // (severity, owasp, description, redos_safe, encoding) are dropped
 // because Go doesn't surface them today. Node + Python do similar.
 type patternSpec struct {
-	Version  string                       `json:"version"`
-	Patterns map[string]patternCategory   `json:"patterns"`
+	Version  string                     `json:"version"`
+	Patterns map[string]patternCategory `json:"patterns"`
 }
 
 type patternCategory struct {

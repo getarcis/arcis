@@ -547,12 +547,10 @@ mod tests {
         let first = &v["runs"][0]["results"][0];
         assert_eq!(first["ruleId"], "sca/pypi/colourama");
         assert_eq!(first["level"], "error"); // critical maps to error
-        assert!(
-            first["partialFingerprints"]["arcis/sca/v1"]
-                .as_str()
-                .unwrap()
-                .contains("colourama")
-        );
+        assert!(first["partialFingerprints"]["arcis/sca/v1"]
+            .as_str()
+            .unwrap()
+            .contains("colourama"));
         let rule = &v["runs"][0]["tool"]["driver"]["rules"][0];
         assert_eq!(rule["id"], "sca/pypi/colourama");
     }

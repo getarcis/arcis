@@ -7,8 +7,6 @@ fragment-spread cycle detection (catches infinite-loop fragments).
 Existing depth + introspection + length checks are unchanged — these
 tests pin the NEW behavior.
 """
-import pytest
-
 from arcis.sanitizers.graphql import (
     GraphqlGuardOptions,
     inspect_graphql_query,
