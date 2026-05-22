@@ -14,7 +14,6 @@
 //! confined to `probe.rs` where the actual scan fan-out happens.
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;

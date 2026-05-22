@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
-use super::sca::{Finding, FindingType};
+use super::sca::Finding;
 
 // ── render_json ─────────────────────────────────────────────────────────────
 
