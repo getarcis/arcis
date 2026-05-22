@@ -27,13 +27,16 @@ Mirrors Node's protectApi(req, options).
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from ..sanitizers.sanitize import scan_threats
 from .bot_detection import detect_bot
 
+if TYPE_CHECKING:
+    from .correlation import CorrelationWindow
 
-ApiBlockReason = str  # 'bot' | 'bad_origin' | 'threat' | 'ok'
+
+ApiBlockReason = str  # 'bot' | 'bad_origin' | 'threat' | 'correlation' | 'ok'
 
 
 # Legitimate non-browser categories that should be allowed by default.
@@ -63,6 +66,9 @@ def check_api(
     check_bot: bool = True,
     allowed_bot_categories: Optional[List[str]] = None,
     scan_body: bool = True,
+    correlation_window: "Optional[CorrelationWindow]" = None,
+    client_ip: Optional[str] = None,
+    route: str = "/api",
 ) -> ApiCheckResult:
     """Pure API check. No rate-limit mutation; safe to call repeatedly.
 
@@ -114,12 +120,24 @@ def check_api(
                 },
             )
 
+    detected_threat_vector: Optional[str] = None
     if scan_body:
         body = _extract_body(request)
         if body is not None:
             threat = scan_threats(body)
             if threat is not None:
                 vector, rule, matched = threat
+                detected_threat_vector = vector
+                # Record the threat in the correlation window first so a
+                # scanner that hits this endpoint multiple times shows up
+                # as one. THEN fail the request.
+                if correlation_window is not None and client_ip:
+                    correlation_window.record(
+                        client_ip,
+                        vector=vector,
+                        route=route,
+                        method="POST",
+                    )
                 return ApiCheckResult(
                     allowed=False,
                     reason="threat",
@@ -129,6 +147,33 @@ def check_api(
                         "matched": matched,
                     },
                 )
+
+    # Correlation window opt-in (improvements.md §1.3 / §1.4). Record the
+    # non-threat request as "api" so cross-route scanning is detectable.
+    if correlation_window is not None and client_ip:
+        detections = correlation_window.record(
+            client_ip,
+            vector=detected_threat_vector or "api",
+            route=route,
+            method="POST",
+        )
+        if (
+            detections.scanner
+            or detections.credential_stuffing
+            or detections.race_window
+        ):
+            return ApiCheckResult(
+                allowed=False,
+                reason="correlation",
+                details={
+                    "scanner": detections.scanner,
+                    "credential_stuffing": detections.credential_stuffing,
+                    "race_window": detections.race_window,
+                    "distinct_vectors": detections.distinct_vectors,
+                    "distinct_values": detections.distinct_values,
+                    "requests_in_window": detections.requests_in_window,
+                },
+            )
 
     return ApiCheckResult(allowed=True, reason="ok")
 

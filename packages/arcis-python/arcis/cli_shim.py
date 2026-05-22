@@ -281,7 +281,15 @@ def _print_welcome() -> None:
 def _sdk_self_test(payload: str) -> int:
     """Run a payload through the Python SDK's scan_threats and print
     the result. Exists so users can verify the SDK works without the
-    full CLI binary."""
+    full CLI binary.
+
+    Output shapes mirror each other (cli-test round-1 bug 10): the
+    threat case uses a `THREAT detected` header + indented fields, the
+    clean case uses an `OK` header + indented fields. Pilots reported
+    the old single-line clean output read as "no output" against a
+    multi-line THREAT block — same visual weight on both sides fixes
+    that.
+    """
     try:
         from .sanitizers.sanitize import scan_threats
     except Exception as exc:
@@ -290,7 +298,12 @@ def _sdk_self_test(payload: str) -> int:
 
     result = scan_threats(payload)
     if result is None:
-        print(f"clean: no threat detected in input ({len(payload)} chars)")
+        print("OK")
+        print(f"  no threats detected ({len(payload)} chars)")
+        print(
+            "  scanned: xss, sqli, nosql-injection, path-traversal, "
+            "command-injection, ssti, xxe, prompt-injection, header-injection"
+        )
         return 0
 
     vector, rule, matched = result
@@ -313,11 +326,21 @@ def _exec_real(real_cli: str, args: List[str]) -> int:
     to `subprocess.run`, which routes through CreateProcess properly
     for `.cmd` / `.bat` / `.ps1` shims. We return its exit code so the
     caller can `sys.exit(...)` with it.
+
+    Ctrl+C on Windows: the Windows console sends a CTRL_C_EVENT to every
+    process in the console group, so the child binary already gets the
+    signal and dies on its own. Python receives the same signal and
+    raises KeyboardInterrupt out of subprocess.run's internal wait. We
+    catch it here and return 130 (POSIX 128+SIGINT convention) instead
+    of letting the traceback leak through to the user — that was bug 5
+    in the cli-test round-1 pilot run.
     """
     if sys.platform == "win32":
         try:
             result = subprocess.run([real_cli, *args])
             return result.returncode if result.returncode is not None else 1
+        except KeyboardInterrupt:
+            return 130
         except OSError as exc:
             print(
                 f"arcis: failed to launch CLI ({real_cli}): {exc}",
@@ -397,7 +420,21 @@ def main() -> int:
         self-test).
       - With any other args: try to passthrough to the real CLI; if
         not installed, print install hint.
+
+    Ctrl+C handling: a top-level try/except around the shim's main body
+    converts KeyboardInterrupt into exit code 130 (POSIX 128+SIGINT)
+    instead of leaking a Python traceback. _exec_real also catches
+    KeyboardInterrupt locally so the child subprocess error message
+    can route through its own OSError branch when applicable. cli-test
+    round-1 bug 5.
     """
+    try:
+        return _main_impl()
+    except KeyboardInterrupt:
+        return 130
+
+
+def _main_impl() -> int:
     args = sys.argv[1:]
 
     if args and args[0] == "--diag":

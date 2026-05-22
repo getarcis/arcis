@@ -120,7 +120,7 @@ impl Baseline {
     /// missing-file, IO, malformed-JSON, and version-mismatch — the
     /// CLI maps each to exit 2 with a specific stderr message.
     pub fn read(path: &Path) -> Result<Self, BaselineError> {
-        let raw = match fs::read_to_string(path) {
+        let raw = match crate::fs_util::read_to_string_stripped(path) {
             Ok(s) => s,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Err(BaselineError::NotFound(path.display().to_string()));
@@ -468,7 +468,7 @@ mod tests {
             )],
         };
         b.write(&p).unwrap();
-        let raw = fs::read_to_string(&p).unwrap();
+        let raw = crate::fs_util::read_to_string_stripped(&p).unwrap();
         let i_version = raw.find("\"version\"").unwrap();
         let i_created = raw.find("\"createdAt\"").unwrap();
         let i_tool = raw.find("\"toolVersion\"").unwrap();

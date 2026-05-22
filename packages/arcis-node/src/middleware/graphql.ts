@@ -41,6 +41,8 @@ const DEFAULT_MESSAGES: Record<GraphqlViolation, string> = {
   depth: 'Query exceeds maximum nesting depth',
   length: 'Query exceeds maximum length',
   introspection: 'Introspection queries are disabled',
+  aliases: 'Query exceeds maximum alias count (alias-bomb protection)',
+  fragment_cycle: 'Query contains a cyclic fragment definition',
 };
 
 /**

@@ -37,6 +37,78 @@ import { detectHeaderInjection } from './headers';
  * sanitizeString("../../etc/passwd")
  * // Returns: "etc/passwd"
  */
+/**
+ * Decode URL + HTML entity layers until the string is stable.
+ *
+ * improvements.md §1.1.b — closes the encoding-stack bypass class.
+ * A payload like `%2526%2523x3c%253bscript%2526%2523x3e%253b` is a
+ * triple-encoded `<script>`: pass 1 URL-decodes to
+ * `%26%23x3c%3bscript%26%23x3e%3b`, pass 2 URL-decodes to
+ * `&#x3c;script&#x3e;`, pass 3 HTML-decodes to `<script>`. Without
+ * this helper the literal ASCII `<script>` never appears in the
+ * string, so the XSS regex never fires.
+ *
+ * Bounded at 4 passes to prevent pathological-input loops. Base64
+ * decoding is intentionally NOT in the chain — false-positive rate
+ * on arbitrary text would be high.
+ */
+function multiDecode(value: string, maxPasses = 4): string {
+  for (let i = 0; i < maxPasses; i++) {
+    const prev = value;
+
+    // URL-decode. decodeURIComponent throws on malformed sequences
+    // (lone `%` with no hex pair); treat that as "no further
+    // URL-decoding possible" and continue with the current value.
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      // leave value as-is
+    }
+
+    // HTML entity decode. No built-in in Node, so inline the common
+    // entities here. Numeric (`&#NN;`, `&#xHH;`) covers the bulk of
+    // XSS-encoding tricks; the five named entities below cover the
+    // rest of the encoding-bypass test corpus.
+    value = htmlEntityDecode(value);
+
+    if (value === prev) break;
+  }
+  return value;
+}
+
+/** Decode HTML entities — numeric (decimal + hex) plus the five core
+ * named entities that XSS payloads use. Keeps the dep-free zero-dep
+ * footprint of `@arcis/node`. */
+function htmlEntityDecode(s: string): string {
+  // &#NN; decimal numeric
+  s = s.replace(/&#(\d+);/g, (_m, n) => {
+    const code = parseInt(n, 10);
+    return Number.isFinite(code) && code >= 0 && code <= 0x10ffff
+      ? String.fromCodePoint(code)
+      : _m;
+  });
+  // &#xHH; or &#XHH; hex numeric
+  s = s.replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => {
+    const code = parseInt(h, 16);
+    return Number.isFinite(code) && code >= 0 && code <= 0x10ffff
+      ? String.fromCodePoint(code)
+      : _m;
+  });
+  // The five named entities that matter for XSS detection.
+  const named: Record<string, string> = {
+    '&lt;': '<',
+    '&gt;': '>',
+    '&amp;': '&',
+    '&quot;': '"',
+    '&apos;': "'",
+    '&nbsp;': ' ',
+  };
+  for (const [entity, ch] of Object.entries(named)) {
+    s = s.split(entity).join(ch);
+  }
+  return s;
+}
+
 export function sanitizeString(value: string, options: SanitizeOptions = {}): string {
   if (typeof value !== 'string') return value;
 
@@ -49,7 +121,21 @@ export function sanitizeString(value: string, options: SanitizeOptions = {}): st
   // Default mode is 'sanitize' (strip threats and return cleaned string).
   // Pass mode: 'reject' to throw SecurityThreatError instead of stripping.
   const reject = options.mode === 'reject';
-  let result = value;
+
+  // SECURITY: Normalize Unicode to NFKC BEFORE every detector runs.
+  // Fullwidth glyphs (`＜script＞`, `１+１＝２`) collapse to their ASCII
+  // equivalents, closing the entire fullwidth-bypass class for XSS,
+  // SQL, command-injection, and path-traversal in a single pass.
+  // improvements.md §1.1.a. Bypass example closed:
+  //   `＜script＞alert(1)＜/script＞`  →  `<script>alert(1)</script>`
+  let result = value.normalize('NFKC');
+
+  // SECURITY: Multi-pass URL + HTML decode (improvements.md §1.1.b).
+  // Closes the encoding-stack bypass class. After NFKC,
+  // `%2526%2523x3c%253bscript%2526%2523x3e%253b` (triple-encoded
+  // `<script>`) decodes all the way to `<script>` and hits the
+  // normal XSS strip below. Bounded at 4 passes.
+  result = multiDecode(result);
 
   // 1. SQL injection
   if (options.sql !== false) {

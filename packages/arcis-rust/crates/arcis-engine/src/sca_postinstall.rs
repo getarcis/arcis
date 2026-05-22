@@ -249,7 +249,7 @@ fn push_if_manifest(pkg_dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn scan_one_manifest(manifest: &Path, patterns: &[(Regex, u32, &'static str)]) -> Vec<Finding> {
-    let raw = match fs::read_to_string(manifest) {
+    let raw = match crate::fs_util::read_to_string_stripped(manifest) {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };

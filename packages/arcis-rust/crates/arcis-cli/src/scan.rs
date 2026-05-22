@@ -2166,6 +2166,36 @@ mod tests {
     }
 
     #[test]
+    fn csrf_from_rejects_cookie_bareword_with_helpful_message() {
+        // cli-test round-1 bug 8: pilots passed `--csrf-from cookie`
+        // expecting an enum value. v1 only supports fetchable specs
+        // (`GET:/path...`). The error message must say so AND surface
+        // a worked example so the user can self-correct without docs.
+        let argv: Vec<String> = ["--csrf-from", "cookie"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        match parse_args(&argv) {
+            ParseOutcome::Err(msg) => {
+                assert!(
+                    msg.contains("not a fetchable spec"),
+                    "error must classify the failure clearly: {msg}"
+                );
+                assert!(
+                    msg.contains("GET:/csrf"),
+                    "error must include a worked example: {msg}"
+                );
+                assert!(
+                    msg.to_lowercase().contains("cookie")
+                        || msg.to_lowercase().contains("response-header"),
+                    "error must acknowledge the unsupported modes the user likely tried: {msg}"
+                );
+            }
+            other => panic!("expected Err, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn csrf_header_overrides_default_thread_header_at_run() {
         // Parser stores the override raw; the `run()` block rewrites
         // `spec.thread_header` before dispatching `fetch_csrf`. The

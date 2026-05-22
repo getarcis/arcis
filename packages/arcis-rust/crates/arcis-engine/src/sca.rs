@@ -250,7 +250,7 @@ fn scan_yarn_lock(path: &Path, threats: &[Threat]) -> Vec<Finding> {
     if !lockfile.is_file() {
         return findings;
     }
-    let content = match fs::read_to_string(&lockfile) {
+    let content = match crate::fs_util::read_to_string_stripped(&lockfile) {
         Ok(s) => s,
         Err(_) => return findings,
     };
@@ -397,7 +397,7 @@ fn scan_requirements(path: &Path, threats: &[Threat]) -> Vec<Finding> {
             continue;
         }
         let location = req_file.display().to_string();
-        let content = match fs::read_to_string(&req_file) {
+        let content = match crate::fs_util::read_to_string_stripped(&req_file) {
             Ok(s) => s,
             Err(_) => continue,
         };
@@ -438,7 +438,7 @@ fn scan_requirements(path: &Path, threats: &[Threat]) -> Vec<Finding> {
     // poetry.lock: parse all `[[package]]` blocks via the same regex shape.
     let poetry_lock = path.join("poetry.lock");
     if poetry_lock.is_file() {
-        if let Ok(content) = fs::read_to_string(&poetry_lock) {
+        if let Ok(content) = crate::fs_util::read_to_string_stripped(&poetry_lock) {
             let block_re = Regex::new(
                 r#"\[\[package\]\][\s\S]*?name\s*=\s*"([^"]+)"[\s\S]*?version\s*=\s*"([^"]+)""#,
             )
@@ -622,7 +622,7 @@ fn scan_pth_backdoors() -> Vec<Finding> {
             if p.extension().and_then(|s| s.to_str()) != Some("pth") {
                 continue;
             }
-            let content = match fs::read_to_string(&p) {
+            let content = match crate::fs_util::read_to_string_stripped(&p) {
                 Ok(s) => s,
                 Err(_) => continue,
             };
@@ -815,7 +815,7 @@ fn enumerate_yarn_lock(path: &Path, out: &mut Vec<PackageRef>) {
     if !lockfile.is_file() {
         return;
     }
-    let content = match fs::read_to_string(&lockfile) {
+    let content = match crate::fs_util::read_to_string_stripped(&lockfile) {
         Ok(s) => s,
         Err(_) => return,
     };
@@ -840,7 +840,7 @@ fn enumerate_requirements(path: &Path, out: &mut Vec<PackageRef>) {
         if !req_file.is_file() {
             continue;
         }
-        let content = match fs::read_to_string(&req_file) {
+        let content = match crate::fs_util::read_to_string_stripped(&req_file) {
             Ok(s) => s,
             Err(_) => continue,
         };
@@ -863,7 +863,7 @@ fn enumerate_poetry_lock(path: &Path, out: &mut Vec<PackageRef>) {
     if !lockfile.is_file() {
         return;
     }
-    let content = match fs::read_to_string(&lockfile) {
+    let content = match crate::fs_util::read_to_string_stripped(&lockfile) {
         Ok(s) => s,
         Err(_) => return,
     };
@@ -1306,6 +1306,48 @@ mod tests {
         assert!(
             findings.iter().any(|f| f.package == "python3-dateutil"),
             "underscore form should normalise to dash and hit the typosquat seed"
+        );
+    }
+
+    #[test]
+    fn detects_colourama_exact_version_in_requirements() {
+        // Regression for cli-test round-1 bug 13: a plain requirements.txt
+        // listing a known-bad typosquat should be flagged.
+        let dir = tempdir();
+        fs::write(dir.path().join("requirements.txt"), "colourama==0.1.6\n").unwrap();
+        let threats = Threat::load_all();
+        let findings = scan_project(dir.path(), false, &threats);
+        let colourama: Vec<_> = findings
+            .iter()
+            .filter(|f| f.package == "colourama")
+            .collect();
+        assert_eq!(
+            colourama.len(),
+            1,
+            "colourama 0.1.6 is in the threat DB and must be flagged"
+        );
+        assert_eq!(colourama[0].severity, "critical");
+        assert_eq!(colourama[0].version, "0.1.6");
+    }
+
+    #[test]
+    fn detects_colourama_in_requirements_with_utf8_bom() {
+        // Regression for cli-test round-1 bug 13 (worst form): PowerShell
+        // 5.1's `Out-File -Encoding utf8` writes a UTF-8 BOM (EF BB BF),
+        // which made `arcis sca` silently report Clean because the BOM
+        // character `\u{FEFF}` does not match the regex `^\s*[A-Za-z]+`
+        // (FEFF is not in Unicode's White_Space property). Fix: file reads
+        // route through `fs_util::read_to_string_stripped`.
+        let dir = tempdir();
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"\xEF\xBB\xBF");
+        bytes.extend_from_slice(b"colourama==0.1.6\n");
+        fs::write(dir.path().join("requirements.txt"), &bytes).unwrap();
+        let threats = Threat::load_all();
+        let findings = scan_project(dir.path(), false, &threats);
+        assert!(
+            findings.iter().any(|f| f.package == "colourama"),
+            "BOM-prefixed requirements.txt must still flag colourama"
         );
     }
 

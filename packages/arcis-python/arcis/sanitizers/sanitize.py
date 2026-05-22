@@ -5,10 +5,42 @@ Input sanitizer that prevents XSS, SQL injection, NoSQL injection,
 path traversal, and command injection.
 """
 
+import html
 import re
 import types
 import unicodedata
+import urllib.parse
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+
+def _multi_decode(value: str, max_passes: int = 4) -> str:
+    """Decode URL + HTML entity layers until the string is stable.
+
+    improvements.md §1.1.b — closes the encoding-stack bypass class.
+    A payload like `%2526%2523x3c%253bscript%2526%2523x3e%253b` is a
+    triple-encoded `<script>`: pass 1 URL-decodes to
+    `%26%23x3c%3bscript%26%23x3e%3b`, pass 2 URL-decodes to
+    `&#x3c;script&#x3e;`, pass 3 HTML-decodes to `<script>`. Without
+    this helper the literal ASCII `<script>` never appears in the
+    string, so the XSS regex never fires.
+
+    Bounded at 4 passes to prevent ReDoS / pathological-input loops.
+    Base64 decoding is intentionally NOT in the chain — the false-
+    positive rate on arbitrary text would be high. Stick to URL + HTML.
+    """
+    for _ in range(max_passes):
+        prev = value
+        try:
+            value = urllib.parse.unquote(value)
+        except Exception:
+            # urllib's unquote is forgiving (`%ZZ` stays literal), but
+            # surrogate-pair edge cases on some Python versions can
+            # throw; treat as "no further URL-decoding possible."
+            pass
+        value = html.unescape(value)
+        if value == prev:
+            break
+    return value
 
 from ..core.constants import PATTERNS, DEFAULT_MAX_INPUT_SIZE, MAX_RECURSION_DEPTH
 from ..core.errors import InputTooLargeError
@@ -288,10 +320,18 @@ class Sanitizer:
                 flags = re.IGNORECASE if "i" in rule.get("flags", "") else 0
                 self._sql_patterns.append(re.compile(rule["pattern"], flags))
 
-        # NoSQL dangerous keys
+        # NoSQL dangerous keys. Lowercase at load time so case-insensitive
+        # comparison at line 390 (`key.lower() in self._nosql_keys`) works
+        # for camelCase operator names like `$jsonSchema`, `$elemMatch`,
+        # `$replaceRoot`. Without lowercasing here, those operators
+        # silently slip past the strip — caught by
+        # `TestSanitizeObjectNoSQLNewOperators` in tests/sanitizers/.
         self._nosql_keys: Set[str] = set()
         if "nosql_injection" in PATTERNS.get("patterns", {}):
-            self._nosql_keys = set(PATTERNS["patterns"]["nosql_injection"].get("dangerous_keys", []))
+            self._nosql_keys = {
+                k.lower()
+                for k in PATTERNS["patterns"]["nosql_injection"].get("dangerous_keys", [])
+            }
 
         # Prototype pollution dangerous keys
         self._proto_keys: Set[str] = set(
@@ -326,7 +366,21 @@ class Sanitizer:
         if len(value) > self.max_input_size:
             raise InputTooLargeError(len(value), self.max_input_size)
 
-        result = value
+        # SECURITY: Normalize Unicode to NFKC BEFORE every detector runs.
+        # Fullwidth glyphs (`＜script＞`, `１+１＝２`) collapse to their ASCII
+        # equivalents, closing the entire fullwidth-bypass class for XSS,
+        # SQL, command-injection, and path-traversal in a single pass.
+        # improvements.md §1.1.a. Bypass example closed:
+        #   `＜script＞alert(1)＜/script＞`  →  `<script>alert(1)</script>`
+        result = unicodedata.normalize('NFKC', value)
+
+        # SECURITY: Multi-pass URL + HTML decode (improvements.md §1.1.b).
+        # Closes the encoding-stack bypass class. After NFKC,
+        # `%2526%2523x3c%253bscript%2526%2523x3e%253b` (triple-encoded
+        # `<script>`) decodes all the way to `<script>` and hits the
+        # normal XSS strip below. Bounded at 4 passes to prevent
+        # pathological-input loops.
+        result = _multi_decode(result)
 
         # XSS prevention - remove patterns FIRST (while detectable), then optionally encode
         if self.xss:
@@ -351,10 +405,9 @@ class Sanitizer:
 
         # Path traversal prevention — loop until stable to prevent bypass via
         # nested sequences: "....//".replace("../","") → "../"
+        # NFKC normalization happens at the top of sanitize_string (above);
+        # don't double-normalize here — the input is already in NFKC form.
         if self.path:
-            # SECURITY: Normalize Unicode to NFKC before path pattern matching.
-            # Fullwidth dot U+FF0E normalizes to '.', preventing bypass of ../ detection.
-            result = unicodedata.normalize('NFKC', result)
             prev = None
             while prev != result:
                 prev = result

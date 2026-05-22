@@ -86,7 +86,7 @@ pub fn scan_file_with_suppression(path: &Path) -> FileResult {
     // Match Python's `errors='replace'` semantics. `read_to_string`
     // fails on invalid UTF-8; falling back to `read` + lossy decode
     // keeps the scan moving on weird inputs (rare in source files).
-    let content = match fs::read_to_string(path) {
+    let content = match crate::fs_util::read_to_string_stripped(path) {
         Ok(c) => c,
         Err(_) => match fs::read(path) {
             Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),

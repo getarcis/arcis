@@ -76,6 +76,52 @@
         "expected_output": "file.txt",
         "comment": "Safe input should pass through unchanged"
       }
+    ],
+
+    "nfkc_bypass": [
+      {
+        "input": "＜script＞alert(1)＜/script＞",
+        "expected_behavior": "fullwidth <script> normalized via NFKC then stripped (improvements.md §1.1.a)"
+      },
+      {
+        "input": "javaｓcript：alert(1)",
+        "expected_behavior": "fullwidth lowercase s + colon in javascript: normalized via NFKC then stripped"
+      },
+      {
+        "input": "．．／etc／passwd",
+        "expected_behavior": "fullwidth ../ in path normalized via NFKC then stripped"
+      },
+      {
+        "input": "＜iframe src=\"evil.com\"＞",
+        "expected_behavior": "fullwidth <iframe> normalized via NFKC then stripped"
+      }
+    ],
+
+    "encoding_chain_bypass": [
+      {
+        "input": "%3Cscript%3Ealert(1)%3C/script%3E",
+        "expected_behavior": "URL-encoded <script> decoded via multi-decode chain then stripped (improvements.md §1.1.b)"
+      },
+      {
+        "input": "%253Cscript%253Ealert(1)%253C/script%253E",
+        "expected_behavior": "double-URL-encoded <script> decoded then stripped"
+      },
+      {
+        "input": "%2526%2523x3c%253bscript%2526%2523x3e%253b",
+        "expected_behavior": "triple-encoded (URL+URL+HTML) <script> opener decoded then stripped"
+      },
+      {
+        "input": "&#x3c;script&#x3e;alert(1)&#x3c;/script&#x3e;",
+        "expected_behavior": "HTML hex-entity <script> decoded then stripped"
+      },
+      {
+        "input": "&lt;script&gt;alert(1)&lt;/script&gt;",
+        "expected_behavior": "HTML named-entity <script> decoded then stripped"
+      },
+      {
+        "input": "John%20Doe",
+        "expected_behavior": "safe URL-encoded text decodes to plain text, passes through"
+      }
     ]
   },
   

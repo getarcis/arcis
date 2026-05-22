@@ -33,6 +33,7 @@ export type {
   ProtectLoginOptions,
   ProtectSignupOptions,
   ProtectApiOptions,
+  CorrelationOptions,
 } from './protect';
 export { graphqlGuard } from './graphql';
 export type { GraphqlGuardMiddlewareOptions } from './graphql';
@@ -43,3 +44,11 @@ export {
   ResponseSplittingError,
 } from './response-splitting';
 export type { ResponseSplittingGuardOptions } from './response-splitting';
+
+// Stateful per-IP correlation window (improvements.md §1.3)
+export { CorrelationWindow } from './correlation';
+export type {
+  CorrelationEvent,
+  CorrelationDetections,
+  CorrelationWindowOptions,
+} from './correlation';

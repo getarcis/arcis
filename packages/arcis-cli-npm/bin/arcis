@@ -14,6 +14,26 @@ const { spawnSync } = require("node:child_process");
 const exeName = process.platform === "win32" ? "arcis-bin.exe" : "arcis-bin";
 const exePath = path.join(__dirname, exeName);
 
+// cli-test round-1 bug 11: WSL inheriting a Windows-installed arcis
+// via /mnt/c lands here with __dirname under /mnt/c/... or
+// /tmp/docker-desktop-root/.../mnt/host/c/.... The Windows-shaped
+// arcis-bin.exe won't run under Linux. Detect the cross-OS mismatch
+// before attempting spawn so the user sees a clear hint instead of a
+// confusing exec format error. This only fires when WSL has node
+// installed and the bash wrapper reaches our JS launcher — the
+// other case (WSL without node) is npm's bash wrapper printing
+// 'node: not found' before we run, which can't be intercepted here.
+if (process.platform === "linux" && /\/mnt\/[a-z]\//i.test(__dirname)) {
+  process.stderr.write(
+    "arcis: detected WSL invocation against a Windows-installed arcis.\n" +
+      "  The Windows .exe binary cannot run under Linux. Install separately\n" +
+      "  inside WSL so the Linux binary is used:\n" +
+      "    npm install -g @arcis/cli\n" +
+      "  (run that command from within WSL, not Windows).\n",
+  );
+  process.exit(1);
+}
+
 if (!fs.existsSync(exePath)) {
   process.stderr.write(
     `arcis: native binary not found at ${exePath}.\n` +

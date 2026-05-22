@@ -45,25 +45,49 @@ export interface GraphqlGuardOptions {
    * Studio. Production should leave this on.
    */
   blockIntrospection?: boolean;
+  /**
+   * Maximum number of field aliases per query (`label: field`).
+   * Default: 50. Alias-bomb attacks repeat the same expensive field
+   * under many labels to multiply backend cost. Real queries rarely
+   * use more than 20 aliases. improvements.md §1.2 V34.
+   */
+  maxAliases?: number;
+  /**
+   * Reject queries whose fragment definitions form a cycle (direct
+   * self-reference `fragment A on T { ...A }` or indirect
+   * `A → B → A`). Such cycles either infinite-loop a naive resolver
+   * or get rejected by `graphql-core` with a 500. Default: true.
+   * improvements.md §1.2 V34.
+   */
+  blockFragmentCycles?: boolean;
 }
 
-export type GraphqlViolation = 'depth' | 'length' | 'introspection';
+export type GraphqlViolation =
+  | 'depth'
+  | 'length'
+  | 'introspection'
+  | 'aliases'
+  | 'fragment_cycle';
 
 export interface GraphqlGuardResult {
   /** True if the query violated any configured limit. */
   blocked: boolean;
-  /** Which limit fired first (depth → introspection → length precedence). */
+  /** Which limit fired first. Precedence: depth → introspection → aliases → fragment_cycle → length. */
   reason?: GraphqlViolation;
-  /** Observed nesting depth. Always returned, even on clean queries. */
+  /** Observed nesting depth. Always returned. */
   depth: number;
   /** Observed length. Always returned. */
   length: number;
+  /** Observed alias count (improvements.md §1.2 V34). Always returned. */
+  aliases: number;
 }
 
 const DEFAULTS = {
   maxDepth: 10,
   maxLength: 10000,
   blockIntrospection: true,
+  maxAliases: 50,
+  blockFragmentCycles: true,
 } as const;
 
 /**
@@ -101,6 +125,87 @@ function computeDepth(query: string): number {
   return max;
 }
 
+// `label: field` — alias of one field to another name. Excludes
+// patterns like `query Foo:` where Foo is an operation name (handled
+// because the regex requires the second token to be a name AND
+// alias semantics only apply inside `{...}` blocks; this is a
+// lexical approximation, not a parser).
+const ALIAS_PATTERN = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+
+// `fragment <name> on <type> {` — captures the fragment NAME.
+const FRAGMENT_DEF_PATTERN =
+  /\bfragment\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+on\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\{/g;
+
+// `...FragmentName` spread inside a selection set.
+const FRAGMENT_SPREAD_PATTERN = /\.\.\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+
+function countAliases(query: string): number {
+  let n = 0;
+  ALIAS_PATTERN.lastIndex = 0;
+  while (ALIAS_PATTERN.exec(query) !== null) n++;
+  return n;
+}
+
+/**
+ * Detect cycles in the fragment spread graph (improvements.md §1.2 V34).
+ *
+ * Walks `fragment X on T { ... }` definitions, builds adjacency from
+ * each fragment to the names it spreads, and runs DFS for a back-edge.
+ * Body of each fragment is brace-matched so the subsequent query
+ * operation's spreads don't pollute the graph.
+ */
+function hasFragmentCycle(query: string): boolean {
+  const deps = new Map<string, Set<string>>();
+  FRAGMENT_DEF_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = FRAGMENT_DEF_PATTERN.exec(query)) !== null) {
+    const name = match[1];
+    const bodyStart = match.index + match[0].length; // right after `{`
+    // Brace-match to find the body end.
+    let depth = 1;
+    let i = bodyStart;
+    while (i < query.length && depth > 0) {
+      const ch = query[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      i++;
+    }
+    const bodyEnd = depth === 0 ? i - 1 : i;
+    const body = query.slice(bodyStart, bodyEnd);
+    const spreads = new Set<string>();
+    FRAGMENT_SPREAD_PATTERN.lastIndex = 0;
+    let sm: RegExpExecArray | null;
+    while ((sm = FRAGMENT_SPREAD_PATTERN.exec(body)) !== null) {
+      spreads.add(sm[1]);
+    }
+    deps.set(name, spreads);
+  }
+  if (deps.size === 0) return false;
+
+  const WHITE = 0;
+  const GRAY = 1;
+  const BLACK = 2;
+  const color = new Map<string, number>();
+  for (const name of deps.keys()) color.set(name, WHITE);
+
+  function visit(name: string): boolean {
+    if (color.get(name) === GRAY) return true; // back-edge
+    if (color.get(name) === BLACK) return false;
+    if (!deps.has(name)) return false; // spread to undefined fragment
+    color.set(name, GRAY);
+    for (const child of deps.get(name)!) {
+      if (visit(child)) return true;
+    }
+    color.set(name, BLACK);
+    return false;
+  }
+
+  for (const name of deps.keys()) {
+    if (visit(name)) return true;
+  }
+  return false;
+}
+
 /**
  * Inspect a GraphQL query against the configured limits. Returns a
  * structured result; the middleware below uses this directly. Pure
@@ -113,26 +218,35 @@ export function inspectGraphqlQuery(
   const maxDepth = options.maxDepth ?? DEFAULTS.maxDepth;
   const maxLength = options.maxLength ?? DEFAULTS.maxLength;
   const blockIntrospection = options.blockIntrospection ?? DEFAULTS.blockIntrospection;
+  const maxAliases = options.maxAliases ?? DEFAULTS.maxAliases;
+  const blockFragmentCycles =
+    options.blockFragmentCycles ?? DEFAULTS.blockFragmentCycles;
 
   const length = query.length;
   const depth = computeDepth(query);
+  const aliases = countAliases(query);
 
-  // Precedence: depth > introspection > length. Depth is the most
-  // expensive to surface (caller wants to know the actual number);
-  // introspection is the most security-critical signal so beats
-  // length; length last because it's the easiest false-positive
-  // (long queries with deep inline fragments are legitimate).
+  // Precedence: depth → introspection → aliases → fragment_cycle →
+  // length. Cheapest-to-explain failures first; length last because
+  // it's the easiest false-positive (long queries with deep inline
+  // fragments are legitimate). improvements.md §1.2 V34.
   if (depth > maxDepth) {
-    return { blocked: true, reason: 'depth', depth, length };
+    return { blocked: true, reason: 'depth', depth, length, aliases };
   }
   if (blockIntrospection && INTROSPECTION_PATTERN.test(query)) {
-    return { blocked: true, reason: 'introspection', depth, length };
+    return { blocked: true, reason: 'introspection', depth, length, aliases };
+  }
+  if (aliases > maxAliases) {
+    return { blocked: true, reason: 'aliases', depth, length, aliases };
+  }
+  if (blockFragmentCycles && hasFragmentCycle(query)) {
+    return { blocked: true, reason: 'fragment_cycle', depth, length, aliases };
   }
   if (length > maxLength) {
-    return { blocked: true, reason: 'length', depth, length };
+    return { blocked: true, reason: 'length', depth, length, aliases };
   }
 
-  return { blocked: false, depth, length };
+  return { blocked: false, depth, length, aliases };
 }
 
 /**

@@ -15,12 +15,14 @@
 #![forbid(unsafe_code)]
 
 pub mod audit;
+pub mod fs_util;
 pub mod osv;
 pub mod osv_cache;
 pub mod sca;
 pub mod sca_graph;
 pub mod sca_lockfile;
 pub mod sca_postinstall;
+pub mod sca_render;
 pub mod sca_sbom;
 pub mod scan;
 pub mod threat_db;

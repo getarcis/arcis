@@ -146,6 +146,55 @@ def test_exec_real_returns_subprocess_returncode_on_windows(monkeypatch):
     assert rc == 7
 
 
+def test_exec_real_swallows_keyboard_interrupt_returns_130_on_windows(monkeypatch):
+    """Bug 5 (cli-test round-1): Ctrl+C during a long audit on Windows
+    raises KeyboardInterrupt out of subprocess.run. The shim must catch
+    it and return 130 (POSIX 128+SIGINT), not leak the traceback through
+    to the user. The Rust child already got CTRL_C_EVENT from the
+    console group, so it's exiting on its own."""
+    monkeypatch.setattr(cli_shim.sys, "platform", "win32")
+    with patch.object(cli_shim.subprocess, "run", side_effect=KeyboardInterrupt):
+        rc = cli_shim._exec_real("arcis.cmd", ["audit", "C:\\"])
+    assert rc == 130
+
+
+def test_sdk_self_test_clean_input_emits_OK_block(capsys):
+    """Bug 10 (cli-test round-1): the safe-input case must emit a
+    multi-line OK block, not a one-liner that reads as silence next to
+    the multi-line THREAT block."""
+    rc = cli_shim._sdk_self_test("hello world")
+    assert rc == 0
+    captured = capsys.readouterr()
+    out = captured.out
+    assert out.startswith("OK"), f"safe input must emit an OK header: {out!r}"
+    assert "no threats detected" in out, "safe input must name what didn't fire"
+    assert "scanned:" in out, "safe input must list the vectors checked"
+    assert "11 chars" in out, "safe input must surface the input length"
+
+
+def test_sdk_self_test_threat_input_emits_THREAT_block(capsys):
+    """The threat case retains its existing multi-line shape."""
+    rc = cli_shim._sdk_self_test("<script>alert(1)</script>")
+    assert rc == 1
+    captured = capsys.readouterr()
+    out = captured.out
+    assert "THREAT detected" in out
+    assert "vector:" in out
+    assert "rule:" in out
+    assert "matched:" in out
+
+
+def test_main_swallows_keyboard_interrupt_returns_130(monkeypatch):
+    """Belt-and-suspenders: even if KeyboardInterrupt escapes some other
+    code path in the shim (PATH walking, welcome rendering, the
+    --version subprocess), the top-level main() handler converts it to
+    exit code 130 instead of letting the traceback escape to stderr."""
+    monkeypatch.setattr(cli_shim.sys, "argv", ["arcis"])
+    with patch.object(cli_shim, "_main_impl", side_effect=KeyboardInterrupt):
+        rc = cli_shim.main()
+    assert rc == 130
+
+
 # ---------------------------------------------------------------------------
 # _candidate_paths: npm prefix lookup on Windows must resolve npm.cmd via
 # shutil.which, not call "npm" directly (which CreateProcess fails to find).

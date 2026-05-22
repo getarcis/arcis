@@ -109,7 +109,7 @@ fn detect_npm_lock_version(path: &Path) -> Option<LockfileFormat> {
 }
 
 fn detect_yarn_flavour(path: &Path) -> Option<LockfileFormat> {
-    let content = fs::read_to_string(path).ok()?;
+    let content = crate::fs_util::read_to_string_stripped(path).ok()?;
     // Berry lockfiles start with a `__metadata` block.
     if content.contains("__metadata:") {
         Some(LockfileFormat::YarnBerry)
@@ -354,7 +354,7 @@ fn walk_npm_v1(graph: &mut DepGraph, parent_id: usize, deps: &Map<String, Value>
 /// `pyproject.toml`'s `[tool.poetry] name` if present, falling back to
 /// the lockfile's directory name.
 pub fn build_poetry(path: &Path) -> Option<DepGraph> {
-    let content = fs::read_to_string(path).ok()?;
+    let content = crate::fs_util::read_to_string_stripped(path).ok()?;
 
     let mut graph = DepGraph::new();
     let root_name = poetry_root_name(path);
@@ -451,7 +451,7 @@ pub fn build_poetry(path: &Path) -> Option<DepGraph> {
 fn poetry_root_name(lockfile: &Path) -> String {
     if let Some(parent) = lockfile.parent() {
         let pyproject = parent.join("pyproject.toml");
-        if let Ok(content) = fs::read_to_string(&pyproject) {
+        if let Ok(content) = crate::fs_util::read_to_string_stripped(&pyproject) {
             // Look for `name = "..."` under `[tool.poetry]`. Cheap regex
             // suffices — if it fails we fall back to dir name.
             let re = Regex::new(r#"(?ms)^\[tool\.poetry\][^\[]*?name\s*=\s*"([^"]+)""#).unwrap();
@@ -481,7 +481,7 @@ fn poetry_root_name(lockfile: &Path) -> String {
 /// Root edges are read from the sibling `package.json` because yarn
 /// classic doesn't record the project's own deps in `yarn.lock`.
 pub fn build_yarn_classic(path: &Path) -> Option<DepGraph> {
-    let content = fs::read_to_string(path).ok()?;
+    let content = crate::fs_util::read_to_string_stripped(path).ok()?;
     let project_dir = path.parent()?;
 
     let mut graph = DepGraph::new();
@@ -677,7 +677,7 @@ fn read_npm_package_json_name(dir: &Path) -> Option<String> {
 /// strip that suffix for graph identity since two variants of the same
 /// `(name, version)` resolve identically for vulnerability matching.
 pub fn build_pnpm(path: &Path) -> Option<DepGraph> {
-    let content = fs::read_to_string(path).ok()?;
+    let content = crate::fs_util::read_to_string_stripped(path).ok()?;
     let val: serde_yml::Value = serde_yml::from_str(&content).ok()?;
     let project_dir = path.parent()?;
 

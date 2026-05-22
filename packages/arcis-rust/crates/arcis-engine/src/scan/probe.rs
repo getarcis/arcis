@@ -206,7 +206,82 @@ pub async fn send_one(
             let body = resp.text().await.unwrap_or_default();
             (status, body)
         }
-        Err(_) => (0, String::new()),
+        Err(err) => {
+            // cli-test round-1 bug 9: distinguish TLS verification
+            // failures from raw connection errors. When body is "" the
+            // caller emits the legacy "unreachable" message; when it's
+            // a "tls:*" classifier the caller emits a TLS-specific one.
+            // Heuristic on the debug format of the error chain so the
+            // classifier survives whichever TLS backend reqwest picked
+            // (rustls vs native-tls).
+            let class = classify_send_error(&err);
+            (0, class.to_string())
+        }
+    }
+}
+
+/// Classify a reqwest send error well enough for a CLI message.
+/// Returns one of:
+/// * `""` — generic connection error (refused, timeout, DNS fail).
+///   Caller emits "unreachable - is the server running?".
+/// * `"tls:expired"` — server certificate is past `notAfter`.
+/// * `"tls:self-signed"` — server cert is not signed by a trusted CA.
+/// * `"tls:hostname"` — cert is valid but the SAN doesn't include the
+///   requested hostname.
+/// * `"tls"` — TLS error of some other shape.
+pub(crate) fn classify_send_error(err: &reqwest::Error) -> &'static str {
+    // Connection-level errors take precedence — a connect-refused is
+    // not a TLS error even if the URL is https.
+    if err.is_connect() || err.is_timeout() {
+        return "";
+    }
+    let chain = format!("{err:?}").to_lowercase();
+    // Don't mark non-TLS errors as TLS just because the URL was https.
+    let mentions_tls = chain.contains("certificate")
+        || chain.contains("tls")
+        || chain.contains("ssl")
+        || chain.contains("handshake");
+    if !mentions_tls {
+        return "";
+    }
+    // Order matters — "notvalidforname" + "expired" can both appear on
+    // multi-issue certs; check the strongest signal first.
+    if chain.contains("expired") {
+        return "tls:expired";
+    }
+    if chain.contains("notvalidforname")
+        || chain.contains("name doesn't match")
+        || chain.contains("hostname")
+    {
+        return "tls:hostname";
+    }
+    if chain.contains("unknownissuer")
+        || chain.contains("self-signed")
+        || chain.contains("self signed")
+        || chain.contains("untrusted")
+    {
+        return "tls:self-signed";
+    }
+    "tls"
+}
+
+/// Format an error classifier back into a human message.
+pub(crate) fn format_send_error(class: &str) -> String {
+    match class {
+        "tls:expired" => {
+            "TLS verification failed: server certificate has expired".to_string()
+        }
+        "tls:hostname" => {
+            "TLS verification failed: certificate hostname does not match the requested URL"
+                .to_string()
+        }
+        "tls:self-signed" => {
+            "TLS verification failed: certificate is self-signed or signed by an untrusted CA"
+                .to_string()
+        }
+        "tls" => "TLS verification failed".to_string(),
+        // Empty classifier = generic connection error (refused / timeout / DNS).
+        _ => "unreachable - is the server running?".to_string(),
     }
 }
 
@@ -271,13 +346,17 @@ pub async fn scan_route(
     };
 
     // Probe step — find a field that isn't 404. Bail on connection error.
+    // cli-test round-1 bug 9: send_one classifies TLS failures in the
+    // body slot when status is 0. `format_send_error` turns that into a
+    // user-facing message — "TLS verification failed: expired" for
+    // expired.badssl.com, etc.
     let mut working_field = options.fields.first().copied().unwrap_or("q").to_string();
     let mut found_working = false;
     for field in options.fields {
-        let (status, _) =
+        let (status, body) =
             send_one(&client, &url, method, field, PROBE_PAYLOAD, options.timeout).await;
         if status == 0 {
-            result.error = Some("unreachable - is the server running?".into());
+            result.error = Some(format_send_error(&body));
             return result;
         }
         if status != 404 {
@@ -508,7 +587,43 @@ mod tests {
         let (status, body) =
             send_one(&client, &url, "POST", "q", "x", Duration::from_millis(500)).await;
         assert_eq!(status, 0);
-        assert!(body.is_empty());
+        assert!(
+            body.is_empty(),
+            "closed-port error must NOT be classified as TLS (bug 9 \
+             regression). Connection-level errors return empty body \
+             so the caller emits the legacy 'unreachable' message."
+        );
+    }
+
+    #[test]
+    fn format_send_error_translates_classifiers_to_human_strings() {
+        // cli-test round-1 bug 9: each TLS classifier maps to a
+        // specific user-facing message. Pin the strings so a wording
+        // change doesn't accidentally regress the differentiation.
+        assert!(format_send_error("tls:expired").contains("expired"));
+        assert!(
+            format_send_error("tls:hostname").to_lowercase().contains("hostname"),
+            "hostname classifier must surface the hostname-mismatch case"
+        );
+        assert!(
+            format_send_error("tls:self-signed")
+                .to_lowercase()
+                .contains("self-signed")
+                || format_send_error("tls:self-signed")
+                    .to_lowercase()
+                    .contains("untrusted")
+        );
+        // Generic TLS — still a TLS message, not "unreachable".
+        let generic_tls = format_send_error("tls");
+        assert!(
+            generic_tls.contains("TLS"),
+            "generic tls classifier must still produce a TLS-specific message: {generic_tls}"
+        );
+        // Empty classifier = generic connection error -> legacy message.
+        assert_eq!(
+            format_send_error(""),
+            "unreachable - is the server running?"
+        );
     }
 
     #[tokio::test]

@@ -30,6 +30,8 @@ const BL: &str = "\u{2570}"; // ╰
 const BR: &str = "\u{256F}"; // ╯
 const V: &str = "\u{2502}"; // │
 const H: &str = "\u{2500}"; // ─
+const TEE_R: &str = "\u{251C}"; // ├   (full-width footer separator left tee)
+const TEE_L: &str = "\u{2524}"; // ┤   (right tee)
 
 /// Total width in display columns. 130 fits comfortably in a 144-col
 /// terminal (modern default for most editors / wide terminals).
@@ -54,9 +56,24 @@ pub fn too_narrow(cols: usize) -> bool {
 }
 
 /// Render the welcome screen. Caller decides TTY-ness; this just
-/// writes the formatted output.
+/// writes the formatted output. Shape:
+///
+/// ```text
+/// ╭─ Arcis CLI vX.Y.Z ─────────────────────────────────╮
+/// │ left identity │ right command sections             │
+/// │ (welcome,     │  Tips for getting started          │
+/// │  mascot,      │  More commands                     │
+/// │  version,     │  Available Adapters                │
+/// │  cwd)         │    Upgrade hint                    │
+/// ├──────────────────────────────────────────────────── ┤
+/// │ Type 'arcis --help' for commands, or run ...        │
+/// ╰────────────────────────────────────────────────────╯
+/// ──────────────────────────────────────────────────────  ← prompt area
+///   |                                                       (line / cursor /
+/// ──────────────────────────────────────────────────────     line — matches
+///                                                            v1 + V2 design)
+/// ```
 pub fn print<W: Write>(w: &mut W, version: &str, cwd: &str) -> io::Result<()> {
-    // Top border with title embedded between dashes.
     let title = format!(" Arcis CLI v{version} ");
     writeln!(w, "{}", top_border(&title))?;
 
@@ -70,7 +87,21 @@ pub fn print<W: Write>(w: &mut W, version: &str, cwd: &str) -> io::Result<()> {
         render_row(w, l, r)?;
     }
 
+    // Full-width separator between the two-column body and the centered
+    // footer hint. Same line weight as the rest of the frame; the
+    // vertical divider does NOT continue through it (the row below is
+    // a single-column footer, not two columns).
+    writeln!(w, "{}", in_box_separator())?;
+    let hint = "Type 'arcis --help' for commands, or run 'arcis audit .' to start scanning.";
+    render_full_width_row(w, &format!("{DIM}{hint}{RESET}"))?;
+
     writeln!(w, "{}", bottom_border())?;
+
+    // Prompt area below the box. Matches the V2 design (rendered HTML
+    // mockup at `cladue desing/welcome_screen_v2.html`): single
+    // emerald rule, one row of prompt space with a cursor `|`, second
+    // emerald rule. After this the user's shell prompt takes over.
+    print_prompt_area(w)?;
     Ok(())
 }
 
@@ -105,6 +136,28 @@ fn bottom_border() -> String {
     s
 }
 
+/// Full-width separator inside the box. Used between the two-column
+/// body and the single-column footer hint. The vertical divider that
+/// runs through the body rows DOES NOT continue through this line —
+/// it ends at the row above. Visually:
+///
+/// ```text
+/// │ left │ right    │
+/// ├──────────────────┤   ← in_box_separator
+/// │ centered footer │
+/// ```
+fn in_box_separator() -> String {
+    let mut s = String::new();
+    s.push_str(EMERALD);
+    s.push_str(TEE_R);
+    for _ in 0..(TOTAL_WIDTH - 2) {
+        s.push_str(H);
+    }
+    s.push_str(TEE_L);
+    s.push_str(RESET);
+    s
+}
+
 fn render_row<W: Write>(w: &mut W, left: &str, right: &str) -> io::Result<()> {
     let left_padded = pad(left, LEFT_INNER);
     let right_padded = pad(right, RIGHT_INNER);
@@ -118,6 +171,36 @@ fn render_row<W: Write>(w: &mut W, left: &str, right: &str) -> io::Result<()> {
         l = left_padded,
         r = right_padded
     )
+}
+
+/// Render a single-column full-width row (used for the centered
+/// footer hint after `in_box_separator`). Inner width is TOTAL_WIDTH
+/// minus the two border columns and the surrounding 1-col padding on
+/// each side.
+fn render_full_width_row<W: Write>(w: &mut W, content: &str) -> io::Result<()> {
+    let inner = TOTAL_WIDTH - 4; // 2 borders + 2 padding spaces
+    let padded = center(content, inner);
+    writeln!(
+        w,
+        "{O}{V}{R} {p} {O}{V}{R}",
+        O = EMERALD,
+        V = V,
+        R = RESET,
+        p = padded
+    )
+}
+
+/// Prompt area below the box: emerald horizontal rule, one row of
+/// prompt space with a `|` cursor marker, second emerald horizontal
+/// rule. After this the user's shell prompt takes over on the next
+/// line. Matches the V2 mockup design (HTML preview at
+/// `cladue desing/welcome_screen_v2.html`).
+fn print_prompt_area<W: Write>(w: &mut W) -> io::Result<()> {
+    let line = format!("{EMERALD}{}{RESET}", H.repeat(TOTAL_WIDTH));
+    writeln!(w, "{line}")?;
+    writeln!(w, "  |")?;
+    writeln!(w, "{line}")?;
+    Ok(())
 }
 
 fn build_left(version: &str, cwd: &str) -> Vec<String> {
@@ -153,7 +236,6 @@ fn build_left(version: &str, cwd: &str) -> Vec<String> {
     ));
     rows.push(String::new());
     rows.push(center(&format!("v{version} (Rust)"), LEFT_INNER));
-    rows.push(center("native binary on 5 platforms", LEFT_INNER));
     rows.push(String::new());
     let cwd_short = truncate_cwd(cwd, LEFT_INNER - 2);
     rows.push(center(
@@ -165,6 +247,13 @@ fn build_left(version: &str, cwd: &str) -> Vec<String> {
 }
 
 fn build_right() -> Vec<String> {
+    // Tips / More commands / Available Adapters layout mirrors the V2
+    // design rendered in `cladue desing/welcome_screen_v2.html`. The
+    // "Available Adapters" section LISTS the SDK runtime adapters
+    // (express, fastapi, gin, etc.) which is a DIFFERENT surface from
+    // `arcis audit --language X`. Go runtime adapters exist (gin,
+    // echo, chi, fiber, nethttp), so Go appears here even though
+    // `audit --language go` does not yet ship. The two facts coexist.
     let mut rows = Vec::new();
     rows.push(String::new());
     rows.push(format!("{EMERALD}Tips for getting started{RESET}"));
@@ -178,8 +267,14 @@ fn build_right() -> Vec<String> {
     rows.push("  arcis --list      Verbose catalog with examples per command".to_string());
     rows.push("  arcis update      Check for a newer Arcis release".to_string());
     rows.push(String::new());
+    rows.push(format!("{EMERALD}Available Adapters{RESET}"));
+    rows.push("  node:    express, fastify, koa, nestjs, nextjs, sveltekit, astro, nuxt, bun".to_string());
+    rows.push("  python:  fastapi, litestar, django, flask".to_string());
+    rows.push("  go:      gin, echo, chi, fiber, nethttp".to_string());
+    rows.push(String::new());
+    rows.push(String::new());
     rows.push(format!(
-        "{DIM}  Upgrade:  npm install -g @arcis/cli@latest{RESET}"
+        "{DIM}                Upgrade:  npm install -g @arcis/cli@latest{RESET}"
     ));
     rows.push(String::new());
     rows
@@ -274,6 +369,56 @@ mod tests {
         let out = render("1.0.1", "/tmp/proj");
         assert!(out.contains("Tips for getting started"));
         assert!(out.contains("More commands"));
+        assert!(out.contains("Available Adapters"));
+    }
+
+    #[test]
+    fn available_adapters_section_lists_all_three_languages() {
+        // V2 design (welcome_screen_v2.html): node + python + go rows
+        // in the Available Adapters section. Go appears because the
+        // section describes SDK RUNTIME adapters (gin/echo/etc are
+        // real Go SDK adapters), not `audit --language` support.
+        let out = render("1.0.1", "/tmp/proj");
+        assert!(out.contains("node:"));
+        assert!(out.contains("express"));
+        assert!(out.contains("python:"));
+        assert!(out.contains("fastapi"));
+        assert!(out.contains("go:"));
+        assert!(out.contains("gin"));
+    }
+
+    #[test]
+    fn in_box_footer_carries_help_hint() {
+        // V2 design adds a full-width footer row inside the box with
+        // a centered hint, separated from the two-column body by a
+        // ├──...──┤ line.
+        let out = render("1.0.1", "/tmp/proj");
+        assert!(out.contains("Type 'arcis --help'"));
+        assert!(out.contains("'arcis audit .'"));
+        // Separator chars used for the body / footer divide.
+        assert!(out.contains(TEE_R));
+        assert!(out.contains(TEE_L));
+    }
+
+    #[test]
+    fn prompt_area_renders_after_the_box() {
+        // V2 design: single line, cursor row with `|`, second line —
+        // after the box, before the shell prompt takes over.
+        let out = render("1.0.1", "/tmp/proj");
+        // The cursor row uses a literal `|`. Bounded count check —
+        // exactly one line in the prompt area carries it.
+        let lines: Vec<&str> = out.lines().collect();
+        let cursor_lines: Vec<&&str> = lines
+            .iter()
+            .filter(|l| l.trim() == "|")
+            .collect();
+        assert_eq!(
+            cursor_lines.len(),
+            1,
+            "expected exactly one cursor `|` row, got {} in:\n{}",
+            cursor_lines.len(),
+            out
+        );
     }
 
     #[test]
