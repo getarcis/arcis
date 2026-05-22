@@ -220,7 +220,17 @@ impl ReplState {
         let cwd = std::env::current_dir()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| String::from("."));
-        let history = load_history();
+        // Under `cargo test`, the default `~/.arcis/history` is a shared
+        // process-wide file. Parallel tests race through `submit()` and
+        // pollute each other's expectations. Skip the disk load under
+        // cfg(test); tests that exercise history loading call
+        // `load_history()` directly with a unique temp path via
+        // `with_temp_history_path`.
+        let history = if cfg!(test) {
+            Vec::new()
+        } else {
+            load_history()
+        };
         Self {
             lines: Vec::new(),
             input: String::new(),
@@ -448,7 +458,10 @@ impl ReplState {
             }
             // Best-effort write — if the home directory is unwritable
             // (read-only homedir, container, etc.), silently keep the
-            // in-memory history. Worth not crashing the REPL over.
+            // in-memory history. Worth not crashing the REPL over. Under
+            // `cargo test` we skip the persistence path entirely so
+            // parallel tests don't race through the global history file.
+            #[cfg(not(test))]
             let _ = append_history(trimmed);
         }
         self.history_cursor = None;
@@ -1375,23 +1388,32 @@ mod tests {
 
     #[test]
     fn state_submit_empty_is_noop() {
-        let mut s = ReplState::new();
-        let baseline_lines = s.lines.len();
-        s.submit("".into());
-        s.submit("   ".into());
-        assert_eq!(s.lines.len(), baseline_lines);
-        assert!(s.history.is_empty());
+        // Pin ARCIS_HISTORY_PATH to a unique temp file so this test does not
+        // see history from `~/.arcis/history` (which other tests / shared
+        // CI state may have populated) and does not leak its own writes to
+        // a global path. Uses the same mutex as the explicit history tests
+        // to serialize against them.
+        with_temp_history_path(|_| {
+            let mut s = ReplState::new();
+            let baseline_lines = s.lines.len();
+            s.submit("".into());
+            s.submit("   ".into());
+            assert_eq!(s.lines.len(), baseline_lines);
+            assert!(s.history.is_empty());
+        });
     }
 
     #[test]
     fn state_submit_slash_help_appends_banner_again() {
-        let mut s = ReplState::new();
-        s.append_banner();
-        let before = s.lines.len();
-        s.submit("/help".into());
-        assert!(s.lines.len() > before, "/help must extend the scrollback");
-        // History only records the slash command, not the banner output.
-        assert_eq!(s.history, vec!["/help".to_string()]);
+        with_temp_history_path(|_| {
+            let mut s = ReplState::new();
+            s.append_banner();
+            let before = s.lines.len();
+            s.submit("/help".into());
+            assert!(s.lines.len() > before, "/help must extend the scrollback");
+            // History only records the slash command, not the banner output.
+            assert_eq!(s.history, vec!["/help".to_string()]);
+        });
     }
 
     #[test]
@@ -1418,15 +1440,17 @@ mod tests {
 
     #[test]
     fn state_history_dedupes_consecutive_duplicates() {
-        let mut s = ReplState::new();
-        // Use slash commands so spawn_subcommand isn't invoked.
-        s.submit("/help".into());
-        s.submit("/help".into());
-        assert_eq!(
-            s.history,
-            vec!["/help".to_string()],
-            "consecutive duplicates must collapse"
-        );
+        with_temp_history_path(|_| {
+            let mut s = ReplState::new();
+            // Use slash commands so spawn_subcommand isn't invoked.
+            s.submit("/help".into());
+            s.submit("/help".into());
+            assert_eq!(
+                s.history,
+                vec!["/help".to_string()],
+                "consecutive duplicates must collapse"
+            );
+        });
     }
 
     #[test]
@@ -1589,11 +1613,11 @@ mod tests {
 
     #[test]
     fn epoch_to_components_known_value() {
-        // 2026-05-21T00:00:00Z = 1779580800
+        // 2026-05-24T00:00:00Z = 1_779_580_800 (per `date -u -d @1779580800`).
         // Spot-check the algorithm against a known value so a future
         // refactor of epoch_to_components can't quietly drift.
         let (y, mo, d, hh, mm, ss) = epoch_to_components(1_779_580_800);
-        assert_eq!((y, mo, d, hh, mm, ss), (2026, 5, 21, 0, 0, 0));
+        assert_eq!((y, mo, d, hh, mm, ss), (2026, 5, 24, 0, 0, 0));
     }
 
     /// Helper for history tests: route `$ARCIS_HISTORY_PATH` at a fresh
@@ -1660,27 +1684,29 @@ mod tests {
 
     #[test]
     fn jump_next_finding_walks_forward_then_wraps() {
-        let mut s = ReplState::new();
-        // 100 rows of filler + findings interspersed.
-        for i in 0..50 {
-            if i == 5 || i == 25 || i == 45 {
-                s.push_output(format!("HIGH line {i}"));
-            } else {
-                s.push_output(format!("ok {i}"));
+        with_temp_history_path(|_| {
+            let mut s = ReplState::new();
+            // 100 rows of filler + findings interspersed.
+            for i in 0..50 {
+                if i == 5 || i == 25 || i == 45 {
+                    s.push_output(format!("HIGH line {i}"));
+                } else {
+                    s.push_output(format!("ok {i}"));
+                }
             }
-        }
-        let view_rows = 20;
-        // Start at the tail (scroll_offset = 0). Pressing F2 jumps to
-        // the next finding strictly above the view top OR wraps. With
-        // 50 rows total + view 20, view_top is 30, so the next finding
-        // is index 45 (the only one > 30).
-        s.jump_next_finding(view_rows);
-        assert!(s.scroll_offset > 0, "F2 should produce a non-zero offset");
-        // Calling again wraps to the first.
-        s.jump_next_finding(view_rows);
-        // After wrap, view should contain index 5 — the offset should
-        // be large enough that the tail is well below the view bottom.
-        assert!(s.scroll_offset >= 25, "wrap-around offset too small");
+            let view_rows = 20;
+            // Start at the tail (scroll_offset = 0). Pressing F2 jumps to
+            // the next finding strictly above the view top OR wraps. With
+            // 50 rows total + view 20, view_top is 30, so the next finding
+            // is index 45 (the only one > 30).
+            s.jump_next_finding(view_rows);
+            assert!(s.scroll_offset > 0, "F2 should produce a non-zero offset");
+            // Calling again wraps to the first.
+            s.jump_next_finding(view_rows);
+            // After wrap, view should contain index 5 — the offset should
+            // be large enough that the tail is well below the view bottom.
+            assert!(s.scroll_offset >= 25, "wrap-around offset too small");
+        });
     }
 
     #[test]
