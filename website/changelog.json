@@ -2,6 +2,36 @@
   "_comment": "Single source of truth for the website's Recently Shipped section + the standalone changelog page. The dashboard's 'Changelog' sidebar link also points at the rendered HTML view. Add new versions to the top of `releases`. Keep summaries one sentence; full bullets in `details`.",
   "releases": [
     {
+      "version": "1.6.2",
+      "date": "2026-05-24",
+      "summary": "Go SDK reaches three-way parity on v1.6 detection (V32 toolcall, V33 deserialization markers, V34 GraphQL alias / fragment cycle, CorrelationWindow, mutation tester). Q8 LDAP NOT-bypass + Q10 mail-header bare-newline patterns. FastAPI create_login_protection_dependency factory.",
+      "details": [
+        "Go: V32 toolcall injection — 5 new patterns appended to promptInjectionSignatures (agent-toolcall-marker, agent-tool-name-spoof, agent-tool-result-marker, ansi-escape-sequence, claude-tool-use-tags).",
+        "Go: V33 deserialization markers — new sanitizers/deserialization.go. DetectDeserialization returns python_pickle / java_fastjson / php_unserialize / ruby_marshal / dotnet_binary_formatter / DeserializeNone. Head-byte markers use strings.HasPrefix (Go's regexp interprets `\\x80` as rune U+0080 = 2 UTF-8 bytes, would miss real pickle blobs).",
+        "Go: V34 GraphQL alias bomb + fragment cycle — GraphqlGuardOptions gains MaxAliases (default 50) + BlockFragmentCycles (default true). DFS with brace-matched body extraction so query-op spreads don't pollute fragment dep graph.",
+        "Go: CorrelationWindow — first stateful primitive in Go. 60s rolling per-IP window backed by container/list (LRU). Scanner / CredentialStuffing / RaceWindow detectors. sync.Mutex serialization.",
+        "Go: mutation tester — 8 mutators (alternating case / uppercase / url-encode-once / url-encode-twice / html-entity-hex / html-entity-decimal / html-entity-named / fullwidth-ASCII) × XSS + SQL + path corpora.",
+        "All SDKs: Q8 LDAP NOT-operator bypass (improvements.md §1.1.e Q8) — catches `)(!`, `&(!`, `|(!` shapes appended after OR/AND escapes to enumerate or exclude entries.",
+        "All SDKs: Q10 mail-header bare-newline bypass (improvements.md §1.1.e Q10) — pattern catches CR/LF + ANY plausible header keyword for MTAs that accept bare LF as a header separator (qmail / sendmail variants).",
+        "FastAPI: create_login_protection_dependency() factory in arcis.fastapi. Wraps the framework-agnostic check_login into a Depends() shape with automatic client-IP extraction. Per-framework factories for Litestar / Django / Gin / Echo / chi / Fiber / nethttp deferred to v1.7.",
+        "@arcis/node 1.6.1 -> 1.6.2. arcis (PyPI) 1.5.5 -> 1.6.2 (catch-up + Q8). Go module tag v1.6.2. @arcis/cli and @arcis/mcp unchanged."
+      ],
+      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)"]
+    },
+    {
+      "version": "1.6.1",
+      "date": "2026-05-24",
+      "summary": "@arcis/node exports map fix for 9 framework-adapter subpath types (Fastify, Koa, Nestjs, Nextjs, Sveltekit, Astro, Nuxt, Bun, Hono). First publish of @arcis/mcp. Honest-claims sweep across README + 8 adapter docstrings.",
+      "details": [
+        "Real bug: every TypeScript user of `@arcis/node/nextjs` (or any of 8 other framework subpaths) got `error TS7016: Could not find a declaration file` because the exports map declared the types path at `./dist/<name>/index.d.ts` while tsc's --emitDeclarationOnly output preserves the src layout, so the .d.ts files actually live at `./dist/middleware/<name>.d.ts`. JS runtime worked; only TypeScript resolution failed. Fixed by aligning the exports-map types path with the actual file location. No behavior change.",
+        "First publish of @arcis/mcp@1.6.0 to npm. Exposes arcis_audit / arcis_sca / arcis_scan / arcis_detect_prompt_injection as Model Context Protocol tools. publish.yml gained a publish-mcp job mirroring publish-node's shape, gated on publish-node so the @arcis/node dep is on npm first.",
+        "Honest-claims sweep: 8 Edge / Web-Fetch Node adapters (Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt, Bun) were advertised everywhere as if they had Express-equivalent attack-vector coverage. They actually ship rate-limit + bot detection + security headers only — the runtime cannot easily inspect request bodies, or the adapter is v1 and deliberately narrow. README Features bullet + Supported Frameworks table now split into 'full-pipeline' (Express + NestJS) vs 'Edge / narrow-scope'. Each of 7 adapter module docstrings got a Scope: paragraph at the top.",
+        "Adapter count math fixed: README and website hero corrected from 'Twelve framework adapters' to 'Nineteen' (10 Node + 4 Python + 5 Go).",
+        "Python README 30+ -> 20+ to match every other surface. pyproject 646-pattern bot corpus -> 635 (actual count). Litestar added to the framework list."
+      ],
+      "packages": ["@arcis/node", "@arcis/mcp"]
+    },
+    {
       "version": "1.6.0",
       "date": "2026-05-21",
       "summary": "Interactive REPL (Arcis Console). Welcome screen V2. Tier 1 detection hardening across all 3 SDKs (NFKC, multi-decode, mutation tester). New vectors V32 toolcall injection, V33 deserialization markers, V34 GraphQL alias bomb + fragment cycle. First stateful primitive: CorrelationWindow per-IP rolling window.",
