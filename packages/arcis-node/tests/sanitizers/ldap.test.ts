@@ -96,6 +96,19 @@ describe('detectLdapInjection', () => {
     expect(detectLdapInjection('ad\x00min')).toBe(true);
   });
 
+  // improvements.md Q8 — LDAP NOT-operator bypass corpus.
+  it('detects NOT-bypass after OR escape: )(!', () => {
+    expect(detectLdapInjection('*)(uid=*)(!(uid=admin))')).toBe(true);
+  });
+
+  it('detects NOT-bypass after AND: &(!', () => {
+    expect(detectLdapInjection('foo&(!(role=anon))')).toBe(true);
+  });
+
+  it('detects NOT-bypass after pipe: |(!', () => {
+    expect(detectLdapInjection('foo|(!(deleted=true))')).toBe(true);
+  });
+
   it('returns false for safe input', () => {
     expect(detectLdapInjection('johndoe')).toBe(false);
     expect(detectLdapInjection('john.doe@example.com')).toBe(false);

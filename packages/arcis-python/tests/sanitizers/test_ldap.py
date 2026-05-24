@@ -77,6 +77,16 @@ class TestDetectLdapInjection:
     def test_detects_nul_byte(self):
         assert detect_ldap_injection("ad\x00min") is True
 
+    # improvements.md Q8 — NOT-bypass corpus.
+    def test_detects_not_bypass_after_or_escape(self):
+        assert detect_ldap_injection("*)(uid=*)(!(uid=admin))") is True
+
+    def test_detects_not_bypass_after_and(self):
+        assert detect_ldap_injection("foo&(!(role=anon))") is True
+
+    def test_detects_not_bypass_after_pipe(self):
+        assert detect_ldap_injection("foo|(!(deleted=true))") is True
+
     def test_returns_false_for_safe_input(self):
         assert detect_ldap_injection("johndoe") is False
         assert detect_ldap_injection("john.doe@example.com") is False
