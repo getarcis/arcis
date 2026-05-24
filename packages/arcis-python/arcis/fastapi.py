@@ -806,7 +806,7 @@ def create_rate_limit_dependency(
         skip_func=skip_func,
         store=store,
     )
-    
+
     async def rate_limit_dependency(request: Request):
         try:
             info = await limiter.check(request)
@@ -819,5 +819,69 @@ def create_rate_limit_dependency(
                 detail={"error": e.message, "retry_after": e.retry_after},
                 headers={"Retry-After": str(e.retry_after)},
             )
-    
+
     return rate_limit_dependency
+
+
+# improvements.md §1.4 — per-framework protect_login factory for FastAPI.
+def create_login_protection_dependency(
+    *,
+    username_field: str = "username",
+    password_field: str = "password",
+    require_credentials: bool = True,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    correlation_window: Any = None,
+    route: str = "/login",
+):
+    """
+    Create a FastAPI dependency that runs check_login() and raises
+    HTTPException on rejection.
+
+    Wraps arcis.check_login (which is framework-agnostic) into the
+    FastAPI Depends() shape, including IP extraction from request.client
+    so callers don't have to pull it manually.
+
+    Usage:
+        from fastapi import FastAPI, Depends
+        from arcis.fastapi import create_login_protection_dependency
+        from arcis.middleware.correlation import CorrelationWindow
+
+        cw = CorrelationWindow()
+        login_protect = create_login_protection_dependency(
+            correlation_window=cw,
+            route="/login",
+        )
+
+        @app.post("/login", dependencies=[Depends(login_protect)])
+        async def login(req: Request):
+            ...
+
+    On rejection the dependency raises HTTPException(429) with
+    detail = {"reason": "<bot|missing_credentials|correlation>",
+              "details": {...}}.
+    """
+    from .middleware.protect_login import check_login as _check_login
+
+    async def login_protection_dependency(request: Request):
+        client_ip = request.client.host if request.client else None
+        result = _check_login(
+            request,
+            username_field=username_field,
+            password_field=password_field,
+            require_credentials=require_credentials,
+            check_bot=check_bot,
+            allowed_bot_categories=allowed_bot_categories,
+            correlation_window=correlation_window,
+            client_ip=client_ip,
+            route=route,
+        )
+        if not result.allowed:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=429,
+                detail={"reason": result.reason, "details": result.details},
+            )
+        return result
+
+    return login_protection_dependency
