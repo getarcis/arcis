@@ -276,6 +276,51 @@ var promptInjectionSignatures = []promptInjectionSignature{
 		severity:    PromptInjectionLow,
 		description: "Fictional framing escape",
 	},
+
+	// --- V32 (v1.6): agent toolcall injection ---
+	// Catches the AI-agent runtime where a malicious tool-call result can
+	// pivot an entire session. Five patterns covering JSON-shape forgery,
+	// tool-name spoofing, fake tool-result blocks, ANSI control sequences,
+	// and Claude/OpenAI tool-use XML tag forgery. Mirrors the Python and
+	// Node implementations.
+	{
+		rule: "agent-toolcall-marker",
+		pattern: regexp.MustCompile(
+			`(?i)"(?:tool_call|function_call|call_tool|tool_use|toolUse)"\s*:\s*\{`,
+		),
+		severity:    PromptInjectionHigh,
+		description: "Injected agent tool-call JSON shape",
+	},
+	{
+		rule: "agent-tool-name-spoof",
+		pattern: regexp.MustCompile(
+			`(?i)"name"\s*:\s*"(?:exec|shell|run_command|system|bash|cmd|python|eval|read_file|write_file|delete_file)"`,
+		),
+		severity:    PromptInjectionHigh,
+		description: "Forged tool-name attempting privileged tool invocation",
+	},
+	{
+		rule: "agent-tool-result-marker",
+		pattern: regexp.MustCompile(
+			`(?i)"(?:tool_result|function_result|tool_output)"\s*:\s*[\{\[\"]`,
+		),
+		severity:    PromptInjectionHigh,
+		description: "Injected fake tool-result block (trick agent into trusting fabricated output)",
+	},
+	{
+		rule:        "ansi-escape-sequence",
+		pattern:     regexp.MustCompile(`\x1b\[`),
+		severity:    PromptInjectionMedium,
+		description: "ANSI escape sequence (terminal hijack / output spoofing on CLI agents)",
+	},
+	{
+		rule: "claude-tool-use-tags",
+		pattern: regexp.MustCompile(
+			`(?i)</?\s*(?:tool_use|tool_result|invoke|function_calls?|parameter)\b`,
+		),
+		severity:    PromptInjectionHigh,
+		description: "Tool-use XML-style tag forgery",
+	},
 }
 
 var severityRank = map[PromptInjectionSeverity]int{
