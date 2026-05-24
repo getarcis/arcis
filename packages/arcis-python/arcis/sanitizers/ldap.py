@@ -16,6 +16,12 @@ _LDAP_DETECT = re.compile(r'[*()\\\x00]')
 # Detection: OR/AND bypass and wildcard abuse patterns
 _LDAP_INJECTION = re.compile(r'\)\s*\(|\*\s*\)\s*\(')
 
+# Detection: LDAP NOT-operator bypass (improvements.md Q8). Catches
+# ')(!', '&(!', '|(!' shapes that legitimate filters never produce;
+# attacker appends a NOT clause to enumerate or exclude entries (e.g.
+# '*)(uid=*)(!(uid=admin))').
+_LDAP_NOT_BYPASS = re.compile(r'\)\s*\(\s*!|&\s*\(\s*!|\|\s*\(\s*!')
+
 # Filter chars per RFC 4515
 _FILTER_CHARS = re.compile(r'[*()\\\x00]')
 
@@ -84,7 +90,11 @@ def detect_ldap_injection(value: str) -> bool:
     """
     if not isinstance(value, str):
         return False
-    return bool(_LDAP_DETECT.search(value) or _LDAP_INJECTION.search(value))
+    return bool(
+        _LDAP_DETECT.search(value)
+        or _LDAP_INJECTION.search(value)
+        or _LDAP_NOT_BYPASS.search(value)
+    )
 
 
 def detect_ldap_injection_strict(value: str) -> bool:
@@ -113,4 +123,4 @@ def detect_ldap_injection_strict(value: str) -> bool:
     """
     if not isinstance(value, str):
         return False
-    return bool(_LDAP_INJECTION.search(value))
+    return bool(_LDAP_INJECTION.search(value) or _LDAP_NOT_BYPASS.search(value))
