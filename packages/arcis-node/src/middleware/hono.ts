@@ -7,6 +7,12 @@
  * That means it works in any runtime Hono targets: Cloudflare Workers,
  * Deno Deploy, Bun, AWS Lambda, Node, and so on.
  *
+ * **Scope:** rate-limit + bot detection + security headers. The
+ * Web Fetch shape means consuming the body stream in this adapter
+ * would defeat the downstream handler. For XSS/SQL/SSTI/etc. body
+ * payload blocking, call `sanitizeObject(await c.req.json())` from
+ * `@arcis/node/sanitizers` inside your route handler.
+ *
  * Quick start:
  *
  * ```ts

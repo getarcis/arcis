@@ -1,7 +1,14 @@
 /**
  * @module @arcis/node/bun
  *
- * Bun + Hono adapter for Arcis. Two entry points:
+ * Bun + Hono adapter for Arcis. Two entry points.
+ *
+ * **Scope:** rate-limit + bot detection + security headers. Bun's
+ * Web Fetch runtime cannot easily inspect request bodies inside this
+ * adapter (consuming the stream defeats the downstream handler). For
+ * XSS/SQL/SSTI/etc. body-payload blocking, call
+ * `sanitizeObject(await req.json())` from `@arcis/node/sanitizers`
+ * inside your route handler.
  *
  * **1. `Bun.serve` fetch wrapper:**
  *

@@ -6,6 +6,11 @@
  * handler); security headers are applied AFTER `next()` so they ride on
  * the buffered response that Koa flushes on its own.
  *
+ * **Scope:** rate-limit + bot detection + security headers. For
+ * XSS/SQL/SSTI/etc. body-payload blocking, call `sanitizeObject` from
+ * `@arcis/node/sanitizers` inside your handler. v1 keeps the middleware
+ * surface narrow.
+ *
  * ```ts
  * import Koa from 'koa';
  * import { arcisKoa } from '@arcis/node/koa';

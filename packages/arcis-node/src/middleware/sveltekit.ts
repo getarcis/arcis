@@ -2,7 +2,12 @@
  * @module @arcis/node/sveltekit
  *
  * SvelteKit adapter for Arcis. Returns a `Handle` factory you can drop into
- * `src/hooks.server.ts`:
+ * `src/hooks.server.ts`.
+ *
+ * **Scope:** rate-limit + bot detection + security headers. For
+ * XSS/SQL/SSTI/etc. body-payload blocking, call `sanitizeObject` from
+ * `@arcis/node/sanitizers` inside your route handler. v1 keeps the
+ * middleware surface narrow.
  *
  * ```ts
  * import { arcisHandle } from '@arcis/node/sveltekit';

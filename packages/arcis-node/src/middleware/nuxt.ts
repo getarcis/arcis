@@ -1,7 +1,12 @@
 /**
  * @module @arcis/node/nuxt
  *
- * Nuxt (h3) adapter for Arcis. Drop into a server middleware file:
+ * Nuxt (h3) adapter for Arcis. Drop into a server middleware file.
+ *
+ * **Scope:** rate-limit + bot detection + security headers. For
+ * XSS/SQL/SSTI/etc. body-payload blocking, call `sanitizeObject` from
+ * `@arcis/node/sanitizers` inside your route handler. v1 keeps the
+ * middleware surface narrow.
  *
  * ```ts
  * // server/middleware/arcis.ts

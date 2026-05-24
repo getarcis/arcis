@@ -1,4 +1,4 @@
-//! Claude-Code-shaped welcome screen for `arcis` no-args on TTY.
+//! Welcome screen for `arcis` no-args on TTY.
 //!
 //! Layout: a single unified rounded box with the title embedded in the
 //! top border, an internal vertical divider, and two side-by-side
@@ -23,7 +23,7 @@ const EMERALD: &str = "\x1b[38;2;0;153;109m";
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
 
-// Box character set. Rounded corners + thin lines mirrors Claude Code.
+// Box character set. Rounded corners + thin lines.
 const TL: &str = "\u{256D}"; // ╭
 const TR: &str = "\u{256E}"; // ╮
 const BL: &str = "\u{2570}"; // ╰
@@ -269,7 +269,8 @@ fn build_right() -> Vec<String> {
     rows.push(String::new());
     rows.push(format!("{EMERALD}Available Adapters{RESET}"));
     rows.push(
-        "  node:    express, fastify, koa, nestjs, nextjs, sveltekit, astro, nuxt, bun".to_string(),
+        "  node:    express, fastify, koa, hono, nestjs, nextjs, sveltekit, astro, nuxt, bun"
+            .to_string(),
     );
     rows.push("  python:  fastapi, litestar, django, flask".to_string());
     rows.push("  go:      gin, echo, chi, fiber, nethttp".to_string());

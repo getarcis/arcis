@@ -1,8 +1,7 @@
 //! `arcis console` — interactive REPL surface.
 //!
 //! Dropped into when a user invokes `arcis` with no args on a TTY (and
-//! not under CI, not piped). Shape mirrors Claude Code / Hermes Agent
-//! CLI / Shannon CLI: a full-screen TUI with a persistent header, a
+//! not under CI, not piped). Full-screen TUI shape with a persistent header, a
 //! scrollback area below it, and a prompt at the bottom. Slash commands
 //! `/help` and `/exit` plus the three scanners (`audit`, `sca`, `scan`)
 //! run inline; output streams into the scrollback as the subprocess
@@ -345,9 +344,8 @@ impl ReplState {
     }
 
     /// Append the welcome banner. Banner is part of scrollback so it
-    /// scrolls naturally as the user runs commands — same shape as
-    /// Claude Code, where the welcome content sits at the top of the
-    /// session and slides off as work accumulates.
+    /// scrolls naturally as the user runs commands. The welcome content
+    /// sits at the top of the session and slides off as work accumulates.
     ///
     /// Sections mirror the Figma V2 mockup: braille sunburst mascot +
     /// wordmark on the left, version + cwd row, then Quick start /
@@ -913,8 +911,8 @@ fn char_pos_to_byte(s: &str, char_pos: usize) -> usize {
 fn ui_render(f: &mut ratatui::Frame, state: &ReplState) {
     let area = f.area();
 
-    // Two-pane layout — banner is part of scrollback (Claude Code-style:
-    // scrolls naturally as the user works, eventually off-screen).
+    // Two-pane layout. Banner is part of scrollback and scrolls naturally
+    // as the user works, eventually off-screen.
     // Prompt is pinned at the bottom in a 3-row block (border-top +
     // input row + border-bottom).
     let chunks = Layout::default()

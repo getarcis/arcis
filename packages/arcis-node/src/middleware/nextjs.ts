@@ -2,7 +2,15 @@
  * @module @arcis/node/nextjs
  *
  * Next.js adapter for Arcis. Two entry points covering the modern Next.js
- * stack (Edge Middleware + App Router route handlers):
+ * stack (Edge Middleware + App Router route handlers).
+ *
+ * **Scope:** rate-limit + bot detection + security headers. The Edge
+ * runtime cannot easily inspect request bodies (they are streams that
+ * can only be read once, and consuming them in middleware defeats the
+ * route handler). For XSS/SQL/SSTI/etc. body-payload blocking, call
+ * `sanitizeObject(await request.json())` from `@arcis/node/sanitizers`
+ * inside your route handler, or wrap individual handlers with
+ * `arcisProtect` (also exported from this module).
  *
  * **1. Edge Middleware (`middleware.ts` at the project root):**
  *
