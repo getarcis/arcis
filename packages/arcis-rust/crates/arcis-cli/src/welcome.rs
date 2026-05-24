@@ -269,7 +269,8 @@ fn build_right() -> Vec<String> {
     rows.push(String::new());
     rows.push(format!("{EMERALD}Available Adapters{RESET}"));
     rows.push(
-        "  node:    express, fastify, koa, hono, nestjs, nextjs, sveltekit, astro, nuxt, bun".to_string(),
+        "  node:    express, fastify, koa, hono, nestjs, nextjs, sveltekit, astro, nuxt, bun"
+            .to_string(),
     );
     rows.push("  python:  fastapi, litestar, django, flask".to_string());
     rows.push("  go:      gin, echo, chi, fiber, nethttp".to_string());
