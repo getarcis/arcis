@@ -47,12 +47,12 @@ import (
 type DeserializeRuntime string
 
 const (
-	DeserializePythonPickle         DeserializeRuntime = "python_pickle"
-	DeserializeJavaFastJSON         DeserializeRuntime = "java_fastjson"
-	DeserializePhpUnserialize       DeserializeRuntime = "php_unserialize"
-	DeserializeRubyMarshal          DeserializeRuntime = "ruby_marshal"
+	DeserializePythonPickle          DeserializeRuntime = "python_pickle"
+	DeserializeJavaFastJSON          DeserializeRuntime = "java_fastjson"
+	DeserializePhpUnserialize        DeserializeRuntime = "php_unserialize"
+	DeserializeRubyMarshal           DeserializeRuntime = "ruby_marshal"
 	DeserializeDotnetBinaryFormatter DeserializeRuntime = "dotnet_binary_formatter"
-	DeserializeNone                 DeserializeRuntime = ""
+	DeserializeNone                  DeserializeRuntime = ""
 )
 
 // Head markers are byte-precise. Go's regexp treats `\x80` as the rune

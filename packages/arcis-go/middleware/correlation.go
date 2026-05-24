@@ -57,13 +57,13 @@ type CorrelationDetections struct {
 
 // CorrelationWindowOptions configures CorrelationWindow.
 type CorrelationWindowOptions struct {
-	WindowSeconds                 float64
-	MaxIps                        int
-	MaxEventsPerIp                int
-	ScannerDistinctVectors        int
-	ScannerMinRequests            int
+	WindowSeconds                    float64
+	MaxIps                           int
+	MaxEventsPerIp                   int
+	ScannerDistinctVectors           int
+	ScannerMinRequests               int
 	CredentialStuffingDistinctValues int
-	RaceWindowMs                  int
+	RaceWindowMs                     int
 	// RacePairs is the set of route pairs to watch for race-windows.
 	// Each pair is unordered; CorrelationWindow normalizes by sorting.
 	RacePairs [][2]string
@@ -90,14 +90,14 @@ func NewCorrelationWindowOptions() CorrelationWindowOptions {
 // All thresholds are tunable via CorrelationWindowOptions. Record is
 // the only mutating method; the Detect* helpers are read-only.
 type CorrelationWindow struct {
-	windowSeconds        time.Duration
-	maxIps               int
-	maxEventsPerIp       int
-	scannerDistinct      int
-	scannerMinRequests   int
-	credStuffDistinct    int
-	raceWindow           time.Duration
-	racePairs            map[[2]string]struct{}
+	windowSeconds      time.Duration
+	maxIps             int
+	maxEventsPerIp     int
+	scannerDistinct    int
+	scannerMinRequests int
+	credStuffDistinct  int
+	raceWindow         time.Duration
+	racePairs          map[[2]string]struct{}
 
 	mu      sync.Mutex
 	order   *list.List               // LRU order over IPs (front = most-recent)
