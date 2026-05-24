@@ -6,7 +6,25 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	"github.com/GagancM/arcis/core"
 )
+
+// allOnSanitizer returns a Sanitizer with every vector enabled. The
+// mutation tests want to verify SanitizeString as a unified pipeline,
+// matching Python's `sanitize_string` and Node's `sanitizeString`. Both
+// of those default to all-on; in Go we have to opt-in explicitly.
+func allOnSanitizer() *Sanitizer {
+	return NewSanitizer(core.Config{
+		SanitizeXSS:   true,
+		SanitizeSQL:   true,
+		SanitizeNoSQL: true,
+		SanitizePath:  true,
+		SanitizeCmd:   true,
+		SanitizeSSTI:  true,
+		SanitizeXXE:   true,
+	})
+}
 
 // Mutation resistance tests for SanitizeString (improvements.md §1.1.d).
 //
@@ -173,12 +191,13 @@ var pathCases = []mutCase{
 
 func runMutationCases(t *testing.T, category string, cases []mutCase, mutators []mutator) {
 	t.Helper()
+	s := allOnSanitizer()
 	for _, c := range cases {
 		for _, m := range mutators {
 			c, m := c, m
 			t.Run(fmt.Sprintf("%s/%s/%s", category, m.name, c.base), func(t *testing.T) {
 				mutated := m.fn(c.base)
-				output := strings.ToLower(SanitizeString(mutated))
+				output := strings.ToLower(s.SanitizeString(mutated))
 				for _, tok := range c.tokens {
 					if strings.Contains(output, strings.ToLower(tok)) {
 						t.Errorf(

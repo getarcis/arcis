@@ -1,6 +1,9 @@
 package sanitizers
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // V33 (v1.6) — Modern deserialization marker detection.
 //
@@ -52,19 +55,29 @@ const (
 	DeserializeNone                 DeserializeRuntime = ""
 )
 
-// Python pickle: 0x80 followed by version byte 0x02-0x05.
-var picklePattern = regexp.MustCompile(`^\x80[\x02-\x05]`)
+// Head markers are byte-precise. Go's regexp treats `\x80` as the rune
+// U+0080, which encodes to two UTF-8 bytes (0xC2 0x80) and would not
+// match the raw byte 0x80 at the start of a real pickle blob. So we
+// use byte-prefix checks for the head markers and regex for the embedded
+// markers (FastJSON / PHP) which are pure-ASCII.
 
-// Ruby Marshal magic: 0x04 0x08 at start (Ruby 1.9+).
-var rubyMarshalPattern = regexp.MustCompile(`^\x04\x08`)
+// pythonPickleHeads enumerates the protocol 2-5 head-byte pairs.
+var pythonPickleHeads = []string{
+	"\x80\x02", "\x80\x03", "\x80\x04", "\x80\x05",
+}
 
-// .NET BinaryFormatter: 5-byte serialization header.
-var dotnetBinFmtPattern = regexp.MustCompile(`^\x00\x01\x00\x00\x00`)
+// rubyMarshalHead is the Ruby Marshal magic at position 0 (Ruby 1.9+).
+const rubyMarshalHead = "\x04\x08"
 
-// Java FastJSON: embedded "@type":"<class>" autotype marker.
+// dotnetBinFmtHead is the .NET BinaryFormatter 5-byte serialization header.
+const dotnetBinFmtHead = "\x00\x01\x00\x00\x00"
+
+// Java FastJSON: embedded "@type":"<class>" autotype marker. ASCII so
+// regex is safe.
 var fastjsonAutotypePattern = regexp.MustCompile(`"@type"\s*:\s*"[a-zA-Z_$][\w$.]*"`)
 
-// PHP unserialize: O:<len>:"<ClassName>":<count>:{ shape.
+// PHP unserialize: O:<len>:"<ClassName>":<count>:{ shape. ASCII so regex
+// is safe.
 var phpUnserializePattern = regexp.MustCompile(`O:\d+:"[a-zA-Z_\\][\w\\]*":\d+:\{`)
 
 // DetectDeserialization detects a serialized-object marker for any
@@ -78,13 +91,15 @@ func DetectDeserialization(payload string) DeserializeRuntime {
 	if payload == "" {
 		return DeserializeNone
 	}
-	if picklePattern.MatchString(payload) {
-		return DeserializePythonPickle
+	for _, head := range pythonPickleHeads {
+		if strings.HasPrefix(payload, head) {
+			return DeserializePythonPickle
+		}
 	}
-	if rubyMarshalPattern.MatchString(payload) {
+	if strings.HasPrefix(payload, rubyMarshalHead) {
 		return DeserializeRubyMarshal
 	}
-	if dotnetBinFmtPattern.MatchString(payload) {
+	if strings.HasPrefix(payload, dotnetBinFmtHead) {
 		return DeserializeDotnetBinaryFormatter
 	}
 	if fastjsonAutotypePattern.MatchString(payload) {
