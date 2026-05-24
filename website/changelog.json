@@ -41,7 +41,7 @@
     {
       "version": "1.5.2",
       "date": "2026-05-21",
-      "summary": "arcis CLI welcome screen (Claude-Code-shape, emerald, burst mascot) + Python pip-install-arcis shim restoration.",
+      "summary": "arcis CLI welcome screen (rounded TUI, emerald, burst mascot) + Python pip-install-arcis shim restoration.",
       "packages": ["arcis (PyPI)", "@arcis/node", "@arcis/cli (npm, native binary)"]
     },
     {

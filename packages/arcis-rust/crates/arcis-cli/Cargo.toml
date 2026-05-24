@@ -27,7 +27,7 @@ tokio = { workspace = true }
 # branch on PowerShell, which never exports COLUMNS.
 terminal_size = "0.4"
 # Interactive REPL (cli-bugs.md Part B / improvements.md §1.5). Drops
-# users into a Claude-Code-shaped TUI on bare `arcis`. Backend is
+# users into a full-screen rounded TUI on bare `arcis`. Backend is
 # crossterm (ratatui's default).
 ratatui = { workspace = true }
 crossterm = { workspace = true }

@@ -1,7 +1,7 @@
 {
   "name": "@arcis/mcp",
-  "version": "1.5.0",
-  "description": "Arcis MCP server. Exposes Arcis CLI scanners (audit / scan / sca) and the prompt-injection detector as tools that Cursor, Claude Code, and any other MCP-aware AI agent can call. One install, four tools, zero cloud round trip.",
+  "version": "1.6.0",
+  "description": "Arcis MCP server. Exposes Arcis CLI scanners (audit / scan / sca) and the prompt-injection detector as tools that Cursor and any other MCP-aware AI agent can call. One install, four tools, zero cloud round trip.",
   "main": "dist/server.js",
   "bin": {
     "arcis-mcp": "dist/server.js"
@@ -23,7 +23,6 @@
     "arcis",
     "security",
     "cursor",
-    "claude-code",
     "ai-agent",
     "tool",
     "prompt-injection"
@@ -32,7 +31,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@arcis/node": "file:../arcis-node"
+    "@arcis/node": "^1.6.0"
   },
   "peerDependenciesMeta": {
     "@arcis/cli": {

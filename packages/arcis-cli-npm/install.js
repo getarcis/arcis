@@ -8,7 +8,7 @@
 //
 // Plain stdlib: no transitive deps. Runs at install time, before any
 // optional dependencies are available, so we cannot rely on third-party
-// packages here. Same pattern Claude Code, esbuild, and swc use.
+// packages here. Same pattern esbuild and swc use.
 
 "use strict";
 

@@ -94,9 +94,11 @@ At the checkpoint, Arcis:
 - **635-pattern bot corpus**: Generated from a curated MIT-licensed corpus plus supplementary entries. 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown) with allow/deny lists and behavioral signal detection.
 - **Lean dependencies**: Node + Python SDKs ship with zero runtime dependencies. Go SDK has a stdlib-only core; framework adapters (Gin, Echo, chi, Fiber) are imported on demand.
 - **Three-language parity**: Same API, same behavior, same test results across Node.js, Python, and Go. Enforced by shared test vectors.
-- **First-party framework adapters (Node)**: Express, Fastify, Koa, Hono, Next.js, NestJS, SvelteKit, Astro, Nuxt, Bun. Each subpath import (`@arcis/node/fastify`, `@arcis/node/hono`, `@arcis/node/nextjs`, etc.) keeps the framework SDK as a type-only dependency, so non-users pay nothing.
-- **First-party framework adapters (Python)**: FastAPI, Flask, Django, Litestar (and any ASGI host).
-- **First-party framework adapters (Go)**: Gin, Echo, chi, Fiber, plus a stdlib `net/http` helper.
+- **Framework adapters (Node)**: ten subpath imports keep each framework SDK as a type-only dependency, so non-users pay nothing. Adapter surface varies by framework:
+  - *Full sanitizer pipeline* (XSS, SQL, NoSQL, SSTI, XXE, path, command, prompt injection, prototype, LDAP, XPath, header injection): **Express** (`@arcis/node`), **NestJS** (`@arcis/node/nestjs`).
+  - *Rate-limit + bot + security headers* (narrower scope because the runtime cannot easily inspect request bodies, or because the adapter is `v1` and ships the basics first): **Fastify, Koa, Hono, Next.js (Edge Middleware), SvelteKit, Astro, Nuxt, Bun**. Pair with `sanitizeObject()` / `detectXss()` / `sanitizeString()` from `@arcis/node/sanitizers` inside your route handlers for body-payload inspection.
+- **Framework adapters (Python)**: FastAPI, Flask, Django, Litestar (full pipeline on every adapter — Python middleware can read request bodies natively).
+- **Framework adapters (Go)**: Gin, Echo, chi, Fiber, plus a stdlib `net/http` helper (full pipeline on every adapter when `Block: true` is set).
 - **Context-aware output encoding**: `encodeForHtml()`, `encodeForJs()`, `encodeForUrl()`, `encodeForCss()`, `encodeForAttribute()` for safe rendering in every output context.
 - **Supply chain scanner**: `arcis sca` checks lockfiles, `node_modules`, and Python environments against a database of known compromised packages.
 - **Static analysis CLI**: `arcis scan` and `arcis audit` flag unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, weak crypto) across 24 rules.
@@ -124,7 +126,7 @@ At the checkpoint, Arcis:
 | **CSRF** | Double-submit cookie, token generation and validation |
 | **Rate Limiting** | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
 | **Bot Detection** | 635 patterns sourced from a curated MIT corpus + supplementary entries, 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. The corpus is also published standalone at [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots). |
-| **MCP server (`@arcis/mcp`)** | Model Context Protocol server exposing `arcis_audit`, `arcis_sca`, `arcis_scan`, and `arcis_detect_prompt_injection` as tools that Cursor, Claude Code, and any MCP-aware agent can call. |
+| **MCP server (`@arcis/mcp`)** | Model Context Protocol server exposing `arcis_audit`, `arcis_sca`, `arcis_scan`, and `arcis_detect_prompt_injection` as tools that Cursor and any MCP-aware AI agent can call. |
 | **Prompt Injection** | 28 signatures across HIGH/MEDIUM/LOW tiers: jailbreak frameworks, system-prompt extraction, fake `<system>` tags, conversation-replay forgeries, base64/ROT13 smuggling hints, plus 5 v1.6 agent toolcall patterns (`"tool_call"` / `"function_call"` markers, ANSI escapes, tool-name spoofing) |
 | **Modern Deserialization (v1.6)** | `detectDeserialization()` flags request bodies that look like Python pickle (`\x80\x04`), Java FastJSON (`"@type":`), PHP `unserialize` (`O:N:"Class":`), Ruby Marshal (`\x04\x08`), or .NET BinaryFormatter (`\x00\x01\x00\x00\x00`). Detection-only: caller refuses the request. |
 | **GraphQL Abuse** | `graphqlGuard` rejects oversize queries, deep selection sets, introspection in production, and (v1.6) alias bombs + fragment cycles via `max_aliases` and `block_fragment_cycles`. |
@@ -492,13 +494,17 @@ Response sent to client
 
 ## Supported Frameworks
 
-| SDK | Built-in Adapters | Core Functions | Status |
-|-----|-------------------|----------------|--------|
-| **Node.js** | Express | Work with any framework | Stable |
-| **Python** | Flask, FastAPI, Django | Work standalone | Stable |
-| **Go** | net/http, Gin, Echo | Work standalone | Beta |
+| SDK | Full-pipeline adapters | Edge / narrow-scope adapters | Status |
+|-----|------------------------|------------------------------|--------|
+| **Node.js** | Express, NestJS | Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt, Bun | Stable |
+| **Python** | FastAPI, Flask, Django, Litestar | (none — every Python adapter runs the full pipeline) | Stable |
+| **Go** | Gin, Echo, chi, Fiber, net/http | (none — every Go adapter runs the full pipeline when `Block: true`) | Stable |
 
-**Node.js:** First-party adapters ship for Express, Fastify, Koa, Hono, Next.js, NestJS, SvelteKit, Astro, Nuxt, and Bun. Import any of them via subpath (`@arcis/node/fastify`, `@arcis/node/hono`, etc.) — framework types stay compile-time-only.
+**Full-pipeline** adapters run the full Arcis sanitization stack (XSS, SQL, NoSQL, SSTI, XXE, path, command, prototype, prompt injection, LDAP, XPath, header injection) against query, params, headers, and body.
+
+**Edge / narrow-scope** adapters ship rate-limit + bot + security headers only. The runtime either cannot easily inspect request bodies (Next.js Edge Middleware, Cloudflare Workers via Hono, Bun) or the adapter is `v1` and deliberately keeps the surface narrow (Fastify, Koa, SvelteKit, Astro, Nuxt). Pair with `sanitizeObject()` / `detectXss()` / `sanitizeString()` from `@arcis/node/sanitizers` inside route handlers for body-payload inspection.
+
+Import any subpath via `@arcis/node/<adapter>` (e.g., `@arcis/node/fastify`, `@arcis/node/nextjs`). Framework types stay compile-time-only.
 
 ---
 
@@ -569,7 +575,7 @@ The script is stripped. The rest of the comment is saved normally.
 
 - 20+ security flaw coverage (runtime + detection)
 - 3 SDKs (Node.js, Python, Go) at full parity
-- **12 framework adapters**: Express, NestJS, SvelteKit, Astro, Nuxt, Bun + Hono (Node), FastAPI, Flask, Django, Litestar (Python), Gin, Echo, chi, Fiber, net/http (Go)
+- **19 framework adapters**: Express, NestJS, Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt, Bun (Node, 10 total), FastAPI, Flask, Django, Litestar (Python, 4 total), Gin, Echo, chi, Fiber, net/http (Go, 5 total)
 - **635-pattern bot corpus** (was 80) with allow/deny categorization
 - **AI/LLM prompt-injection detection** across all 3 SDKs (28 signatures, 3 severity tiers)
 - **`tokenBudget` middleware** for per-key LLM token spend caps

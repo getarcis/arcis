@@ -1,6 +1,6 @@
 # @arcis/mcp
 
-> Model Context Protocol server for Arcis. Plugs Arcis security tools into Cursor, Claude Code, and any MCP-aware AI agent.
+> Model Context Protocol server for Arcis. Plugs Arcis security tools into Cursor and any MCP-aware AI agent.
 
 [![npm version](https://img.shields.io/npm/v/@arcis/mcp.svg?label=%40arcis%2Fmcp&color=00996D)](https://www.npmjs.com/package/@arcis/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -43,9 +43,9 @@ Add to your Cursor config (`~/.cursor/mcp.json` or `cursor-mcp.json`):
 
 Restart Cursor. The four tools become available to any chat where you've enabled MCP tool calls.
 
-### Claude Code
+### Other MCP-aware AI agents
 
-Claude Code reads the same MCP server format. Add to your project's `.mcp.json`:
+Any IDE or coding-assistant client that reads the standard `.mcp.json` format works. Add to your project's `.mcp.json`:
 
 ```json
 {
