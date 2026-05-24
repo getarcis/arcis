@@ -22,6 +22,13 @@ const LDAP_DETECT_PATTERN = /[*()\\\x00]/;
 // Detection pattern for OR/AND bypass and wildcard abuse
 const LDAP_INJECTION_PATTERN = /\)\s*\(|\*\s*\)\s*\(/;
 
+// Detection pattern for LDAP NOT-operator bypass (improvements.md Q8).
+// Catches ')(!', '&(!', '|(!' shapes that legitimate filters never contain;
+// these are the attacker's NOT-clause appended to enumerate or exclude
+// entries (e.g. '*)(uid=*)(!(uid=admin))'). Companion to
+// LDAP_INJECTION_PATTERN; together they cover the OR-then-NOT corpus.
+const LDAP_NOT_BYPASS_PATTERN = /\)\s*\(\s*!|&\s*\(\s*!|\|\s*\(\s*!/;
+
 const escapeChar = (char: string) => '\\' + char.charCodeAt(0).toString(16).padStart(2, '0');
 
 /**
@@ -63,5 +70,9 @@ export function sanitizeLdapDn(input: string): string {
  */
 export function detectLdapInjection(input: string): boolean {
   if (typeof input !== 'string') return false;
-  return LDAP_DETECT_PATTERN.test(input) || LDAP_INJECTION_PATTERN.test(input);
+  return (
+    LDAP_DETECT_PATTERN.test(input) ||
+    LDAP_INJECTION_PATTERN.test(input) ||
+    LDAP_NOT_BYPASS_PATTERN.test(input)
+  );
 }

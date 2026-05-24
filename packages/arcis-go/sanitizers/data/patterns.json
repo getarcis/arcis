@@ -405,6 +405,14 @@
           "description": "Detects attack-specific LDAP filter-break shapes ')(' and '*)('. Safe to wire into request-boundary scanners. Catches '*)(uid=*))(|(uid=*' style payloads.",
           "redos_safe": true,
           "request_boundary_safe": true
+        },
+        {
+          "id": "ldap-not-bypass",
+          "pattern": "\\)\\s*\\(\\s*!|&\\s*\\(\\s*!|\\|\\s*\\(\\s*!",
+          "flags": "g",
+          "description": "Detects LDAP NOT-operator bypass shapes ')(!', '&(!', and '|(!'. Catches injections where attacker appends a NOT clause to enumerate or exclude specific entries, e.g. '*)(uid=*)(!(uid=admin))'. Companion to ldap-injection-strict; together they cover the OR-then-NOT enumeration corpus that legitimate LDAP queries never produce. (improvements.md Q8.)",
+          "redos_safe": true,
+          "request_boundary_safe": true
         }
       ]
     },
@@ -433,6 +441,14 @@
           "pattern": "(\\r\\n|\\r|\\n)\\s*(bcc|cc|to|from|subject|reply-to|return-path|content-type|x-mailer)\\s*:",
           "flags": "gi",
           "description": "Detects SMTP header injection: CR/LF followed by a known SMTP header keyword. Narrow enough for request-boundary scanning because legitimate user input rarely contains '\\nBcc:' verbatim.",
+          "redos_safe": true,
+          "request_boundary_safe": true
+        },
+        {
+          "id": "email-header-bare-newline",
+          "pattern": "(\\r\\n|\\r|\\n)\\s*[a-z][a-z0-9-]{0,40}\\s*:",
+          "flags": "gi",
+          "description": "Detects bare CR/LF followed by ANY plausible header keyword (not just the SMTP allowlist). Catches MTAs that accept bare LF or bare CR as a header separator (qmail, sendmail variants), where attacker bypasses the strict keyword list by injecting a non-SMTP-keyword header (X-Custom, Authentication-Results, DKIM-Signature, ...). Companion to email-header-smtp-keyword; together they cover the bypass class. (improvements.md Q10.)",
           "redos_safe": true,
           "request_boundary_safe": true
         }
