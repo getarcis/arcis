@@ -1,8 +1,8 @@
 /**
  * @arcis/mcp — Model Context Protocol server for Arcis.
  *
- * Exposes Arcis security tools so MCP-aware AI agents (Cursor, Claude Code,
- * Anthropic's MCP clients, OpenAI's tool-call shim) can call them directly.
+ * Exposes Arcis security tools so MCP-aware AI agents (Cursor, the MCP CLI,
+ * and any other MCP client) can call them directly.
  *
  * Four tools:
  *   - arcis_audit                   static analysis on a directory
@@ -14,8 +14,8 @@
  * `npm install -g @arcis/cli`). The fourth runs entirely in-process via
  * the Node SDK — no extra binary required.
  *
- * Speak the protocol over stdio; that's how Cursor, Claude Code, and the
- * MCP CLI launch servers.
+ * Speak the protocol over stdio; that's how Cursor, the MCP CLI, and
+ * other MCP clients launch servers.
  */
 
 import { spawn } from 'node:child_process';

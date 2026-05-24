@@ -5,7 +5,7 @@
 [![Python 3.9+](https://img.shields.io/pypi/pyversions/arcis.svg)](https://pypi.org/project/arcis/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**Inside-the-app security middleware for Python. One line of code, 30+ attack vectors handled, zero runtime dependencies.**
+**Inside-the-app security middleware for Python. One line of code, 20+ attack vectors handled, zero runtime dependencies.**
 
 ```bash
 pip install arcis

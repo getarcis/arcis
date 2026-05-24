@@ -1,7 +1,12 @@
 /**
  * @module @arcis/node/astro
  *
- * Astro adapter for Arcis. Drop into `src/middleware.ts`:
+ * Astro adapter for Arcis. Drop into `src/middleware.ts`.
+ *
+ * **Scope:** rate-limit + bot detection + security headers. For
+ * XSS/SQL/SSTI/etc. body-payload blocking, call `sanitizeObject` from
+ * `@arcis/node/sanitizers` inside your endpoint handler. v1 keeps the
+ * middleware surface narrow.
  *
  * ```ts
  * import { defineMiddleware } from 'astro:middleware';

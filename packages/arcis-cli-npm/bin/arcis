@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Tiny shim: finds the native binary that the postinstall script wrote
 // next to this file, then exec's it with the same argv. Same pattern as
-// esbuild / swc / Claude Code. Done in JS instead of platform-specific
-// shell wrappers so npm's `bin` field works the same on Linux, macOS,
-// and Windows (npm cmd-shim wraps this for us on Windows).
+// esbuild and swc. Done in JS instead of platform-specific shell wrappers
+// so npm's `bin` field works the same on Linux, macOS, and Windows (npm
+// cmd-shim wraps this for us on Windows).
 
 "use strict";
 
