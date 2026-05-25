@@ -15,7 +15,9 @@ import { arcis } from '@arcis/node';
 app.use(arcis({ block: true }));
 ```
 
-That's it. XSS, SQL injection, NoSQL injection, command injection, path traversal, prototype pollution, SSTI, XXE, SSRF, CSRF, HPP, prompt injection (V32), modern deserialization markers (V33), GraphQL alias bomb (V34), bot detection (635 patterns), rate limiting, security headers, error scrubbing, and a stateful per-IP correlation window are all wired up before your handler runs.
+What `arcis({ block: true })` actually wires into the request path: XSS, SQL injection, NoSQL injection, command injection, path traversal, prototype pollution, SSTI, XXE, LDAP injection, XPath injection, email-header injection. Plus rate limiting, security headers, and error scrubbing. Pattern matches return 403 before your handler runs.
+
+Available as opt-in helpers (not auto-wired into `arcis()`): bot detection (650-pattern corpus, `botProtection()`), per-IP correlation window (`new CorrelationWindow(...)`), HPP guard (`hppProtection()`), CSRF (`csrfProtection()`), V32 toolcall-injection signatures (`detectPromptInjection`), V33 deserialization markers (`detectDeserialization`), V34 GraphQL alias bomb / fragment cycle (`graphqlGuard`), SSRF URL validation (`validateUrl`). Compose as needed.
 
 **Docs**: [Quickstart](https://gagancm.github.io/arcis/documentation/getting-started.html) · [Detector reference](https://gagancm.github.io/arcis/documentation/detectors/) · [Framework adapters](https://gagancm.github.io/arcis/documentation/frameworks.html) · [Why Arcis](https://gagancm.github.io/arcis/documentation/why-arcis.html) · [Release notes](https://gagancm.github.io/arcis/documentation/release-notes.html)
 
@@ -52,7 +54,7 @@ That's it. XSS, SQL injection, NoSQL injection, command injection, path traversa
 
 - **10 first-party framework adapters** — Express + Fastify (`@arcis/node/fastify`) + Koa (`@arcis/node/koa`) + Hono (`@arcis/node/hono`) + Next.js (`@arcis/node/nextjs`) + NestJS + SvelteKit + Astro + Nuxt + Bun. Each subpath import keeps the framework SDK as a type-only dependency.
 - **9 new attack vectors**: GraphQL depth-bombs (`graphqlGuard`), LDAP / XPath / email-header injection wired into block-mode, mass assignment (`massAssign`), HTTP method tampering (`methodAllowlist`), response splitting (`responseSplittingGuard`), event-loop overload (`eventLoopProtection`), SSRF DNS TOCTOU (`validateUrlAsync` + `pinnedDnsLookup` + `safeFollowRedirect`).
-- **AI-era protections**: 28-signature prompt-injection library (`detectPromptInjection`), per-key `tokenBudget` middleware, 635-pattern bot corpus.
+- **AI-era protections**: 28-signature prompt-injection library (`detectPromptInjection`), per-key `tokenBudget` middleware, 650-pattern bot corpus.
 - **Composite helpers**: `protectLogin`, `protectSignup`, `protectApi`.
 - **Dry-run / `onSanitize` mode**: observe attack surface without enforcing.
 - **Guards API**: `arcis.guard({ input, context })` for queue consumers + agent tool handlers.
@@ -184,7 +186,7 @@ app.use('*', async (c, next) => {
 | CORS Misconfiguration | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
 | Cookie Security | HttpOnly, Secure, SameSite enforced on all cookies |
 | Rate Limiting | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
-| Bot Detection | 635 patterns, 7 categories (crawlers, scrapers, AI bots, etc.), behavioral signals |
+| Bot Detection | 650 patterns, 7 categories (crawlers, scrapers, AI bots, etc.), behavioral signals |
 | Deserialization (v1.6) | `detectDeserialization()` flags Python pickle, Java FastJSON `@type`, PHP `unserialize`, Ruby Marshal, .NET BinaryFormatter payloads |
 | GraphQL Abuse | `graphqlGuard` with `maxDepth`, `maxAliases`, `blockIntrospection`, `blockFragmentCycles` (v1.6) |
 | Stateful Correlation (v1.6) | `CorrelationWindow` detects scanners, credential stuffing, race-window probes per IP |
