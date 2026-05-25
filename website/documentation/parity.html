@@ -161,13 +161,13 @@ OK: Python and Node produce identical output for all <span class="s">26</span> t
           <tr><td>Rate limiter</td><td><code>new RateLimiter()</code></td><td><code>RateLimiter()</code></td><td><code>NewRateLimiter()</code></td></tr>
           <tr><td>Validate URL (SSRF)</td><td><code>validateUrl</code></td><td><code>validate_url_ssrf</code></td><td><code>ValidateURL</code></td></tr>
           <tr><td>Detect prompt injection</td><td><code>detectPromptInjection</code></td><td><code>detect_prompt_injection</code></td><td><code>DetectPromptInjection</code></td></tr>
-          <tr><td>Correlation window (v1.6)</td><td><code>new CorrelationWindow(...)</code></td><td><code>CorrelationWindow(...)</code></td><td><em>v1.7</em></td></tr>
-          <tr><td>Detect deserialization (v1.6)</td><td><code>detectDeserialization</code></td><td><code>detect_deserialization</code></td><td><em>v1.7</em></td></tr>
+          <tr><td>Correlation window (v1.6)</td><td><code>new CorrelationWindow(...)</code></td><td><code>CorrelationWindow(...)</code></td><td><code>NewCorrelationWindow(...)</code></td></tr>
+          <tr><td>Detect deserialization (v1.6)</td><td><code>detectDeserialization</code></td><td><code>detect_deserialization</code></td><td><code>DetectDeserialization</code></td></tr>
         </tbody>
       </table>
 
       <div class="callout note">
-        <p><strong>Go SDK parity caveat.</strong> Most runtime middleware (sanitization, rate limit, CSRF, HPP, prompt injection) is at parity across all three SDKs today. The v1.6-only helpers (<code>CorrelationWindow</code>, <code>detectDeserialization</code>, mutation tester, V32-V34) land in Go in v1.7. The Go SDK already picks up all corpus-level improvements (NFKC, multi-decode, new patterns) because Go reads <code>patterns.json</code> at runtime.</p>
+        <p><strong>Go SDK parity caveat.</strong> Runtime middleware (sanitization, rate limit, CSRF, HPP, prompt injection) is at parity across all three SDKs. v1.6.2 closed the helper-API gap: <code>CorrelationWindow</code>, <code>DetectDeserialization</code>, GraphQL V34 alias bomb + fragment cycle, and the mutation tester now ship in Go. Today the helpers are imported from their sub-packages (<code>arcis/middleware</code>, <code>arcis/sanitizers</code>); root-level re-exports from the <code>arcis</code> package land in v1.7. The Go SDK picks up all corpus-level improvements (NFKC, multi-decode, new patterns) automatically because Go reads <code>patterns.json</code> at runtime.</p>
       </div>
 
       <h2 id="why">Why parity matters</h2>

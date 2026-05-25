@@ -2,10 +2,18 @@
 Package nethttp provides Arcis middleware adapters for plain net/http
 servers (no third-party router required).
 
-The implementation reuses the chi adapter (which is itself stdlib-only —
+The implementation reuses the chi adapter (which is itself stdlib-only:
 it never imports chi/v5 in code, only mentions it in its docstrings).
-This package is a thin re-export so users who do not use chi can
-discover the same middleware under an obvious import path.
+This package re-exports chi's bundle middleware (Middleware /
+MiddlewareWithConfig) plus the standalone rate-limit helpers
+(RateLimit / RateLimitWithStore / RateLimitWithSkip), the
+WithTelemetry option, GetSanitizer, and Cleanup.
+
+For chi's granular helpers (Headers / Sanitizer / Validate /
+CsrfProtection / SecureCookies / Cors / ErrorHandler), import
+github.com/GagancM/arcis/chi directly — chi's middleware signature is
+stdlib-compatible, so func(http.Handler) http.Handler composes with
+any router or with raw net/http.
 
 Usage:
 

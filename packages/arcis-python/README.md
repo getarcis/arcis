@@ -16,14 +16,19 @@ pip install arcis
 from arcis.fastapi import ArcisMiddleware
 app.add_middleware(ArcisMiddleware, block=True)
 
-# Flask
+# Flask (sanitize-only at the middleware layer)
 from arcis import Arcis
-Arcis(app, block=True)
+Arcis(app)
 
 # Django: settings.py MIDDLEWARE -> 'arcis.django.ArcisMiddleware'
+
+# Litestar (and any ASGI host)
+from arcis.litestar import ArcisMiddleware as ArcisLitestarMiddleware
 ```
 
-That's it. XSS, SQL injection, NoSQL injection, command injection, path traversal, SSTI, XXE, SSRF, CSRF, HPP, prompt injection (V32), modern deserialization markers (V33), GraphQL alias bomb (V34), bot detection (635 patterns), rate limiting, security headers, error scrubbing, and a stateful per-IP correlation window all wired up before your handler runs.
+What `ArcisMiddleware` actually wires into the request path: XSS, SQL injection, NoSQL injection, command injection, path traversal, SSTI, XXE, LDAP injection, XPath injection, email-header injection, prototype pollution. Plus rate limiting, security headers, and error handling. With `block=True` (FastAPI / Django / Litestar), pattern matches return 403 before your handler runs. Flask runs in sanitize-only mode at the middleware layer; block-mode for Flask is a v1.7 item.
+
+Available as opt-in helpers (not auto-wired into `ArcisMiddleware`): bot detection (650-pattern corpus, `arcis.middleware.BotProtection`), per-IP correlation window (`arcis.middleware.CorrelationWindow`), HPP guard (`arcis.middleware.HppProtection`), CSRF (`arcis.middleware.CsrfProtection`), V32 toolcall-injection signatures (`arcis.detect_prompt_injection`), V33 deserialization markers (`arcis.detect_deserialization`), V34 GraphQL alias bomb / fragment cycle (`arcis.sanitizers.graphql.inspect_graphql_query`), SSRF URL validation (`arcis.validate_url_ssrf`). Compose as needed.
 
 **Docs**: [Quickstart](https://gagancm.github.io/arcis/documentation/getting-started.html) · [Detector reference](https://gagancm.github.io/arcis/documentation/detectors/) · [Framework adapters](https://gagancm.github.io/arcis/documentation/frameworks.html) · [Why Arcis](https://gagancm.github.io/arcis/documentation/why-arcis.html) · [Release notes](https://gagancm.github.io/arcis/documentation/release-notes.html)
 
@@ -31,12 +36,12 @@ That's it. XSS, SQL injection, NoSQL injection, command injection, path traversa
 
 ## Framework support
 
-| Framework | Import | Status |
-|---|---|---|
-| FastAPI | `from arcis.fastapi import ArcisMiddleware` | Adapter |
-| Flask | `from arcis import Arcis` | Adapter |
-| Django | `'arcis.django.ArcisMiddleware'` in `MIDDLEWARE` | Adapter |
-| Litestar (and any ASGI host) | `from arcis.litestar import ArcisMiddleware` | Adapter |
+| Framework | Import | Block mode | Notes |
+|---|---|---|---|
+| FastAPI | `from arcis.fastapi import ArcisMiddleware` | Yes (`block=True`) | Full pipeline: sanitize, scan-and-block, rate-limit, headers |
+| Django | `'arcis.django.ArcisMiddleware'` in `MIDDLEWARE` | Yes (`block=True`) | Full pipeline |
+| Litestar (and any ASGI host) | `from arcis.litestar import ArcisMiddleware` | Yes (`block=True`) | Full pipeline, plus opt-in `bot=True` |
+| Flask | `from arcis import Arcis` | No (v1.7) | Sanitize-only at middleware. Block-mode landing in v1.7. Compose `scan_threats` manually in a `before_request` handler for now. |
 
 ## What's new in v1.6.0
 
@@ -52,10 +57,10 @@ That's it. XSS, SQL injection, NoSQL injection, command injection, path traversa
 ## What was new in v1.5.0
 
 - **SDK-only release.** `pip install arcis` ships the runtime middleware with zero runtime dependencies. The CLI moved to its own package: `npm install -g @arcis/cli`.
-- **Litestar adapter** (`arcis.litestar.ArcisMiddleware`) — pure-ASGI, type-only `litestar` import. Composes with Litestar via `DefineMiddleware` and with any other ASGI host (Starlette, Quart, Hypercorn) via direct instantiation.
-- **`verify_email_mx_async`** — async-safe MX verification. The sync `verify_email_mx` was the one user-facing call that blocked the event loop on FastAPI handlers; the async variant uses `dns.asyncresolver` natively (or threads to `asyncio.to_thread` as fallback).
-- **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 635-pattern bot corpus, `Guards` API for non-HTTP contexts.
-- **Composite helpers**: `signup_protection` (rate-limit + bot + email-MX) — full recipe for protecting account creation.
+- **Litestar adapter** (`arcis.litestar.ArcisMiddleware`). Pure-ASGI, type-only `litestar` import. Composes with Litestar via `DefineMiddleware` and with any other ASGI host (Starlette, Quart, Hypercorn) via direct instantiation.
+- **`verify_email_mx_async`**. Async-safe MX verification. The sync `verify_email_mx` was the one user-facing call that blocked the event loop on FastAPI handlers; the async variant uses `dns.asyncresolver` natively (or threads to `asyncio.to_thread` as fallback).
+- **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 650-pattern bot corpus, `Guards` API for non-HTTP contexts.
+- **Composite helpers**: `signup_protection` (rate-limit + bot + email-MX). Full recipe for protecting account creation.
 - The middleware API is unchanged. Existing `Arcis(app)` / `app.add_middleware(ArcisMiddleware, ...)` code keeps working.
 - See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
 
@@ -181,15 +186,15 @@ from arcis.middleware import SlidingWindowLimiter, TokenBucketLimiter
 # Fixed window
 limiter = RateLimiter(max_requests=100, window_ms=60000)
 
-# Sliding window — smoother rate enforcement
+# Sliding window: smoother rate enforcement
 sliding = SlidingWindowLimiter(max_requests=100, window_ms=60000)
 
-# Token bucket — burst-friendly
+# Token bucket: burst-friendly
 bucket = TokenBucketLimiter(capacity=100, refill_rate=10)  # 10 tokens/sec
 ```
 
 ### Bot Detection
-Detect and categorize bots with 635 patterns across 7 categories:
+Detect and categorize bots with 650 patterns across 7 categories:
 
 ```python
 from arcis.middleware import BotDetector
@@ -318,7 +323,7 @@ pytest tests/ --cov=arcis --cov-report=html
 | `RateLimiter` | Fixed window rate limiting |
 | `SlidingWindowLimiter` | Sliding window rate limiting |
 | `TokenBucketLimiter` | Token bucket rate limiting |
-| `BotDetector` | Bot detection with 635 patterns |
+| `BotDetector` | Bot detection with 650 patterns |
 | `CsrfProtection` | CSRF double-submit cookie protection |
 | `SecurityHeaders` | Security headers |
 | `Validator` | Input validation |
@@ -362,6 +367,6 @@ MIT License - see LICENSE file for details.
 ## Contributing
 
 1. Fork the repo and create your branch from `nwl` (the active development branch)
-2. All PRs target `nwl` — `main` is release-only
+2. All PRs target `nwl`. `main` is release-only.
 3. All changes must pass existing tests
 4. New features require test cases aligned with `spec/TEST_VECTORS.json`

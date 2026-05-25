@@ -101,8 +101,9 @@
         <tbody>
           <tr><td>Node.js</td><td><code>app.use(arcis({ block: true, ...config }))</code></td></tr>
           <tr><td>Python (FastAPI)</td><td><code>app.add_middleware(ArcisMiddleware, block=True, config=Config(...))</code></td></tr>
-          <tr><td>Python (Flask)</td><td><code>Arcis(app, block=True, config=Config(...))</code></td></tr>
-          <tr><td>Go (Gin)</td><td><code>r.Use(arcisgin.Middleware(arcis.Config{Block: true}))</code></td></tr>
+          <tr><td>Python (Flask)</td><td><code>Arcis(app)</code> (sanitize-only; block-mode in v1.7)</td></tr>
+          <tr><td>Python (Litestar)</td><td><code>app.add_middleware(ArcisLitestarMiddleware, block=True)</code></td></tr>
+          <tr><td>Go (Gin)</td><td><code>r.Use(arcisgin.MiddlewareWithConfig(arcisgin.Config{Block: true}))</code></td></tr>
         </tbody>
       </table>
 
