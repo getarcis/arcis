@@ -374,7 +374,7 @@ mod tests {
         // Direct test of the skip-logic. We can't easily test the HTTP
         // round-trip without a fixture server, but the input-filtering
         // step is pure and worth pinning.
-        let inputs = vec![
+        let inputs = [
             BatchInput {
                 ecosystem: "npm".into(),
                 name: "axios".into(),
@@ -480,7 +480,7 @@ mod tests {
     #[tokio::test]
     async fn batch_with_only_unsendable_inputs_returns_empty_slots() {
         let client = Client::new();
-        let inputs = vec![
+        let inputs = [
             BatchInput {
                 ecosystem: "unknown-eco".into(),
                 name: "foo".into(),
