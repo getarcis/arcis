@@ -1,0 +1,378 @@
+name: Pack and Attack QA
+
+# Phase B3 of ci-hardening.md. Pack each SDK as a registry artifact
+# (.tgz for npm, .whl for pip, replace-directive for Go), install it
+# into the matching example repo under getarcis/, boot the example
+# server, fire the example's attack script, fail the build on any
+# unexpected response.
+#
+# Closes the marketing-claim verifier gap: when README says "block 8
+# attack payloads via one middleware line", this workflow proves it
+# end-to-end on every push to nwl and on every release PR to main.
+#
+# Each attack-* job exits 0 only when:
+#   - npm install of the local pack resolves
+#   - the server boots and serves the welcome path within 30s
+#   - the attack script reports "0 unexpected" (every safe payload
+#     returns 200 AND every attack payload returns 403)
+
+on:
+  push:
+    branches: [nwl, main]
+  pull_request:
+    branches: [nwl]
+  # Allow manual trigger for ad-hoc verification
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ─── PACK PHASE ────────────────────────────────────────────────────────
+  # Build registry-shape artifacts from the monorepo HEAD. These are the
+  # tarballs that would land on npm + PyPI if main were promoted today.
+
+  pack-node:
+    name: Pack @arcis/node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: packages/arcis-node/package-lock.json
+      - name: Install + build
+        working-directory: packages/arcis-node
+        run: |
+          npm ci
+          npm run build
+      - name: Pack tarball
+        working-directory: packages/arcis-node
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/pack"
+          npm pack --pack-destination="$GITHUB_WORKSPACE/pack"
+          ls -la "$GITHUB_WORKSPACE/pack"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arcis-node-pack
+          path: pack/*.tgz
+          retention-days: 1
+
+  pack-python:
+    name: Pack arcis (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+      - name: Install build deps
+        run: pip install build
+      - name: Build wheel
+        working-directory: packages/arcis-python
+        run: python -m build --wheel --outdir "$GITHUB_WORKSPACE/pack"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arcis-python-pack
+          path: pack/*.whl
+          retention-days: 1
+
+  # ─── ATTACK PHASE — Node examples ──────────────────────────────────────
+  # Each job clones the example repo, replaces its @arcis/node dep with
+  # the local pack, boots the server, fires attack.js, asserts exit 0.
+
+  attack-express:
+    name: Attack arcis-example-express
+    runs-on: ubuntu-latest
+    needs: pack-node
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: getarcis/arcis-example-express
+          path: example
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcis-node-pack
+          path: pack
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 20
+      - name: Install example with local pack
+        working-directory: example
+        run: |
+          PACK_TARBALL="$(ls "$GITHUB_WORKSPACE"/pack/*.tgz | head -1)"
+          echo "Installing local pack: $PACK_TARBALL"
+          npm install --no-audit --no-fund
+          npm install --no-audit --no-fund "$PACK_TARBALL"
+      - name: Boot server + fire attack
+        working-directory: example
+        run: |
+          npm start &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:3000/ >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fs http://localhost:3000/ >/dev/null || { echo "Server did not boot"; kill $SERVER_PID || true; exit 1; }
+          npm run attack
+          ATTACK_EXIT=$?
+          kill $SERVER_PID || true
+          exit $ATTACK_EXIT
+
+  attack-nestjs:
+    name: Attack arcis-example-nestjs
+    runs-on: ubuntu-latest
+    needs: pack-node
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: getarcis/arcis-example-nestjs
+          path: example
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcis-node-pack
+          path: pack
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 20
+      - name: Install example with local pack
+        working-directory: example
+        run: |
+          PACK_TARBALL="$(ls "$GITHUB_WORKSPACE"/pack/*.tgz | head -1)"
+          npm install --no-audit --no-fund
+          npm install --no-audit --no-fund "$PACK_TARBALL"
+      - name: Boot server + fire attack
+        working-directory: example
+        run: |
+          npm start &
+          SERVER_PID=$!
+          for i in $(seq 1 45); do
+            if curl -fs http://localhost:3000/ >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fs http://localhost:3000/ >/dev/null || { echo "Server did not boot"; kill $SERVER_PID || true; exit 1; }
+          npm run attack
+          ATTACK_EXIT=$?
+          kill $SERVER_PID || true
+          exit $ATTACK_EXIT
+
+  attack-nextjs:
+    name: Attack arcis-example-nextjs
+    runs-on: ubuntu-latest
+    needs: pack-node
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: getarcis/arcis-example-nextjs
+          path: example
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcis-node-pack
+          path: pack
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 20
+      - name: Install example with local pack
+        working-directory: example
+        run: |
+          PACK_TARBALL="$(ls "$GITHUB_WORKSPACE"/pack/*.tgz | head -1)"
+          npm install --no-audit --no-fund
+          npm install --no-audit --no-fund "$PACK_TARBALL"
+      - name: Build + boot + attack
+        working-directory: example
+        run: |
+          npm run build
+          npm start &
+          SERVER_PID=$!
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:3000/ >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fs http://localhost:3000/ >/dev/null || { echo "Server did not boot"; kill $SERVER_PID || true; exit 1; }
+          npm run attack
+          ATTACK_EXIT=$?
+          kill $SERVER_PID || true
+          exit $ATTACK_EXIT
+
+  attack-bun:
+    name: Attack arcis-example-bun
+    runs-on: ubuntu-latest
+    needs: pack-node
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: getarcis/arcis-example-bun
+          path: example
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcis-node-pack
+          path: pack
+      - name: Install Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Install example with local pack
+        working-directory: example
+        shell: bash
+        run: |
+          PACK_TARBALL="$(ls "$GITHUB_WORKSPACE"/pack/*.tgz | head -1)"
+          bun install
+          bun add "$PACK_TARBALL"
+      - name: Boot server + fire attack
+        working-directory: example
+        shell: bash
+        run: |
+          bun start &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:3000/ >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fs http://localhost:3000/ >/dev/null || { echo "Server did not boot"; kill $SERVER_PID || true; exit 1; }
+          bun run attack
+          ATTACK_EXIT=$?
+          kill $SERVER_PID || true
+          exit $ATTACK_EXIT
+
+  attack-mcp:
+    name: Attack arcis-example-mcp
+    runs-on: ubuntu-latest
+    needs: pack-node
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: getarcis/arcis-example-mcp
+          path: example
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcis-node-pack
+          path: pack
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 20
+      - name: Install example with local pack
+        working-directory: example
+        run: |
+          PACK_TARBALL="$(ls "$GITHUB_WORKSPACE"/pack/*.tgz | head -1)"
+          npm install --no-audit --no-fund
+          npm install --no-audit --no-fund "$PACK_TARBALL"
+      - name: Run demo (no server boot — runs detectPromptInjection in-process)
+        working-directory: example
+        run: npm run demo
+
+  # ─── ATTACK PHASE — Python examples ────────────────────────────────────
+
+  attack-fastapi:
+    name: Attack arcis-example-fastapi
+    runs-on: ubuntu-latest
+    needs: pack-python
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: getarcis/arcis-example-fastapi
+          path: example
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcis-python-pack
+          path: pack
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+      - name: Install example with local wheel
+        working-directory: example
+        run: |
+          WHEEL="$(ls "$GITHUB_WORKSPACE"/pack/*.whl | head -1)"
+          echo "Installing local wheel: $WHEEL"
+          pip install -r requirements.txt
+          pip install --force-reinstall --no-deps "$WHEEL"
+      - name: Boot server + fire attack
+        working-directory: example
+        run: |
+          uvicorn main:app --host 0.0.0.0 --port 8000 &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:8000/ >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fs http://localhost:8000/ >/dev/null || { echo "Server did not boot"; kill $SERVER_PID || true; exit 1; }
+          python attack.py
+          ATTACK_EXIT=$?
+          kill $SERVER_PID || true
+          exit $ATTACK_EXIT
+
+  # ─── ATTACK PHASE — Go examples ────────────────────────────────────────
+  # Go uses a go.mod replace directive to point at the local SDK source,
+  # so no per-release pack artifact is needed.
+
+  attack-gin:
+    name: Attack arcis-example-gin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          path: arcis
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: getarcis/arcis-example-gin
+          path: example
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Point example at local SDK
+        working-directory: example
+        run: |
+          go mod edit -replace="github.com/GagancM/arcis=$GITHUB_WORKSPACE/arcis/packages/arcis-go"
+          go mod tidy
+          cat go.mod
+      - name: Boot server + fire attack
+        working-directory: example
+        run: |
+          go run . &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:8080/ >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fs http://localhost:8080/ >/dev/null || { echo "Server did not boot"; kill $SERVER_PID || true; exit 1; }
+          go run -tags attack attack.go
+          ATTACK_EXIT=$?
+          kill $SERVER_PID || true
+          exit $ATTACK_EXIT
+
+  # ─── SUMMARY ───────────────────────────────────────────────────────────
+  # One job that depends on every attack-* job. Provides a single
+  # required-status-check for branch protection rules and a clean
+  # green-or-red summary line in PR status.
+
+  qa-summary:
+    name: Pack and Attack QA Summary
+    runs-on: ubuntu-latest
+    needs:
+      - attack-express
+      - attack-nestjs
+      - attack-nextjs
+      - attack-bun
+      - attack-mcp
+      - attack-fastapi
+      - attack-gin
+    if: always()
+    steps:
+      - name: Report
+        run: |
+          echo "All example repos validated against the freshly-packed SDKs."
+          echo "Express:  ${{ needs.attack-express.result }}"
+          echo "NestJS:   ${{ needs.attack-nestjs.result }}"
+          echo "Next.js:  ${{ needs.attack-nextjs.result }}"
+          echo "Bun:      ${{ needs.attack-bun.result }}"
+          echo "MCP:      ${{ needs.attack-mcp.result }}"
+          echo "FastAPI:  ${{ needs.attack-fastapi.result }}"
+          echo "Gin:      ${{ needs.attack-gin.result }}"
+          # Fail summary if any attack job failed.
+          for r in "${{ needs.attack-express.result }}" "${{ needs.attack-nestjs.result }}" "${{ needs.attack-nextjs.result }}" "${{ needs.attack-bun.result }}" "${{ needs.attack-mcp.result }}" "${{ needs.attack-fastapi.result }}" "${{ needs.attack-gin.result }}"; do
+            if [ "$r" != "success" ]; then
+              echo "FAIL: at least one attack job did not succeed."
+              exit 1
+            fi
+          done
+          echo "PASS: every example repo blocked every attack payload against the local pack."
