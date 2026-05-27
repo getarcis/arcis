@@ -142,10 +142,21 @@ jobs:
           PACK_TARBALL="$(ls "$GITHUB_WORKSPACE"/pack/*.tgz | head -1)"
           npm install --no-audit --no-fund
           npm install --no-audit --no-fund "$PACK_TARBALL"
-      - name: Boot server + fire attack
+      - name: Build + boot compiled JS + fire attack
         working-directory: example
+        # The example's `npm start` uses ts-node-esm which fails on
+        # Node 20+ (ERR_UNKNOWN_FILE_EXTENSION). Compile to dist/ first,
+        # then run the compiled main.js directly.
         run: |
-          npm start &
+          npm run build
+          MAIN_JS="$(find dist -name main.js | head -1)"
+          if [ -z "$MAIN_JS" ]; then
+            echo "Build did not emit dist/**/main.js"
+            ls -R dist || true
+            exit 1
+          fi
+          echo "Booting $MAIN_JS"
+          node "$MAIN_JS" &
           SERVER_PID=$!
           for i in $(seq 1 45); do
             if curl -fs http://localhost:3000/ >/dev/null 2>&1; then break; fi
@@ -215,10 +226,24 @@ jobs:
       - name: Install example with local pack
         working-directory: example
         shell: bash
+        # `bun add <tarball>` after `bun install` triggers a self-referencing
+        # dependency loop because the example's package.json already lists
+        # @arcis/node. Rewrite the dependency to point at the local tarball
+        # BEFORE running `bun install` so the resolver sees one consistent
+        # source.
         run: |
           PACK_TARBALL="$(ls "$GITHUB_WORKSPACE"/pack/*.tgz | head -1)"
+          echo "Rewriting @arcis/node dep to file:$PACK_TARBALL"
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            p.dependencies = p.dependencies || {};
+            p.dependencies['@arcis/node'] = 'file:' + process.argv[1];
+            fs.writeFileSync('package.json', JSON.stringify(p, null, 2));
+          " "$PACK_TARBALL"
+          cat package.json
+          rm -f bun.lockb bun.lock
           bun install
-          bun add "$PACK_TARBALL"
       - name: Boot server + fire attack
         working-directory: example
         shell: bash
