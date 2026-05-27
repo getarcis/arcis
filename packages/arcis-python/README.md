@@ -28,7 +28,7 @@ from arcis.litestar import ArcisMiddleware as ArcisLitestarMiddleware
 
 What `ArcisMiddleware` actually wires into the request path: XSS, SQL injection, NoSQL injection, command injection, path traversal, SSTI, XXE, LDAP injection, XPath injection, email-header injection, prototype pollution. Plus rate limiting, security headers, and error handling. With `block=True` (FastAPI / Django / Litestar), pattern matches return 403 before your handler runs. Flask runs in sanitize-only mode at the middleware layer; block-mode for Flask is a v1.7 item.
 
-Available as opt-in helpers (not auto-wired into `ArcisMiddleware`): bot detection (650-pattern corpus, `arcis.middleware.BotProtection`), per-IP correlation window (`arcis.middleware.CorrelationWindow`), HPP guard (`arcis.middleware.HppProtection`), CSRF (`arcis.middleware.CsrfProtection`), V32 toolcall-injection signatures (`arcis.detect_prompt_injection`), V33 deserialization markers (`arcis.detect_deserialization`), V34 GraphQL alias bomb / fragment cycle (`arcis.sanitizers.graphql.inspect_graphql_query`), SSRF URL validation (`arcis.validate_url_ssrf`). Compose as needed.
+Available as opt-in helpers (not auto-wired into `ArcisMiddleware`): bot detection (695-pattern corpus, `arcis.middleware.BotProtection`), per-IP correlation window (`arcis.middleware.CorrelationWindow`), HPP guard (`arcis.middleware.HppProtection`), CSRF (`arcis.middleware.CsrfProtection`), V32 toolcall-injection signatures (`arcis.detect_prompt_injection`), V33 deserialization markers (`arcis.detect_deserialization`), V34 GraphQL alias bomb / fragment cycle (`arcis.sanitizers.graphql.inspect_graphql_query`), SSRF URL validation (`arcis.validate_url_ssrf`). Compose as needed.
 
 **Docs**: [Quickstart](https://gagancm.github.io/arcis/documentation/getting-started.html) · [Detector reference](https://gagancm.github.io/arcis/documentation/detectors/) · [Framework adapters](https://gagancm.github.io/arcis/documentation/frameworks.html) · [Why Arcis](https://gagancm.github.io/arcis/documentation/why-arcis.html) · [Release notes](https://gagancm.github.io/arcis/documentation/release-notes.html)
 
@@ -59,7 +59,7 @@ Available as opt-in helpers (not auto-wired into `ArcisMiddleware`): bot detecti
 - **SDK-only release.** `pip install arcis` ships the runtime middleware with zero runtime dependencies. The CLI moved to its own package: `npm install -g @arcis/cli`.
 - **Litestar adapter** (`arcis.litestar.ArcisMiddleware`). Pure-ASGI, type-only `litestar` import. Composes with Litestar via `DefineMiddleware` and with any other ASGI host (Starlette, Quart, Hypercorn) via direct instantiation.
 - **`verify_email_mx_async`**. Async-safe MX verification. The sync `verify_email_mx` was the one user-facing call that blocked the event loop on FastAPI handlers; the async variant uses `dns.asyncresolver` natively (or threads to `asyncio.to_thread` as fallback).
-- **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 650-pattern bot corpus, `Guards` API for non-HTTP contexts.
+- **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 695-pattern bot corpus, `Guards` API for non-HTTP contexts.
 - **Composite helpers**: `signup_protection` (rate-limit + bot + email-MX). Full recipe for protecting account creation.
 - The middleware API is unchanged. Existing `Arcis(app)` / `app.add_middleware(ArcisMiddleware, ...)` code keeps working.
 - See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
@@ -194,7 +194,7 @@ bucket = TokenBucketLimiter(capacity=100, refill_rate=10)  # 10 tokens/sec
 ```
 
 ### Bot Detection
-Detect and categorize bots with 650 patterns across 7 categories:
+Detect and categorize bots with 695 patterns across 7 categories:
 
 ```python
 from arcis.middleware import BotDetector
@@ -323,7 +323,7 @@ pytest tests/ --cov=arcis --cov-report=html
 | `RateLimiter` | Fixed window rate limiting |
 | `SlidingWindowLimiter` | Sliding window rate limiting |
 | `TokenBucketLimiter` | Token bucket rate limiting |
-| `BotDetector` | Bot detection with 650 patterns |
+| `BotDetector` | Bot detection with 695 patterns |
 | `CsrfProtection` | CSRF double-submit cookie protection |
 | `SecurityHeaders` | Security headers |
 | `Validator` | Input validation |

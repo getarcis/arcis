@@ -36,7 +36,7 @@ These helpers are accessible from their sub-packages today (`arcis/middleware`, 
 - **net/http stdlib helper** (`github.com/GagancM/arcis/nethttp`). Drop-in for users without a third-party router. Re-exports the chi adapter's bundle middleware and rate-limit helpers, no chi dep needed at runtime. For chi's granular helpers (CSRF, CORS, cookies, error handler) today, import `arcis/chi` directly.
 - **Telemetry parity** with Node + Python. `telemetry.NewClient` + `MiddlewareWithConfig`'s `Telemetry` field stream allow / deny decisions to a self-hosted dashboard from gin / echo / chi / fiber / nethttp middleware.
 - **Guards API** (`arcis.NewGuards`). Non-HTTP rule engine for queue consumers, agent tool handlers, background jobs.
-- **AI-era protections**: 28-signature prompt-injection library (`DetectPromptInjection`), per-key `TokenBudget`, 650-pattern bot corpus (635 from `getarcis/well-known-bots` + 15 Arcis additions for Selenium / Puppeteer / Playwright / Cypress / WebDriver / headless browser fakes).
+- **AI-era protections**: 28-signature prompt-injection library (`DetectPromptInjection`), per-key `TokenBudget`, 695-pattern bot corpus (635 from `getarcis/well-known-bots` + 15 Arcis additions for Selenium / Puppeteer / Playwright / Cypress / WebDriver / headless browser fakes).
 
 ## Quick start (Gin)
 

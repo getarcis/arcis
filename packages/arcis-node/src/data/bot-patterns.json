@@ -5859,5 +5859,410 @@
       "ZuperlistBot\\/"
     ],
     "forbidden": []
+  },
+  {
+    "id": "ext-ahrefsbotsiteaudit",
+    "name": "ahrefsbotsiteaudit",
+    "category": "SEO",
+    "patterns": [
+      "Ahrefs(Bot|SiteAudit)"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-amazonproductdiscovery",
+    "name": "amazonproductdiscovery",
+    "category": "SEARCH_ENGINE",
+    "patterns": [
+      "AmazonProductDiscovery"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-amazonsellerinitiatedlisting",
+    "name": "amazonsellerinitiatedlisting",
+    "category": "SEARCH_ENGINE",
+    "patterns": [
+      "AmazonSellerInitiatedListing"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-cclaudebbot",
+    "name": "cclaudebbot",
+    "category": "GENERIC",
+    "patterns": [
+      "[cC]laude[bB]ot"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-meta-externalagent",
+    "name": "meta-externalagent",
+    "category": "GENERIC",
+    "patterns": [
+      "meta-externalagent\\/"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-meta-externalfetcher",
+    "name": "meta-externalfetcher",
+    "category": "GENERIC",
+    "patterns": [
+      "meta-externalfetcher\\/"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-hydrozenio",
+    "name": "hydrozenio",
+    "category": "MONITORING",
+    "patterns": [
+      "Hydrozen\\.io"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-yextbot",
+    "name": "yextbot",
+    "category": "SEO",
+    "patterns": [
+      "YextBot\\/"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-datadogsynthetics",
+    "name": "datadogsynthetics",
+    "category": "MONITORING",
+    "patterns": [
+      "DatadogSynthetics"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-observepoint",
+    "name": "observepoint",
+    "category": "MONITORING",
+    "patterns": [
+      "ObservePoint"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-checkly",
+    "name": "checkly",
+    "category": "MONITORING",
+    "patterns": [
+      "Checkly"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-alittleclient",
+    "name": "alittleclient",
+    "category": "GENERIC",
+    "patterns": [
+      "ALittle Client"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-aliyunsecbot",
+    "name": "aliyunsecbot",
+    "category": "GENERIC",
+    "patterns": [
+      "AliyunSecBot"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-claude-web",
+    "name": "claude-web",
+    "category": "GENERIC",
+    "patterns": [
+      "Claude-Web"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-google-extended",
+    "name": "google-extended",
+    "category": "GENERIC",
+    "patterns": [
+      "Google-Extended"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-serankingbacklinksbot",
+    "name": "serankingbacklinksbot",
+    "category": "SEO",
+    "patterns": [
+      "SERankingBacklinksBot"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-cmschecker",
+    "name": "cmschecker",
+    "category": "SEO",
+    "patterns": [
+      "CMSChecker"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-wayback",
+    "name": "wayback",
+    "category": "GENERIC",
+    "patterns": [
+      "Wayback"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-playwright",
+    "name": "playwright",
+    "category": "GENERIC",
+    "patterns": [
+      "Playwright"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-puppeteer",
+    "name": "puppeteer",
+    "category": "GENERIC",
+    "patterns": [
+      "Puppeteer"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-selenium",
+    "name": "selenium",
+    "category": "GENERIC",
+    "patterns": [
+      "Selenium"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-nikto",
+    "name": "nikto",
+    "category": "GENERIC",
+    "patterns": [
+      "Nikto"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-sqlmap",
+    "name": "sqlmap",
+    "category": "GENERIC",
+    "patterns": [
+      "sqlmap"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-zmeu",
+    "name": "zmeu",
+    "category": "GENERIC",
+    "patterns": [
+      "ZmEu"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-masscan",
+    "name": "masscan",
+    "category": "GENERIC",
+    "patterns": [
+      "masscan"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-wpscan",
+    "name": "wpscan",
+    "category": "GENERIC",
+    "patterns": [
+      "WPScan"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-aacunetix",
+    "name": "aacunetix",
+    "category": "GENERIC",
+    "patterns": [
+      "[aA]cunetix"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-nessus",
+    "name": "nessus",
+    "category": "GENERIC",
+    "patterns": [
+      "Nessus"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-ddirbbuster",
+    "name": "ddirbbuster",
+    "category": "GENERIC",
+    "patterns": [
+      "[dD]ir[Bb]uster"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-colly",
+    "name": "colly",
+    "category": "GENERIC",
+    "patterns": [
+      "colly"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-mmechanize",
+    "name": "mmechanize",
+    "category": "GENERIC",
+    "patterns": [
+      "[mM]echanize"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-airaiscanning",
+    "name": "airaiscanning",
+    "category": "GENERIC",
+    "patterns": [
+      "air\\.ai\\/scanning"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-asnriskscorer",
+    "name": "asnriskscorer",
+    "category": "GENERIC",
+    "patterns": [
+      "asnriskscorer"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-oicrawler",
+    "name": "oicrawler",
+    "category": "SEARCH_ENGINE",
+    "patterns": [
+      "OICrawler"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-l9scan",
+    "name": "l9scan",
+    "category": "GENERIC",
+    "patterns": [
+      "l9scan"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-slaccalebot",
+    "name": "slaccalebot",
+    "category": "SEO",
+    "patterns": [
+      "SlaccaleBot"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-customasynchttpclient",
+    "name": "customasynchttpclient",
+    "category": "GENERIC",
+    "patterns": [
+      "CustomAsyncHttpClient"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-gemini-deep-research",
+    "name": "gemini-deep-research",
+    "category": "SEARCH_ENGINE",
+    "patterns": [
+      "Gemini-Deep-Research"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-perplexity-user",
+    "name": "perplexity-user",
+    "category": "SEARCH_ENGINE",
+    "patterns": [
+      "Perplexity-User"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-perplexityuser",
+    "name": "perplexityuser",
+    "category": "SEARCH_ENGINE",
+    "patterns": [
+      "PerplexityUser"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-meta-webindexer",
+    "name": "meta-webindexer",
+    "category": "GENERIC",
+    "patterns": [
+      "meta-webindexer"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-duckassistbot",
+    "name": "duckassistbot",
+    "category": "SEARCH_ENGINE",
+    "patterns": [
+      "DuckAssistBot"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-mistralai-user",
+    "name": "mistralai-user",
+    "category": "GENERIC",
+    "patterns": [
+      "MistralAI-User"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-webzio",
+    "name": "webzio",
+    "category": "SEO",
+    "patterns": [
+      "webzio"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-newsai",
+    "name": "newsai",
+    "category": "GENERIC",
+    "patterns": [
+      "newsai\\/"
+    ],
+    "forbidden": []
   }
 ]

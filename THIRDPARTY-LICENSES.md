@@ -6,13 +6,19 @@ Arcis is MIT-licensed (see `LICENSE`). This file lists upstream code or data Arc
 
 ## Current third-party content
 
-### `packages/core/well-known-bots.json`
+### `packages/core/bot-patterns.json` + `packages/core/well-known-bots.json`
 
-Originally derived from the [arcjet/well-known-bots](https://github.com/arcjet/well-known-bots) corpus.
+The 695-entry SDK-loaded bot corpus (`bot-patterns.json` + bundled copies in each SDK) is composed of three sources:
+
+1. The standalone [arcjet/well-known-bots](https://github.com/arcjet/well-known-bots) corpus (~635 entries).
+2. 15 Arcis-specific additions (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes).
+3. 45 net-new entries merged in from monperrus/crawler-user-agents (see next section).
+
+#### Source A: arcjet/well-known-bots
 
 - **Upstream license:** MIT
 - **Upstream:** https://github.com/arcjet/well-known-bots
-- **Use in Arcis:** entries copied + extended. The 15 Arcis-specific additions (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes) are net-new; the remaining 635 entries are derived from the upstream corpus.
+- **Use in Arcis:** entries copied + extended into both `packages/core/well-known-bots.json` (standalone passthrough corpus) and `packages/core/bot-patterns.json` (active SDK corpus).
 
 ```
 Copyright (c) 2024 Arcjet, Inc.
@@ -34,6 +40,36 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+#### Source B: monperrus/crawler-user-agents
+
+- **Upstream license:** MIT
+- **Upstream:** https://github.com/monperrus/crawler-user-agents
+- **Use in Arcis:** 45 net-new entries merged into `bot-patterns.json` from the crawler-user-agents corpus on 2026-05-27. 602 entries were duplicates against existing patterns. The mapping script normalized their schema (`pattern` + `tags`) to our schema (`id` + `name` + `category` + `patterns`); each merged entry's `id` is prefixed `ext-` to keep the provenance traceable in the data.
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2017 Martin Monperrus
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## How to add a new entry
