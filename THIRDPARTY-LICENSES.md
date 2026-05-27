@@ -72,6 +72,66 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+### `packages/arcis-{node,python,go}/sanitizers/prompt_injection*`
+
+The prompt-injection signature library carries six rule shapes that were modeled on patterns we examined in two upstream prompt-injection projects. The Arcis regexes were written independently against the documented LLM template syntax (ChatML, Llama 2, guidance/handlebars are all publicly specified by their respective vendors) — these are not byte-for-byte copies — but the *shape* of what to look for, and several of the keywords in our extended verb set, were informed by upstream work and deserve credit.
+
+#### Source C: protectai/rebuff
+
+- **Upstream license:** Apache-2.0
+- **Upstream:** https://github.com/protectai/rebuff
+- **Use in Arcis:** the extended verb list in the `ignore-previous-instructions` rule (`skip`, `neglect`, `overlook`, `omit`) and the multi-word verb shapes in `instruction-bypass-phrases` (`pay no attention to`, `do not follow`, `do not obey`) were informed by Rebuff's combinatorial injection-keyword generator in `python-sdk/rebuff/detect_pi_heuristics.py`.
+
+```
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+Copyright (c) Protect AI, contributors to Rebuff
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+Full text: https://www.apache.org/licenses/LICENSE-2.0
+
+#### Source D: deadbits/vigil-llm
+
+- **Upstream license:** Apache-2.0
+- **Upstream:** https://github.com/deadbits/vigil-llm
+- **Use in Arcis:** the four prompt-template marker rules — `chatml-template-marker`, `llama2-system-marker`, `guidance-template-marker`, `markdown-system-link-spoof` — were informed by the YARA rules in `data/yara/system_instructions.yar` and `data/yara/instruction_bypass.yar`. We re-wrote the regexes from the public LLM template specs (OpenAI ChatML, Meta Llama 2, Microsoft guidance/handlebars) rather than copying the YARA pattern bytes.
+
+```
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+Copyright (c) Adam M. Swanda, contributors to vigil-llm
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+Full text: https://www.apache.org/licenses/LICENSE-2.0
+
 ## How to add a new entry
 
 When adopting any upstream code or data:
