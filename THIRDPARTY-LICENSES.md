@@ -160,6 +160,66 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
+### `packages/arcis-rust/crates/arcis-engine/src/osv.rs` (`query_batch` and related types)
+
+The `query_batch()` function in `osv.rs`, plus the `OsvBatchQuery` / `OsvBatchResponse` / `OsvBatchResultEntry` / `OsvBatchVulnRef` / `BatchInput` types and the `OSV_MAX_QUERIES_PER_BATCH` constant, are an independent Rust implementation of the `POST /v1/querybatch` contract documented by OSV.dev. The endpoint contract, the 1000-per-batch cap, the response ordering invariant, and the chunking strategy are modeled on the Go implementation in osv.dev's official `bindings/go/osvdev` client and on the matcher code in osv-scanner.
+
+Single-package `query()` and `osv_cache.rs` are unchanged Arcis-original code.
+
+#### Source F: google/osv.dev (Go bindings)
+
+- **Upstream license:** Apache-2.0
+- **Upstream:** https://github.com/google/osv.dev (bindings/go/osvdev)
+- **Use in Arcis:** the API contract for `/v1/querybatch` (request shape, response ordering, 1000-per-batch cap) is modeled on `OSVClient.QueryBatch` in `osvdev.go`. Our implementation does not import or vendor the upstream Go code; the Rust port uses `reqwest` + `serde_json` and runs sequential chunked POSTs (the Go client uses `errgroup` for concurrent chunks — a v1.8 follow-up for the Arcis side).
+
+```
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+Copyright (c) Google LLC and contributors to OSV.dev
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+NOTICE file: as of 2026-05-27, https://github.com/google/osv.dev has no `NOTICE` file at the repo root, so there is nothing to pass through under Apache 2.0 §4(d). If a `NOTICE` file is added upstream, this section should be updated to bundle it under `NOTICES/osv.dev`.
+
+Full text: https://www.apache.org/licenses/LICENSE-2.0
+
+#### Source G: google/osv-scanner
+
+- **Upstream license:** Apache-2.0
+- **Upstream:** https://github.com/google/osv-scanner
+- **Use in Arcis:** the batch-matching strategy in `OSVMatcher.MatchVulnerabilities` (`internal/clients/clientimpl/osvmatcher/osvmatcher.go`) — gather all packages, send a batch query, then hydrate vulnerabilities by id — informed the Arcis architecture in `scan_project_with_osv` going forward. We did not port their lockfile parsers (Arcis has its own `sca_lockfile.rs`), their SBOM input handlers, or their license-scanning subsystem.
+
+```
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+Copyright (c) Google LLC and contributors to osv-scanner
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+```
+
+NOTICE file: as of 2026-05-27, https://github.com/google/osv-scanner has no `NOTICE` file at the repo root. Same passthrough rule as for osv.dev applies.
+
+Full text: https://www.apache.org/licenses/LICENSE-2.0
+
 ## How to add a new entry
 
 When adopting any upstream code or data:
