@@ -1224,6 +1224,7 @@
         <li><a href="#threats">Threats</a></li>
         <li><a href="#comparison">Compare</a></li>
         <li><a href="./documentation/">Docs</a></li>
+        <li><a href="./blog/">Blog</a></li>
       </ul>
       <div class="nav-cta">
         <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
@@ -1247,7 +1248,7 @@
     <div class="container">
       <div class="hero-badge">
         <span class="dot"></span>
-        v1.6.0. Interactive REPL, NFKC + multi-decode hardening, V32-V34 vectors, CorrelationWindow
+        v1.6.3. ArcisGuard for NestJS, bruteForceProtection, pack-and-attack CI across 7 example repos
       </div>
 
       <h1 class="hero-rotate">
@@ -1665,20 +1666,20 @@
            updates this section + changelog.html in one step. -->
       <div class="changelog-list" id="changelog-list">
         <div class="changelog-item reveal">
-          <span class="changelog-version">v1.5.0</span>
-          <span class="changelog-text">Ten Node framework adapters (Express + Fastify + Koa + Hono + Next.js + NestJS + SvelteKit + Astro + Nuxt + Bun), Litestar adapter (Python), chi + Fiber + nethttp adapters (Go), nine new attack vectors (#21 GraphQL, #22 LDAP, #23 XPath, #24 email-header, #25 mass-assign, #26 method-tampering, #27 response-splitting, #30 event-loop, #31 SSRF DNS TOCTOU), AI-era protections + native-Rust CLI.</span>
+          <span class="changelog-version">v1.6.3</span>
+          <span class="changelog-text">ArcisGuard for NestJS (proper deny on detect via CanActivate). bruteForceProtection middleware. Six new prompt-injection signatures. osv::query_batch for the Rust CLI. Pack-and-attack CI gate across seven example repos. THIRDPARTY-LICENSES.md with attribution for every adopted upstream.</span>
         </div>
         <div class="changelog-item reveal reveal-delay-1">
-          <span class="changelog-version">v1.4.4</span>
-          <span class="changelog-text">Detect-and-block middleware across all 3 SDKs. Block-mode 403s land on the dashboard with full vector attribution.</span>
+          <span class="changelog-version">v1.6.2</span>
+          <span class="changelog-text">Go SDK reaches three-way parity on v1.6 detection (V32 toolcall, V33 deserialization markers, V34 GraphQL alias / fragment cycle, CorrelationWindow, mutation tester). Q8 LDAP NOT-bypass + Q10 mail-header bare-newline patterns. FastAPI create_login_protection_dependency factory.</span>
         </div>
         <div class="changelog-item reveal reveal-delay-2">
-          <span class="changelog-version">v1.4.3</span>
-          <span class="changelog-text">Telemetry pipeline shipped. Self-hosted dashboard accepts decision events from running middleware (Node + Python).</span>
+          <span class="changelog-version">v1.6.1</span>
+          <span class="changelog-text">@arcis/node exports map fix for 9 framework-adapter subpath types. First publish of @arcis/mcp. Honest-claims sweep across README + 8 adapter docstrings.</span>
         </div>
         <div class="changelog-item reveal reveal-delay-3">
-          <span class="changelog-version">v1.4.2</span>
-          <span class="changelog-text">LDAP injection protection across all SDKs, 12 security bypass vectors closed, SSTI and XXE parity added to Go, Unicode path traversal bypass fixed.</span>
+          <span class="changelog-version">v1.6.0</span>
+          <span class="changelog-text">Interactive REPL. Welcome screen V2. Tier 1 detection hardening (NFKC + multi-decode + mutation tester). New vectors V32 toolcall injection, V33 deserialization markers, V34 GraphQL alias bomb + fragment cycle. First stateful primitive: CorrelationWindow per-IP rolling window.</span>
         </div>
       </div>
 
@@ -1891,10 +1892,11 @@
           <div class="footer-col">
             <h4>Resources</h4>
             <ul>
-              <li><a href="https://github.com/Gagancm/arcis/wiki" target="_blank" rel="noopener">Documentation</a></li>
+              <li><a href="./documentation/">Documentation</a></li>
+              <li><a href="./blog/">Blog</a></li>
+              <li><a href="./changelog.html">Changelog</a></li>
               <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
               <li><a href="https://github.com/Gagancm/arcis/issues" target="_blank" rel="noopener">Issues</a></li>
-              <li><a href="https://github.com/Gagancm/arcis/discussions" target="_blank" rel="noopener">Discussions</a></li>
             </ul>
           </div>
         </div>

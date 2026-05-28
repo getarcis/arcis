@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TGPW4N5TR2"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-TGPW4N5TR2');
+  </script>
+
+  <title>The WAF blocked the obvious. Here is what it missed. · Arcis Blog</title>
+  <meta name="description" content="A WAF sits in front of your app and matches patterns against the raw HTTP request. Inside the app, the same request looks different. The gap is where attacks live now.">
+  <meta property="og:title" content="The WAF blocked the obvious. Here is what it missed.">
+  <meta property="og:description" content="WAFs match raw HTTP. Inside the app, the same request looks different. The gap is where modern attacks live.">
+  <meta property="og:type" content="article">
+  <meta property="article:published_time" content="2026-05-15">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../blog.css">
+</head>
+<body>
+
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="../../" class="nav-logo">Arcis<span>.</span></a>
+      <ul class="nav-links">
+        <li><a href="../../#how-it-works">How It Works</a></li>
+        <li><a href="../../#languages">Languages</a></li>
+        <li><a href="../../#threats">Threats</a></li>
+        <li><a href="../../#comparison">Compare</a></li>
+        <li><a href="../../documentation/">Docs</a></li>
+        <li><a href="../" class="active">Blog</a></li>
+      </ul>
+      <div class="nav-cta">
+        <a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener" class="btn-star" id="starBtn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          Star
+          <span class="star-count" id="starCount"></span>
+        </a>
+        <a href="../../documentation/getting-started.html" class="btn-primary-nav">
+          Try Arcis
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="post-page">
+    <div class="container">
+
+      <a href="../" class="post-back">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 8H3M7 4L3 8l4 4"/></svg>
+        All posts
+      </a>
+
+      <div class="post-layout">
+
+        <aside class="post-sidebar">
+          <div class="post-sidebar-block">
+            <h4>Published</h4>
+            <div class="meta-row">
+              <span><span class="label">Date</span><span class="value accent">May 15, 2026</span></span>
+              <span><span class="label">Read time</span><span class="value">7 minutes</span></span>
+              <span><span class="label">Topic</span><span class="tag-chip">WAF</span></span>
+            </div>
+          </div>
+          <div class="post-sidebar-block">
+            <h4>On this page</h4>
+            <ul class="post-toc">
+              <li><a href="#waf-sees">What a WAF actually sees</a></li>
+              <li><a href="#views">Two views of the same request</a></li>
+              <li><a href="#three">Three things only the inside knows</a></li>
+              <li><a href="#changed">What changed in 2026</a></li>
+              <li><a href="#case">The case for inside-the-app defense</a></li>
+              <li><a href="#means">What "inside" actually means</a></li>
+              <li><a href="#leaves">Where this leaves the WAF</a></li>
+            </ul>
+          </div>
+          <div class="post-sidebar-block">
+            <h4>Share</h4>
+            <div class="post-share">
+              <a href="https://twitter.com/intent/tweet?text=The%20WAF%20blocked%20the%20obvious.%20Here%20is%20what%20it%20missed.&url=https%3A%2F%2Farcis.dev%2Fblog%2Fposts%2Fwhy-your-waf-missed-it.html" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                Share on X
+              </a>
+              <a href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2Farcis.dev%2Fblog%2Fposts%2Fwhy-your-waf-missed-it.html&t=The+WAF+blocked+the+obvious" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 24V0h24v24H0zM6.951 5.896l4.112 7.708v5.064h1.583v-4.972l4.148-7.799h-1.749l-2.457 4.875c-.372.745-.688 1.434-.688 1.434s-.297-.708-.651-1.434L8.831 5.896h-1.88z"/></svg>
+                Submit to HN
+              </a>
+              <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Farcis.dev%2Fblog%2Fposts%2Fwhy-your-waf-missed-it.html" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.063 2.063 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                Share on LinkedIn
+              </a>
+            </div>
+          </div>
+        </aside>
+
+        <div class="post-layout-main">
+
+          <header class="post-header">
+            <div class="meta">
+              <span class="date">May 15, 2026</span>
+              <span class="sep">·</span>
+              <span>7 min read</span>
+              <span class="sep">·</span>
+              <span class="tag">WAF</span>
+            </div>
+            <h1>The WAF blocked the obvious. Here is what it missed.</h1>
+            <p class="lede">A WAF lives at the network edge and matches patterns against raw HTTP. Inside the application, the same request looks different. Parsed JSON, normalized cookies, framework-specific shapes. The gap between the two views is where 2026 attacks live.</p>
+          </header>
+
+          <article class="post-content">
+
+            <div class="callout">
+              <strong>The takeaways.</strong>
+              <ul style="margin: 0.5rem 0 0 1.25rem;">
+                <li>A WAF matches patterns against raw HTTP bytes. By the time the request reaches your handler, the data has been parsed, normalized, and type-coerced into something the WAF cannot see.</li>
+                <li>Three classes of information only the inside knows: post-parsing semantics, route/handler context, and framework-specific risk shapes.</li>
+                <li>The 2026 trend pushing more attack surface inside the boundary: structured data on the wire, agent-shaped requests, and the explosion of framework adapters.</li>
+                <li>The WAF is not retired. It is the first of two layers, not the whole defense.</li>
+              </ul>
+            </div>
+
+            <p>The first time someone showed me a WAF rule that "blocks SQL injection," I was impressed. The rule matched <code>UNION SELECT</code> and a dozen variants. It was case-insensitive. It even decoded a few layers of URL encoding before matching. From the outside, that looks like protection.</p>
+
+            <p>Then they showed me the production traffic. Real attackers do not send <code>UNION SELECT</code>. They send something that decodes to <code>UNION SELECT</code> after seven layers of transformation that depend on which framework parses the request, which database driver builds the query, and which middleware ran in between. The WAF saw the raw bytes. It never saw the string the database eventually parsed.</p>
+
+            <p>That gap is the story of modern web security. A WAF guards the outside boundary. The attacks that matter in 2026 happen inside it.</p>
+
+            <h2 id="waf-sees">What a WAF actually sees</h2>
+
+            <p>A web application firewall lives at the network edge. Cloudflare, AWS WAF, NGINX with ModSecurity. Take your pick. They all share a constraint: they inspect the HTTP request as it arrives, before any application code touches it.</p>
+
+            <p>The request they see is a sequence of bytes. URL-encoded query string. Maybe percent-encoded body. Cookies as a flat string. Headers in their wire format. The WAF has rules. The rules match patterns. If a pattern matches, the request is blocked or flagged. If not, it goes through.</p>
+
+            <p>This works well for a class of attacks. If someone literally types <code>'; DROP TABLE users; --</code> into a URL parameter and your WAF has a SQL pattern that catches it, you blocked something useful. The problem is that this class is shrinking.</p>
+
+            <h2 id="views">Two views of the same request</h2>
+
+            <p>Consider a JSON POST body. The WAF sees:</p>
+
+            <pre><code>POST /api/users HTTP/1.1
+Content-Type: application/json
+Content-Length: 87
+
+{"name":"Alice","email":"alice@example.com","role":"user","verified":false}</code></pre>
+
+            <p>The WAF runs its pattern matchers against those exact bytes. Maybe it tries to JSON-decode them. Maybe it does not. Either way, by the time the request reaches your Express handler, the same data looks like this:</p>
+
+            <pre><code>req.body = {
+  name: 'Alice',
+  email: 'alice@example.com',
+  role: 'user',
+  verified: false
+}</code></pre>
+
+            <p>If the attacker changed the body to include an unexpected field, say <code>"isAdmin": true</code>, the WAF saw a JSON blob with a key that looks innocent. Inside the app, that key gets mass-assigned to a user model that quietly grants admin rights, because nothing in your handler told it which fields are safe to accept. The WAF cannot help here. It does not know which fields your <code>User</code> model has. It does not know that <code>isAdmin</code> is a privileged field. It saw bytes.</p>
+
+            <p>This is the shape of every modern bypass. The WAF and the application see the same request differently, and the attacker only needs to live in the seam.</p>
+
+            <h2 id="three">Three things only the inside knows</h2>
+
+            <p>The view from inside the app has information a WAF structurally cannot have. Three categories.</p>
+
+            <p><strong>Post-parsing semantics.</strong> By the time your handler runs, the request body has been decoded, normalized, type-coerced, and bound to your model layer. The WAF saw bytes; you have objects. A nested object inside a JSON body, deeply percent-encoded, perhaps containing MongoDB query operators, is hard to pattern-match at the edge. Inside the app, it is a dictionary. You can walk it and reason about it.</p>
+
+            <p><strong>Route and handler context.</strong> The same URL <code>/api/profile</code> means one thing for a GET (read your profile) and another for a PATCH (update it). The same JSON body is safe for one and dangerous for the other. A WAF rule that fires on every JSON body has no way to express "this field is dangerous on PATCH but fine on GET." Inside the app, the framework already tells you which route and handler bound the request.</p>
+
+            <p><strong>Framework-specific risk shapes.</strong> Express read-only <code>req.query</code> in v5. FastAPI dependency injection. NestJS guards versus interceptors. Each framework has its own request shape and its own attack surface. The WAF treats them all as HTTP. Inside the app, you can run NestJS-aware checks at NestJS lifecycle points, FastAPI-aware checks against FastAPI dependency objects.</p>
+
+            <h2 id="changed">What changed in 2026</h2>
+
+            <p>Three trends pushed more attack surface inside the boundary.</p>
+
+            <p>The first is the rise of structured data on the wire. Forms used to dominate. They still exist, but the share of requests carrying nested JSON has grown for a decade. Edge defenses match flat patterns well. They match nested object structure poorly.</p>
+
+            <p>The second is the agent-shaped request. A user prompt to an LLM-powered handler is a string that looks safe at the byte level. The danger is in what the LLM does with it. Prompt injection lives in the semantic layer the WAF cannot reach. Pattern matching <code>ignore previous instructions</code> at the edge catches the laziest five percent of attempts. The remaining ninety-five percent are phrased in ways no static regex catches.</p>
+
+            <p>The third is the framework adapter surface. The number of ways a Node app can be deployed in 2026 is staggering. Express still works. So does Fastify, Hono, Koa, Next.js middleware, NestJS guards, SvelteKit hooks, Bun, Astro, Nuxt. Each has its own request and response objects, its own lifecycle, its own conventions. A WAF that protects Express does not protect any of the others except by accident.</p>
+
+            <h2 id="case">The case for inside-the-app defense</h2>
+
+            <p>This is the argument behind every middleware-shaped security tool that has gained traction in the last five years. Helmet for headers. Express rate limiters for abuse. Library-level CSRF. They all live inside the app because they need information only the app has.</p>
+
+            <p>Arcis is the same argument, applied across the surface of all twenty-plus attack vectors. Sanitization runs against parsed objects, not raw bytes. Detection has route and method context. Bot scoring has the same fingerprint information your session middleware has. The boundary between safe and unsafe is drawn at the point where the application can actually act on it.</p>
+
+            <div class="callout">
+              <strong>This does not retire the WAF.</strong> A WAF still belongs at the edge. It still drops obvious garbage before your app spends a cycle on it. It still rate limits at the network. The point is not to replace it. The point is that the WAF is the first of two layers, not the whole defense.
+            </div>
+
+            <h2 id="means">What "inside" actually means</h2>
+
+            <p>Inside-the-app defense gets used as a marketing phrase. It is worth being precise about what it means in practice.</p>
+
+            <p>It means defense runs in the same process as your handler. The defense and the handler share the same parsed request object, the same session, the same configuration. If your handler can ask "is this user authenticated," so can the defense. If your handler can see the field names of an incoming JSON body, so can the defense.</p>
+
+            <p>It means defense fails the same way your app fails. If your handler can return a structured error response, the defense can return a structured error response. If your handler logs to your logger, the defense logs to your logger. The defense does not run in a separate runtime with its own crash modes.</p>
+
+            <p>It means defense ships in your repo. The patterns it uses, the configuration it accepts, the version it pins. All of it is in source control next to the rest of your app. When you roll back a deploy, the defense rolls back with it. When you upgrade, both upgrade together. There is no separate dashboard to remember to check and no separate vendor whose downtime becomes your downtime.</p>
+
+            <h2 id="leaves">Where this leaves the WAF</h2>
+
+            <p>The WAF is not going away. The interesting attacks just moved past it. A team that thinks it has solved security because it has a WAF in front of its app is reasoning about 2015. The harder question, the one a 2026 team has to answer, is what runs in the same process as the handler when the request finally arrives.</p>
+
+            <p>That is the question Arcis exists to answer. It is the question Aikido Zen, Arcjet, and a small handful of others are answering in different shapes. The shapes differ. The premise is the same: the WAF is necessary and not sufficient. The action has moved inside the app.</p>
+
+          </article>
+
+          <footer class="post-footer">
+            <div class="author-block">
+              <span class="author-name">Gagan</span>
+              <span class="author-bio">Founder of Arcis. Cybersecurity middleware for Node, Python, and Go. Three CLIs, one binary, MIT licensed.</span>
+            </div>
+
+            <h3>Continue reading</h3>
+            <div class="related-posts">
+              <a href="./unicode-normalization-security-boundary.html">
+                <div class="related-meta">May 23, 2026 · 6 min · Detection</div>
+                <div class="related-title">Normalize first, or you are matching the wrong string</div>
+              </a>
+              <a href="./defending-agent-tool-calls.html">
+                <div class="related-meta">May 28, 2026 · 9 min · Agents</div>
+                <div class="related-title">Inside MCP: defending the runtime layer of agent security</div>
+              </a>
+            </div>
+          </footer>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <div class="footer-logo">Arcis<span>.</span></div>
+          <p class="footer-tagline">Security middleware for every backend. One line of code, 20+ attack vectors handled, lean dependency footprint.</p>
+        </div>
+        <div class="footer-columns">
+          <div class="footer-col">
+            <h4>Product</h4>
+            <ul>
+              <li><a href="../../#how-it-works">How It Works</a></li>
+              <li><a href="../../#languages">Languages</a></li>
+              <li><a href="../../#threats">Threat Coverage</a></li>
+              <li><a href="../../documentation/">Documentation</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>SDKs</h4>
+            <ul>
+              <li><a href="https://www.npmjs.com/package/@arcis/node" target="_blank" rel="noopener">npm. @arcis/node</a></li>
+              <li><a href="https://pypi.org/project/arcis/" target="_blank" rel="noopener">PyPI. arcis</a></li>
+              <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">Go Module</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Resources</h4>
+            <ul>
+              <li><a href="../../changelog.html">Changelog</a></li>
+              <li><a href="../">Blog</a></li>
+              <li><a href="https://github.com/Gagancm/arcis" target="_blank" rel="noopener">GitHub</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>MIT License &middot; Built by <a href="https://github.com/Gagancm" target="_blank" rel="noopener">Gagan</a></span>
+        <div>v1.6.3</div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // GitHub star count
+    fetch('https://api.github.com/repos/Gagancm/arcis')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var el = document.getElementById('starCount');
+        if (el && data && data.stargazers_count !== undefined) {
+          el.textContent = data.stargazers_count;
+        }
+      })
+      .catch(function () { /* offline or rate-limited */ });
+
+    // Sticky-nav scroll-shadow
+    var nav = document.getElementById('nav');
+    window.addEventListener('scroll', function () {
+      if (window.scrollY > 8) nav.classList.add('scrolled');
+      else nav.classList.remove('scrolled');
+    });
+
+    // TOC scroll-spy. Highlight the section heading nearest the top
+    // of the viewport in the "On this page" sidebar list.
+    (function () {
+      var tocLinks = document.querySelectorAll('.post-toc a[href^="#"]');
+      if (!tocLinks.length) return;
+      var headings = [];
+      tocLinks.forEach(function (link) {
+        var id = link.getAttribute('href').slice(1);
+        var el = document.getElementById(id);
+        if (el) headings.push({ id: id, el: el, link: link });
+      });
+      if (!headings.length) return;
+
+      function setActive(id) {
+        tocLinks.forEach(function (l) {
+          if (l.getAttribute('href') === '#' + id) l.classList.add('active');
+          else l.classList.remove('active');
+        });
+      }
+
+      function onScroll() {
+        var anchor = window.scrollY + 140; // offset for sticky nav + breathing room
+        var current = headings[0].id;
+        for (var i = 0; i < headings.length; i++) {
+          if (headings[i].el.offsetTop <= anchor) current = headings[i].id;
+          else break;
+        }
+        setActive(current);
+      }
+
+      var ticking = false;
+      window.addEventListener('scroll', function () {
+        if (!ticking) {
+          window.requestAnimationFrame(function () { onScroll(); ticking = false; });
+          ticking = true;
+        }
+      }, { passive: true });
+      onScroll();
+    })();
+  </script>
+</body>
+</html>
