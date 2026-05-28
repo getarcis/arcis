@@ -38,6 +38,7 @@ import { csrfProtection, type CsrfOptions } from './csrf';
 import { safeCors } from './cors';
 import type { CorsOptions } from './cors';
 import { signupProtection, type SignupProtectionOptions } from './signup-protection';
+import { bruteForceProtection, type BruteForceOptions } from './brute-force';
 import { createSanitizer } from '../sanitizers';
 import type { RateLimitOptions, SanitizeOptions } from '../core/types';
 import { CorrelationWindow } from './correlation';
@@ -131,6 +132,14 @@ export interface ProtectLoginOptions {
   sanitize?: LayerOverride<SanitizeOptions>;
   /** Optional correlation-window wiring (improvements.md §1.4). */
   correlation?: CorrelationOptions;
+  /**
+   * Optional brute-force layer. When enabled, layers a bursty limiter
+   * on top of the fast rate-limit window: N attempts in `slowDuration`
+   * seconds trips a `blockDuration`-second semi-permanent block.
+   * Defaults to disabled (preserves existing behavior); pass `true`
+   * for safe defaults or an options object to customize.
+   */
+  bruteForce?: boolean | BruteForceOptions;
 }
 
 export interface ProtectSignupOptions {
@@ -173,6 +182,12 @@ export function protectLogin(options: ProtectLoginOptions = {}): RequestHandler[
 
   const rl = resolve<RateLimitOptions>(options.rateLimit, { max: 5, windowMs: 60_000 });
   if (rl) middlewares.push(createRateLimiter(rl));
+
+  if (options.bruteForce) {
+    const bfOpts =
+      options.bruteForce === true ? {} : options.bruteForce;
+    middlewares.push(bruteForceProtection(bfOpts));
+  }
 
   const bot = resolve<BotProtectionOptions>(options.bot, {
     deny: ['AUTOMATED'],

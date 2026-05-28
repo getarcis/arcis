@@ -71,6 +71,11 @@ export type {
   ProtectApiOptions,
   CorrelationOptions,
 } from './middleware/protect';
+export { bruteForceProtection } from './middleware/brute-force';
+export type {
+  BruteForceOptions,
+  BruteForceController,
+} from './middleware/brute-force';
 export { graphqlGuard } from './middleware/graphql';
 export type { GraphqlGuardMiddlewareOptions } from './middleware/graphql';
 export { CorrelationWindow } from './middleware/correlation';

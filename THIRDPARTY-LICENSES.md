@@ -132,6 +132,34 @@ limitations under the License.
 
 Full text: https://www.apache.org/licenses/LICENSE-2.0
 
+### `packages/arcis-node/src/_third_party/rate-limit/*`
+
+The internal limiter primitives in `packages/arcis-node/src/_third_party/rate-limit/` (`abstract.ts`, `memory.ts`, `memory-storage.ts`, `record.ts`, `bursty.ts`, `types.ts`) are a TypeScript port of a subset of the upstream `rate-limiter-flexible` Node.js library. The port covers the in-memory storage backend, the abstract limiter base, and the bursty composition pattern; we did not port the Redis/Postgres/MongoDB/etc. backends. Public surface in Arcis is the `bruteForceProtection` middleware (`packages/arcis-node/src/middleware/brute-force.ts`), which wires the limiter primitives into Express.
+
+#### Source E: animir/node-rate-limiter-flexible
+
+- **Upstream license:** ISC
+- **Upstream:** https://github.com/animir/node-rate-limiter-flexible
+- **Use in Arcis:** TypeScript port of `lib/RateLimiterAbstract.js`, `lib/RateLimiterMemory.js`, `lib/RateLimiterRes.js`, `lib/BurstyRateLimiter.js`, `lib/component/MemoryStorage/MemoryStorage.js`, and `lib/component/MemoryStorage/Record.js`. Class names renamed (`RateLimiterMemory` → `MemoryLimiter`, `RateLimiterRes` → `LimiterResult`, etc.) to fit Arcis naming, but the algorithm and rejection semantics match the original.
+
+```
+ISC License (ISC)
+
+Copyright 2019 Roman Voloboev
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
 ## How to add a new entry
 
 When adopting any upstream code or data:
