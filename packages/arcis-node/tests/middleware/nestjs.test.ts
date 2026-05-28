@@ -6,11 +6,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Request, Response } from 'express';
 import {
+  ArcisGuard,
   ArcisMiddleware,
   ArcisModule,
   ARCIS_OPTIONS,
 } from '../../src/middleware/nestjs';
 import { mockRequest, mockResponse } from '../setup';
+
+function execContext(req: Partial<Request>, res: Partial<Response>): never {
+  // Minimal NestJS ExecutionContext stub: only the http path is exercised.
+  return {
+    switchToHttp: () => ({
+      getRequest: () => req,
+      getResponse: () => res,
+      getNext: () => () => undefined,
+    }),
+  } as never;
+}
 
 describe('ArcisMiddleware (NestJS class adapter)', () => {
   let mw: ArcisMiddleware;
@@ -156,5 +168,83 @@ describe('ArcisModule.forRoot() (NestJS DynamicModule)', () => {
         typeof p === 'object' && p !== null && 'provide' in p && p.provide === ARCIS_OPTIONS,
     );
     expect(optionsProvider?.useValue).toEqual({});
+  });
+
+  it('also exports ArcisGuard for the recommended deny-on-detect path', () => {
+    const mod = ArcisModule.forRoot();
+    expect(mod.exports).toContain(ArcisGuard);
+  });
+});
+
+describe('ArcisGuard (NestJS CanActivate adapter)', () => {
+  it('returns true for safe input (no threats, no response written)', async () => {
+    const guard = new ArcisGuard({ block: true });
+    const req = mockRequest({ query: { q: 'hello world' } });
+    const res = mockResponse();
+    const result = await guard.canActivate(execContext(req, res));
+    expect(result).toBe(true);
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    guard.close();
+  });
+
+  it('returns false when the sanitizer writes a 403 for a SQL payload in query', async () => {
+    const guard = new ArcisGuard({ block: true });
+    // res.headersSent must reflect that a response was written
+    const res = mockResponse() as unknown as Response & { headersSent: boolean };
+    Object.defineProperty(res, 'headersSent', {
+      get(): boolean {
+        return (this as { _written?: boolean })._written === true;
+      },
+      configurable: true,
+    });
+    (res.status as unknown as ReturnType<typeof vi.fn>).mockImplementation(function (
+      this: Response & { _written: boolean },
+      code: number,
+    ) {
+      if (code === 403) (this as { _written: boolean })._written = true;
+      return this;
+    });
+    const req = mockRequest({ query: { q: "'; DROP TABLE users; --" } });
+    const result = await guard.canActivate(execContext(req, res));
+    expect(result).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(403);
+    guard.close();
+  });
+
+  it('returns false when an XSS payload in body triggers the sanitizer block', async () => {
+    const guard = new ArcisGuard({ block: true });
+    const res = mockResponse() as unknown as Response & { headersSent: boolean };
+    Object.defineProperty(res, 'headersSent', {
+      get(): boolean {
+        return (this as { _written?: boolean })._written === true;
+      },
+      configurable: true,
+    });
+    (res.status as unknown as ReturnType<typeof vi.fn>).mockImplementation(function (
+      this: Response & { _written: boolean },
+      code: number,
+    ) {
+      if (code === 403) (this as { _written: boolean })._written = true;
+      return this;
+    });
+    const req = mockRequest({
+      body: { comment: '<script>alert(1)</script>' },
+      method: 'POST',
+    });
+    const result = await guard.canActivate(execContext(req, res));
+    expect(result).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(403);
+    guard.close();
+  });
+
+  it('exposes close() for OnApplicationShutdown teardown', () => {
+    const guard = new ArcisGuard();
+    expect(() => guard.close()).not.toThrow();
+  });
+
+  it('uses {} when constructed without arguments', () => {
+    const guard = new ArcisGuard();
+    expect(guard).toBeInstanceOf(ArcisGuard);
+    guard.close();
   });
 });

@@ -2,7 +2,7 @@
 Arcis Security Library for Python
 ===================================
 
-One-line security for Flask, FastAPI, and Django applications.
+One-line security for FastAPI, Django, Litestar (full pipeline) and Flask (sanitize-only) applications.
 
 Usage:
     # Flask
@@ -197,7 +197,7 @@ try:
 except ImportError:
     _HAS_ASYNC = False
 
-__version__ = "1.6.2"
+__version__ = "1.6.3"
 __all__ = [
     # Main class
     "Arcis",

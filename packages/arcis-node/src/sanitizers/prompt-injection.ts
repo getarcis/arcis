@@ -2,14 +2,14 @@
  * @module @arcis/node/sanitizers/prompt-injection
  *
  * Pattern-based prompt-injection detection and sanitization for LLM-handler
- * endpoints. Catches the common signature classes — system-prompt overrides,
+ * endpoints. Catches the common signature classes: system-prompt overrides,
  * known jailbreak frameworks (DAN/STAN/DUDE), structural markers (fake
  * XML/Markdown delimiters that try to forge system messages), and known
  * encoding tricks. Does NOT defend against arbitrary novel attacks: that
  * needs the model itself to evaluate intent.
  *
  * Built as a signature library (Option A in `documents/plans/sdk-vectors.md`
- * vector #28) — MIT, fully transparent, no closed Wasm blobs.
+ * vector #28). MIT, fully transparent, no closed Wasm blobs.
  *
  * Common attack categories caught:
  *   - Direct override: "ignore previous instructions", "disregard the above"
@@ -63,12 +63,24 @@ const SIGNATURES: PromptInjectionSignature[] = [
     rule: 'ignore-previous-instructions',
     // Two clauses:
     //  1. ignore|disregard|... + adjectives? + a target object word (like
-    //     "instructions", "rules") — catches "ignore your safety rules".
+    //     "instructions", "rules"). Catches "ignore your safety rules".
     //  2. ignore|disregard|... + (the|all|any) + (previous|above|prior|...)
-    //     with no trailing noun — catches "disregard the above".
-    pattern: /\b(?:ignore|disregard|forget|override|bypass)\s+(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety)\s+)*(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives|commands?|restrictions?|filters?|safety|content)\b|\b(?:ignore|disregard|forget|override|bypass)\s+(?:all\s+|the\s+|any\s+)?(?:previous|prior|above|preceding|earlier|original|initial)\b/i,
+    //     with no trailing noun. Catches "disregard the above".
+    // Verb set widened in v1.7 to include skip/neglect/overlook/omit (the
+    // combinatorial jailbreak corpus uses these interchangeably with
+    // ignore/disregard/forget).
+    pattern: /\b(?:ignore|disregard|forget|override|bypass|skip|neglect|overlook|omit)\s+(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety|preceding|earlier|foregoing)\s+)*(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives?|commands?|restrictions?|filters?|safety|content|context|conversation|directive|messages?|communication|requests?|inputs?)\b|\b(?:ignore|disregard|forget|override|bypass|skip|neglect|overlook|omit)\s+(?:all\s+|the\s+|any\s+)?(?:previous|prior|above|preceding|earlier|original|initial|foregoing)\b/i,
     severity: 'high',
     description: 'Direct instruction override attempt',
+  },
+  {
+    rule: 'instruction-bypass-phrases',
+    // Multi-word verbs that don't fit the single-token alternation in
+    // `ignore-previous-instructions`. Catches "pay no attention to your
+    // previous instructions", "do not follow the above rules", etc.
+    pattern: /\b(?:pay\s+no\s+attention\s+to|do\s+not\s+(?:follow|obey|adhere\s+to|comply\s+with))\s+(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety|preceding|earlier|foregoing)\s+)*(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives?|commands?|restrictions?|filters?|safety|content|context|directive|messages?)\b/i,
+    severity: 'high',
+    description: 'Multi-word instruction-bypass phrase (pay no attention to / do not follow)',
   },
   {
     rule: 'jailbreak-dan',
@@ -195,7 +207,7 @@ const SIGNATURES: PromptInjectionSignature[] = [
   // a tool, or to trick the model into echoing a synthesized
   // tool_call that the runtime then executes.
   //
-  // Narrow patterns — match the literal JSON keys and inline
+  // Narrow patterns. Match the literal JSON keys and inline
   // tool-name shapes. Won't false-positive on plain English text
   // discussing tools.
   {
@@ -228,6 +240,42 @@ const SIGNATURES: PromptInjectionSignature[] = [
     pattern: /<\/?\s*(?:tool_use|tool_result|invoke|function_calls?|parameter)\b/i,
     severity: 'high',
     description: 'Claude/OpenAI tool-use XML-style tag forgery',
+  },
+
+  // ── Prompt-template marker forgeries ────────────────────────────────
+  // Catches inline forgery of the special tokens that LLM runtimes use
+  // to delimit roles. If a user can land any of these in their input
+  // and the host concatenates the input into a prompt without
+  // re-tokenizing, the model treats the suffix as a new system turn.
+  //
+  // Covered runtimes:
+  //   - ChatML (OpenAI / Llama 3 chat): <|im_start|>, <|im_end|>
+  //   - Llama 2 chat: [INST] <<SYS>> ... <</SYS>>
+  //   - guidance/handlebars: {{#system~}}, {{/system~}}, {{#assistant~}}
+  //   - Markdown link spoof: [system](#assistant), [admin](#context)
+  {
+    rule: 'chatml-template-marker',
+    pattern: /<\|im_(?:start|end)\|>(?:\s*(?:system|assistant|user|tool|function))?/i,
+    severity: 'high',
+    description: 'ChatML special token forgery (<|im_start|>...) to spoof a role turn',
+  },
+  {
+    rule: 'llama2-system-marker',
+    pattern: /<<\s*\/?\s*SYS\s*>>|\[\s*\/?\s*INST\s*\]/i,
+    severity: 'high',
+    description: 'Llama 2 [INST]/<<SYS>> instruction-template marker forgery',
+  },
+  {
+    rule: 'guidance-template-marker',
+    pattern: /\{\{\s*[#/]\s*(?:system|assistant|user|tool|function)\s*~?\s*\}\}/i,
+    severity: 'medium',
+    description: 'guidance/handlebars role-block marker forgery ({{#system~}} ...)',
+  },
+  {
+    rule: 'markdown-system-link-spoof',
+    pattern: /\[\s*(?:system|admin|root|assistant)\s*\]\s*\(\s*#(?:assistant|context|system|root|admin)\s*\)/i,
+    severity: 'medium',
+    description: 'Markdown link forgery spoofing a role marker ([system](#assistant))',
   },
 
   // --- LOW severity: ambiguous but worth flagging in strict mode ---
@@ -322,7 +370,7 @@ export function detectPromptInjection(text: string): DetectPromptInjectionResult
 /**
  * Strip prompt-injection signatures from `text`. For HIGH and MEDIUM
  * severity matches the matched span is replaced with `[REDACTED]`. LOW
- * severity matches are left in place by default — toggle via `redactLow`.
+ * severity matches are left in place by default. Toggle via `redactLow`.
  *
  * Returns the sanitized string. To inspect what was stripped, call
  * `detectPromptInjection` first or pass `collectMatches: true`.

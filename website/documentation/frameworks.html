@@ -225,31 +225,29 @@ Bun.<span class="f">serve</span><span class="p">({</span>
 
       <h2 id="fastapi">FastAPI (Python)</h2>
 <pre><code><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
-<span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware
+<span class="k">from</span> arcis.fastapi <span class="k">import</span> ArcisMiddleware
 <span class="k">from</span> dotenv <span class="k">import</span> load_dotenv
 
 <span class="f">load_dotenv</span><span class="p">()</span>
 app = <span class="f">FastAPI</span><span class="p">()</span>
 app.<span class="f">add_middleware</span><span class="p">(</span>ArcisMiddleware<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)</span></code></pre>
-      <p>For custom config:</p>
-<pre><code><span class="k">from</span> arcis <span class="k">import</span> ArcisMiddleware<span class="p">,</span> Config
-
-app.<span class="f">add_middleware</span><span class="p">(</span>
+      <p>For custom config, pass keyword arguments to <code>add_middleware</code>:</p>
+<pre><code>app.<span class="f">add_middleware</span><span class="p">(</span>
     ArcisMiddleware<span class="p">,</span>
-    config=<span class="f">Config</span><span class="p">(</span>
-        sanitize_xss=<span class="k">True</span><span class="p">,</span>
-        rate_limit_max=<span class="n">60</span><span class="p">,</span>
-    <span class="p">),</span>
+    block<span class="o">=</span><span class="k">True</span><span class="p">,</span>
+    sanitize_xss<span class="o">=</span><span class="k">True</span><span class="p">,</span>
+    rate_limit_max<span class="o">=</span><span class="n">60</span><span class="p">,</span>
 <span class="p">)</span></code></pre>
 
       <h2 id="flask">Flask (Python)</h2>
+      <p>Flask runs sanitize-only at the middleware layer (block-mode lands in v1.7). For block-mode now, compose <code>scan_threats</code> manually in a <code>before_request</code> handler.</p>
 <pre><code><span class="k">from</span> flask <span class="k">import</span> Flask
 <span class="k">from</span> arcis <span class="k">import</span> Arcis
 <span class="k">from</span> dotenv <span class="k">import</span> load_dotenv
 
 <span class="f">load_dotenv</span><span class="p">()</span>
 app = <span class="f">Flask</span><span class="p">(</span>__name__<span class="p">)</span>
-<span class="f">Arcis</span><span class="p">(</span>app<span class="p">,</span> block<span class="o">=</span><span class="k">True</span><span class="p">)</span></code></pre>
+<span class="f">Arcis</span><span class="p">(</span>app<span class="p">)</span></code></pre>
 
       <h2 id="django">Django (Python)</h2>
       <p>Add to <code>MIDDLEWARE</code> in <code>settings.py</code>:</p>
@@ -280,7 +278,7 @@ app = <span class="f">Litestar</span><span class="p">(</span>
 
 <span class="k">func</span> <span class="f">main</span><span class="p">()</span> <span class="p">{</span>
     r := gin.<span class="f">Default</span><span class="p">()</span>
-    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">Middleware</span><span class="p">(</span>arcis.Config<span class="p">{</span>Block<span class="p">:</span> <span class="k">true</span><span class="p">}))</span>
+    r.<span class="f">Use</span><span class="p">(</span>arcisgin.<span class="f">MiddlewareWithConfig</span><span class="p">(</span>arcisgin.Config<span class="p">{</span>Block<span class="p">:</span> <span class="k">true</span><span class="p">}))</span>
     r.<span class="f">Run</span><span class="p">()</span>
 <span class="p">}</span></code></pre>
 

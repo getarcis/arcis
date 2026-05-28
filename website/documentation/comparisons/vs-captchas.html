@@ -120,7 +120,7 @@
         <li><strong>Zero user friction.</strong> CAPTCHAs make every visitor pause to prove humanity. That cost shows up in measurable conversion drops on signup and checkout flows. Arcis runs invisibly: real users never see a challenge, bots get blocked silently.</li>
         <li><strong>No third-party dependency on the request path.</strong> CAPTCHAs introduce a script load and a verification round trip to a vendor (Google, Cloudflare, hCaptcha). Arcis runs in your process. No external dependency, no vendor downtime affecting your form, no privacy posture to defend (CAPTCHAs are tracking pixels in disguise; Friendly Captcha is the GDPR-friendly counter-example).</li>
         <li><strong>Catches bots beyond the form.</strong> CAPTCHAs only protect endpoints where you explicitly drop a challenge. API endpoints, RSS feeds, search, scraping targets: those rarely get CAPTCHAs because the friction is unacceptable. Arcis covers every request.</li>
-        <li><strong>635 patterns + behavioral signals included.</strong> The bot corpus catches search engines, scrapers, headless browsers, AI crawlers, and CLI tools without configuration. Behavioral signals (missing browser headers) catch unknown bots that don't bother spoofing properly.</li>
+        <li><strong>695 patterns + behavioral signals included.</strong> The bot corpus catches search engines, scrapers, headless browsers, AI crawlers, and CLI tools without configuration. Behavioral signals (missing browser headers) catch unknown bots that don't bother spoofing properly.</li>
       </ul>
 
       <h2 id="capability-matrix">Capability matrix</h2>
@@ -139,7 +139,7 @@
             <tr><td>User friction</td><td>Yes (visible challenge or invisible round trip)</td><td>None</td></tr>
             <tr><td>Conversion impact</td><td>Measurable drop on signup / checkout</td><td>None</td></tr>
             <tr><td>Catches headless browsers spoofing UA</td><td>Yes (behavioral risk score)</td><td>Partial (catches obvious cases via missing-headers signals)</td></tr>
-            <tr><td>Catches well-known bots (Googlebot, scrapers, CLI)</td><td>Yes if challenged</td><td>Yes (635 patterns)</td></tr>
+            <tr><td>Catches well-known bots (Googlebot, scrapers, CLI)</td><td>Yes if challenged</td><td>Yes (695 patterns)</td></tr>
             <tr><td>Coverage scope</td><td>Endpoints with explicit challenges</td><td>Every request</td></tr>
             <tr><td>Third-party dependency</td><td>Yes (Google / Cloudflare / hCaptcha)</td><td>None</td></tr>
             <tr><td>Privacy posture</td><td>Most are tracking pixels (Turnstile and Friendly Captcha are exceptions)</td><td>Self-contained, no external calls</td></tr>
