@@ -2,6 +2,24 @@
   "_comment": "Single source of truth for the website's Recently Shipped section + the standalone changelog page. The dashboard's 'Changelog' sidebar link also points at the rendered HTML view. Add new versions to the top of `releases`. Keep summaries one sentence; full bullets in `details`.",
   "releases": [
     {
+      "version": "1.6.3",
+      "date": "2026-05-28",
+      "summary": "ArcisGuard for NestJS (proper deny on detect via CanActivate). bruteForceProtection middleware. Six new prompt-injection signatures. osv::query_batch for the Rust CLI. Pack-and-attack CI gate across seven example repos. THIRDPARTY-LICENSES.md with attribution for every adopted upstream.",
+      "details": [
+        "Node: ArcisGuard (NestJS CanActivate) finally denies on detect at the right lifecycle slot. The previous APP_FILTER + class-middleware combination ran sanitization but could not block the handler; ArcisGuard inspects res.headersSent synchronously after the wrapped middleware runs and resolves false to short-circuit the controller.",
+        "Node: bruteForceProtection middleware composes a slow (long window, low cap) + fast (short window, higher cap) limiter pair with AND semantics. Exposes req.arcisBruteForce.reward() / delete() / block() / get() so callers can drop the counter after a successful login. Built on the vendored animir/node-rate-limiter-flexible primitives in src/_third_party/rate-limit/.",
+        "Prompt injection: 6 new patterns across all 3 SDKs covering extended verbs in ignore-previous-instructions, broader instruction-bypass phrases (`disregard your training`, `override your guidelines`), chatml-template-marker, llama2-system-marker, guidance-template-marker, markdown-system-link-spoof.",
+        "Rust CLI: arcis_engine::osv::query_batch() chunks lockfile inputs into 1000-package batches per OSV API spec, falls back to per-package query on batch failure, deduplicates findings across batches. 7 new tests including chunking math + BatchInput cloning.",
+        "CI: pack-and-attack QA workflow runs on every push across getarcis/arcis-example-{express,fastapi,gin,bun,nestjs,nextjs,mcp}. Builds the SDK as a tarball artifact, installs it in the example, fires the attack script, fails the build on any 200. Gin cold-cache compile race fixed via cache-dependency-path + pre-build step + 60s boot-wait.",
+        "THIRDPARTY-LICENSES.md added with attribution for arcjet/well-known-bots, monperrus/crawler-user-agents, protectai/rebuff, deadbits/vigil-llm, animir/node-rate-limiter-flexible, google/osv.dev, google/osv-scanner.",
+        "Honest-claims sweep round 2: 26 Python and Go adapter docstring drifts corrected. 50 main-repo files where edge-runtime adapters were misadvertised as full-pipeline fixed in round 1.",
+        "Em-dash audit across 33 source-file sites, 2 commit messages, and 1 PR body. Replaced with periods or commas across user-facing strings.",
+        "PyPI Description trimmed from 705 to 472 characters after a Warehouse 400 (Summary field exceeded the PEP 426 512-char limit on Metadata-Version 2.4).",
+        "@arcis/node 1.6.2 -> 1.6.3. arcis (PyPI) 1.6.2 -> 1.6.3. @arcis/cli unchanged. Go module tag v1.6.3."
+      ],
+      "packages": ["@arcis/node", "arcis (PyPI)", "github.com/GagancM/arcis (Go)"]
+    },
+    {
       "version": "1.6.2",
       "date": "2026-05-24",
       "summary": "Go SDK reaches three-way parity on v1.6 detection (V32 toolcall, V33 deserialization markers, V34 GraphQL alias / fragment cycle, CorrelationWindow, mutation tester). Q8 LDAP NOT-bypass + Q10 mail-header bare-newline patterns. FastAPI create_login_protection_dependency factory.",
