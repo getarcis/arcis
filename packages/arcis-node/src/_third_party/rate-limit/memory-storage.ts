@@ -1,7 +1,7 @@
 /**
  * In-memory storage backend for the rate limiter. Tracks integer counters
  * per key with optional TTL expiry. Ported to TypeScript from the upstream
- * MemoryStorage class — see `THIRDPARTY-LICENSES.md` for attribution.
+ * MemoryStorage class. See `THIRDPARTY-LICENSES.md` for attribution.
  */
 
 import { LimiterResult } from './types';
@@ -71,7 +71,7 @@ export class MemoryStorage {
     return true;
   }
 
-  /** Inspect the underlying map. Test-only — not part of the public API. */
+  /** Inspect the underlying map. Test-only and not part of the public API. */
   _dump(): IterableIterator<[string, StorageRecord]> {
     return this._storage.entries();
   }

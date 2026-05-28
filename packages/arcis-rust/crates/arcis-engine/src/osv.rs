@@ -78,7 +78,7 @@ struct OsvResponse {
     vulns: Vec<OsvVuln>,
 }
 
-/// `/v1/querybatch` request body. Order is preserved in the response —
+/// `/v1/querybatch` request body. Order is preserved in the response:
 /// `results[i]` corresponds to `queries[i]`.
 #[derive(Debug, Serialize)]
 struct OsvBatchQuery<'a> {
@@ -87,7 +87,7 @@ struct OsvBatchQuery<'a> {
 
 /// `/v1/querybatch` response. Each result entry is a `vulns` list shaped
 /// like a single-query response. Vulns inside are NOT fully hydrated by
-/// OSV — they carry only `id` and `modified`; the caller needs to follow
+/// OSV; they carry only `id` and `modified`. The caller needs to follow
 /// up with `/v1/vulns/{id}` for full data. For Arcis we only need the
 /// id at the batch stage, so we keep the shape minimal.
 #[derive(Debug, Deserialize)]
@@ -102,7 +102,7 @@ struct OsvBatchResultEntry {
     vulns: Vec<OsvBatchVulnRef>,
 }
 
-/// Minimal shape returned in a batch query — just the vuln id. The
+/// Minimal shape returned in a batch query (just the vuln id). The
 /// caller hydrates this to a full `OsvVuln` via `query()` or `vulns_by_id()`.
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 pub struct OsvBatchVulnRef {
@@ -122,7 +122,7 @@ pub enum OsvError {
 }
 
 /// Map an internal ecosystem string (`"npm"`, `"pypi"`, `"go"`) to the
-/// label OSV expects. Empty string for unknown ecosystems — the caller
+/// label OSV expects. Empty string for unknown ecosystems. The caller
 /// should treat that as "skip this package, OSV won't recognize it".
 pub fn osv_ecosystem(internal: &str) -> &'static str {
     match internal {
@@ -144,7 +144,7 @@ pub fn osv_ecosystem(internal: &str) -> &'static str {
 ///   * a bare numeric string (rare)
 ///
 /// We only get a numeric rank from the second shape. When OSV sends only
-/// vectors, we return `"unknown"` — the report renderer treats it the
+/// vectors, we return `"unknown"`. The report renderer treats it the
 /// same as `"high"` for tinting (yellow). A future refinement would
 /// compute the CVSS base score from the vector string, but that's a
 /// 200-line cvss-rs port and out of scope for v1.
@@ -223,7 +223,7 @@ pub struct BatchInput {
 /// Query OSV.dev's `/v1/querybatch` endpoint for a list of packages. Up
 /// to `OSV_MAX_QUERIES_PER_BATCH` queries fit in one POST; longer input
 /// lists are split into multiple sequential POSTs. Returns one
-/// `Vec<OsvBatchVulnRef>` per input entry, in input order — empty entry
+/// `Vec<OsvBatchVulnRef>` per input entry, in input order. Empty entry
 /// = no vulnerabilities for that package.
 ///
 /// Packages with unknown ecosystem or empty fields are skipped (their
@@ -232,7 +232,7 @@ pub struct BatchInput {
 /// Batch responses carry only `id` + `modified` for each vuln. Callers
 /// that need full severity/summary/refs follow up with `query()` per id
 /// or, for the existing Arcis sca flow, call `query()` on the packages
-/// the batch flagged as non-empty — a typical project produces a few
+/// the batch flagged as non-empty. A typical project produces a few
 /// dozen hits at most, so the secondary lookups are cheap.
 ///
 /// Vendor attribution: the batch endpoint contract, chunking strategy,

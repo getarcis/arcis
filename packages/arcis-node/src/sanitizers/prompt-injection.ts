@@ -2,14 +2,14 @@
  * @module @arcis/node/sanitizers/prompt-injection
  *
  * Pattern-based prompt-injection detection and sanitization for LLM-handler
- * endpoints. Catches the common signature classes — system-prompt overrides,
+ * endpoints. Catches the common signature classes: system-prompt overrides,
  * known jailbreak frameworks (DAN/STAN/DUDE), structural markers (fake
  * XML/Markdown delimiters that try to forge system messages), and known
  * encoding tricks. Does NOT defend against arbitrary novel attacks: that
  * needs the model itself to evaluate intent.
  *
  * Built as a signature library (Option A in `documents/plans/sdk-vectors.md`
- * vector #28) — MIT, fully transparent, no closed Wasm blobs.
+ * vector #28). MIT, fully transparent, no closed Wasm blobs.
  *
  * Common attack categories caught:
  *   - Direct override: "ignore previous instructions", "disregard the above"
@@ -63,9 +63,9 @@ const SIGNATURES: PromptInjectionSignature[] = [
     rule: 'ignore-previous-instructions',
     // Two clauses:
     //  1. ignore|disregard|... + adjectives? + a target object word (like
-    //     "instructions", "rules") — catches "ignore your safety rules".
+    //     "instructions", "rules"). Catches "ignore your safety rules".
     //  2. ignore|disregard|... + (the|all|any) + (previous|above|prior|...)
-    //     with no trailing noun — catches "disregard the above".
+    //     with no trailing noun. Catches "disregard the above".
     // Verb set widened in v1.7 to include skip/neglect/overlook/omit (the
     // combinatorial jailbreak corpus uses these interchangeably with
     // ignore/disregard/forget).
@@ -207,7 +207,7 @@ const SIGNATURES: PromptInjectionSignature[] = [
   // a tool, or to trick the model into echoing a synthesized
   // tool_call that the runtime then executes.
   //
-  // Narrow patterns — match the literal JSON keys and inline
+  // Narrow patterns. Match the literal JSON keys and inline
   // tool-name shapes. Won't false-positive on plain English text
   // discussing tools.
   {
@@ -370,7 +370,7 @@ export function detectPromptInjection(text: string): DetectPromptInjectionResult
 /**
  * Strip prompt-injection signatures from `text`. For HIGH and MEDIUM
  * severity matches the matched span is replaced with `[REDACTED]`. LOW
- * severity matches are left in place by default — toggle via `redactLow`.
+ * severity matches are left in place by default. Toggle via `redactLow`.
  *
  * Returns the sanitized string. To inspect what was stripped, call
  * `detectPromptInjection` first or pass `collectMatches: true`.

@@ -3,7 +3,7 @@
  * `consume()` / `penalty()` / `reward()` / `block()` / `get()` /
  * `delete()` surface from the upstream limiter library.
  *
- * Ported to TypeScript from RateLimiterMemory — see
+ * Ported to TypeScript from RateLimiterMemory. See
  * `THIRDPARTY-LICENSES.md` for attribution.
  */
 
@@ -87,7 +87,7 @@ export class MemoryLimiter extends AbstractLimiter {
     return Promise.resolve(this._storage.delete(this._getKey(key)));
   }
 
-  /** Test/teardown helper — drop every key and clear timers. */
+  /** Test/teardown helper. Drops every key and clears timers. */
   dispose(): void {
     this._storage.clear();
   }

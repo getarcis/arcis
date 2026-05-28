@@ -4,7 +4,7 @@
  * concrete limiter shares. Subclasses (`MemoryLimiter`, future Redis
  * backend) implement `consume()` and friends.
  *
- * Ported to TypeScript from upstream RateLimiterAbstract — see
+ * Ported to TypeScript from upstream RateLimiterAbstract. See
  * `THIRDPARTY-LICENSES.md` for attribution.
  */
 

@@ -13,7 +13,7 @@
  *  - Brute-force: `slowPoints` failed attempts over `slowDuration`
  *    seconds trips a `blockDuration` semi-permanent block.
  *
- * The middleware only consumes on `next()` by default — meaning every
+ * The middleware only consumes on `next()` by default, meaning every
  * request counts, even successful ones. Pass `{ consumeOn: 'failure' }`
  * plus a custom `failure` predicate to count only failed responses.
  * The handler also exposes `req.arcisBruteForce.reward(key)` / `.delete(key)`
@@ -41,7 +41,7 @@ export interface BruteForceOptions {
   statusCode?: number;
   /** Response message when blocked. */
   message?: string;
-  /** Skip predicate — return true to bypass the limiter for this request. */
+  /** Skip predicate. Return true to bypass the limiter for this request. */
   skip?: (req: Request) => boolean;
 }
 
@@ -154,7 +154,7 @@ export function bruteForceProtection(options: BruteForceOptions = {}): RequestHa
         res.status(statusCode).json({ error: message, retryAfter });
         return;
       }
-      // Unknown rejection — fail open and log.
+      // Unknown rejection. Fail open and log.
       // eslint-disable-next-line no-console
       console.error('[arcis] brute-force middleware error:', rejection);
       next();

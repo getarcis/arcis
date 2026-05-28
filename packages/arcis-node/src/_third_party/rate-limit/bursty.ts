@@ -1,10 +1,10 @@
 /**
- * Bursty rate limiter — wraps two underlying limiters. The first is the
+ * Bursty rate limiter that wraps two underlying limiters. The first is the
  * steady-state limiter; if it rejects, the bursty limiter is consulted
  * to grant short-term burst capacity. Useful for "5 req/sec normally,
  * but allow occasional bursts of up to 15 within 10 sec" patterns.
  *
- * Ported to TypeScript from upstream BurstyRateLimiter — see
+ * Ported to TypeScript from upstream BurstyRateLimiter. See
  * `THIRDPARTY-LICENSES.md` for attribution.
  */
 

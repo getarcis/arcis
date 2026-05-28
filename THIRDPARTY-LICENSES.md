@@ -74,7 +74,7 @@ SOFTWARE.
 
 ### `packages/arcis-{node,python,go}/sanitizers/prompt_injection*`
 
-The prompt-injection signature library carries six rule shapes that were modeled on patterns we examined in two upstream prompt-injection projects. The Arcis regexes were written independently against the documented LLM template syntax (ChatML, Llama 2, guidance/handlebars are all publicly specified by their respective vendors) — these are not byte-for-byte copies — but the *shape* of what to look for, and several of the keywords in our extended verb set, were informed by upstream work and deserve credit.
+The prompt-injection signature library carries six rule shapes that were modeled on patterns we examined in two upstream prompt-injection projects. The Arcis regexes were written independently against the documented LLM template syntax (ChatML, Llama 2, guidance/handlebars are all publicly specified by their respective vendors). These are not byte-for-byte copies, but the *shape* of what to look for, and several of the keywords in our extended verb set, were informed by upstream work and deserve credit.
 
 #### Source C: protectai/rebuff
 
@@ -108,7 +108,7 @@ Full text: https://www.apache.org/licenses/LICENSE-2.0
 
 - **Upstream license:** Apache-2.0
 - **Upstream:** https://github.com/deadbits/vigil-llm
-- **Use in Arcis:** the four prompt-template marker rules — `chatml-template-marker`, `llama2-system-marker`, `guidance-template-marker`, `markdown-system-link-spoof` — were informed by the YARA rules in `data/yara/system_instructions.yar` and `data/yara/instruction_bypass.yar`. We re-wrote the regexes from the public LLM template specs (OpenAI ChatML, Meta Llama 2, Microsoft guidance/handlebars) rather than copying the YARA pattern bytes.
+- **Use in Arcis:** the four prompt-template marker rules (`chatml-template-marker`, `llama2-system-marker`, `guidance-template-marker`, `markdown-system-link-spoof`) were informed by the YARA rules in `data/yara/system_instructions.yar` and `data/yara/instruction_bypass.yar`. We re-wrote the regexes from the public LLM template specs (OpenAI ChatML, Meta Llama 2, Microsoft guidance/handlebars) rather than copying the YARA pattern bytes.
 
 ```
 Apache License
@@ -170,7 +170,7 @@ Single-package `query()` and `osv_cache.rs` are unchanged Arcis-original code.
 
 - **Upstream license:** Apache-2.0
 - **Upstream:** https://github.com/google/osv.dev (bindings/go/osvdev)
-- **Use in Arcis:** the API contract for `/v1/querybatch` (request shape, response ordering, 1000-per-batch cap) is modeled on `OSVClient.QueryBatch` in `osvdev.go`. Our implementation does not import or vendor the upstream Go code; the Rust port uses `reqwest` + `serde_json` and runs sequential chunked POSTs (the Go client uses `errgroup` for concurrent chunks — a v1.8 follow-up for the Arcis side).
+- **Use in Arcis:** the API contract for `/v1/querybatch` (request shape, response ordering, 1000-per-batch cap) is modeled on `OSVClient.QueryBatch` in `osvdev.go`. Our implementation does not import or vendor the upstream Go code; the Rust port uses `reqwest` + `serde_json` and runs sequential chunked POSTs (the Go client uses `errgroup` for concurrent chunks; that's a v1.8 follow-up for the Arcis side).
 
 ```
 Apache License
@@ -200,7 +200,7 @@ Full text: https://www.apache.org/licenses/LICENSE-2.0
 
 - **Upstream license:** Apache-2.0
 - **Upstream:** https://github.com/google/osv-scanner
-- **Use in Arcis:** the batch-matching strategy in `OSVMatcher.MatchVulnerabilities` (`internal/clients/clientimpl/osvmatcher/osvmatcher.go`) — gather all packages, send a batch query, then hydrate vulnerabilities by id — informed the Arcis architecture in `scan_project_with_osv` going forward. We did not port their lockfile parsers (Arcis has its own `sca_lockfile.rs`), their SBOM input handlers, or their license-scanning subsystem.
+- **Use in Arcis:** the batch-matching strategy in `OSVMatcher.MatchVulnerabilities` (`internal/clients/clientimpl/osvmatcher/osvmatcher.go`) (gather all packages, send a batch query, then hydrate vulnerabilities by id) informed the Arcis architecture in `scan_project_with_osv` going forward. We did not port their lockfile parsers (Arcis has its own `sca_lockfile.rs`), their SBOM input handlers, or their license-scanning subsystem.
 
 ```
 Apache License
@@ -224,16 +224,16 @@ Full text: https://www.apache.org/licenses/LICENSE-2.0
 
 When adopting any upstream code or data:
 
-1. Identify the upstream license (MIT, Apache 2.0, BSD, ISC — anything else needs a separate decision).
+1. Identify the upstream license (MIT, Apache 2.0, BSD, ISC). Anything else needs a separate decision.
 2. Add a section above with: upstream URL, license name, what was adopted, and the full license text.
 3. For Apache 2.0 specifically, also vendor the upstream `NOTICE` file under `NOTICES/` and reference it from this section.
 4. For any data file (JSON corpus, pattern list, etc.) that the SDK loads at runtime, add a comment at the top of the file referencing this entry.
 
 ## Licenses Arcis avoids
 
-- **GPL-2.0, GPL-3.0** — copyleft, would force Arcis itself under GPL.
-- **AGPL-3.0** — network-use trigger, even worse for a library that runs on servers.
-- **LGPL-3.0** — borderline on vendored libraries; awkward for npm/PyPI packaging.
-- **SSPL** — non-OSI, MongoDB-specific.
+- **GPL-2.0, GPL-3.0**: copyleft, would force Arcis itself under GPL.
+- **AGPL-3.0**: network-use trigger, even worse for a library that runs on servers.
+- **LGPL-3.0**: borderline on vendored libraries; awkward for npm/PyPI packaging.
+- **SSPL**: non-OSI, MongoDB-specific.
 
 If a dependency under one of these turns up in a v1.7+ adoption shortlist, the decision is "skip" or "rewrite the relevant logic from spec without copying the code."

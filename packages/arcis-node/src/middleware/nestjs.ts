@@ -192,7 +192,7 @@ export class ArcisGuard implements CanActivate {
  * `ArcisModule` itself; this keeps `@nestjs/common` purely a type-only import.
  *
  * Exports both `ArcisMiddleware` (for legacy `MiddlewareConsumer` consumers)
- * and `ArcisGuard` (recommended — actually denies attacks on detect).
+ * and `ArcisGuard` (recommended; actually denies attacks on detect).
  */
 export class ArcisModule {
   static forRoot(options: ArcisOptions = {}): DynamicModule {

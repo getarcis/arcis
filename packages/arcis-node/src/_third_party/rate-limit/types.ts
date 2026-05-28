@@ -1,5 +1,5 @@
 /**
- * Rate-limiter response object — the shape returned (or rejected with) by
+ * Rate-limiter response object. The shape returned (or rejected with) by
  * every limiter call. Mirrors the upstream `RateLimiterRes` contract.
  *
  * See `THIRDPARTY-LICENSES.md` for upstream attribution. This file is
