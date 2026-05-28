@@ -360,23 +360,33 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
+          cache-dependency-path: example/go.sum
       - name: Point example at local SDK
         working-directory: example
         run: |
           go mod edit -replace="github.com/GagancM/arcis=$GITHUB_WORKSPACE/arcis/packages/arcis-go"
           go mod tidy
           cat go.mod
+      - name: Pre-build server + attack binaries
+        # Front-load the compile so the boot-wait timer below does not
+        # race against go run's cold-cache build. Cold gin-stack compile
+        # can take 25-30s; the previous `go run . &` + 30s wait loop hit
+        # this exact race on PR #154's first push.
+        working-directory: example
+        run: |
+          go build -o /tmp/arcis-gin-server .
+          go build -tags attack -o /tmp/arcis-gin-attack attack.go
       - name: Boot server + fire attack
         working-directory: example
         run: |
-          go run . &
+          /tmp/arcis-gin-server &
           SERVER_PID=$!
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             if curl -fs http://localhost:8080/ >/dev/null 2>&1; then break; fi
             sleep 1
           done
           curl -fs http://localhost:8080/ >/dev/null || { echo "Server did not boot"; kill $SERVER_PID || true; exit 1; }
-          go run -tags attack attack.go
+          /tmp/arcis-gin-attack
           ATTACK_EXIT=$?
           kill $SERVER_PID || true
           exit $ATTACK_EXIT
