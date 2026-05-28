@@ -1,30 +1,58 @@
 /*
-Package arcis provides one-line security for Go web applications.
+Package arcis provides security middleware for Go web applications.
 
-Arcis is a comprehensive security middleware that provides:
-  - Input sanitization (XSS, SQL injection, NoSQL injection, path traversal, command injection)
-  - HTTP header injection prevention
-  - SSRF (Server-Side Request Forgery) prevention
-  - Open redirect prevention
+The root package (`arcis.Protect`, `arcis.NewWithConfig`) ships:
   - Rate limiting with configurable windows and limits
   - Security headers (CSP, HSTS, X-Frame-Options, etc.)
-  - Request validation with schema support
-  - Safe logging with sensitive data redaction
-  - Production-safe error handling
+  - Fingerprint-header stripping (Server, X-Powered-By)
+
+For request-body sanitization and block-mode (XSS / SQL / NoSQL / path /
+command / SSTI / XXE / LDAP / XPath / email-header / prototype-pollution
+patterns return 403 before the handler runs), use a framework adapter:
+
+	import arcisgin "github.com/GagancM/arcis/gin"
+
+	r := gin.Default()
+	cfg := arcisgin.DefaultConfig()
+	cfg.Block = true
+	r.Use(arcisgin.MiddlewareWithConfig(cfg))
+
+The adapter packages (gin / echo / chi / fiber / nethttp) call
+`arcis.ScanThreats` against body / query / URL path on every request.
+The root `arcis.Protect(handler)` shorthand does NOT scan bodies; it
+only applies headers + rate-limit. Use it when you want a stdlib-only
+wrapper without body inspection.
+
+Additional helpers (request validation, safe logging with PII redaction,
+production-safe error handling, SSRF URL validation, open-redirect
+validation) are available from the `arcis/validation`, `arcis/logging`,
+`arcis/middleware`, and `arcis/utils` sub-packages.
+
+v1.6.2 helpers (`CorrelationWindow`, `DetectDeserialization`, GraphQL
+V34 inspectors, mutation tester) are accessible from
+`arcis/middleware/correlation`, `arcis/sanitizers/deserialization`, and
+`arcis/sanitizers/graphql`. Root-level re-exports land in v1.7.
 
 Usage with net/http:
 
 	import "github.com/GagancM/arcis"
 
-	// Full protection (recommended)
+	// Headers + rate-limit only (no body sanitization)
 	http.Handle("/", arcis.Protect(myHandler))
 
-	// Or with custom config
+	// Custom config (still headers + rate-limit, no body scan)
 	s := arcis.NewWithConfig(arcis.Config{
 		RateLimitMax: 50,
 		CSP: "default-src 'none'",
 	})
 	http.Handle("/", s.Handler(myHandler))
+
+	// Full pipeline (body sanitization + block mode) — use chi adapter
+	import archttp "github.com/GagancM/arcis/nethttp"
+	cfg := archttp.DefaultConfig()
+	cfg.Block = true
+	var h http.Handler = mux
+	h = archttp.MiddlewareWithConfig(cfg)(h)
 
 Usage with Gin:
 
@@ -491,8 +519,116 @@ var SanitizeLdapFilter = sanitizers.SanitizeLdapFilter
 // SanitizeLdapDn sanitizes a string for safe use in LDAP Distinguished Names (RFC 4514).
 var SanitizeLdapDn = sanitizers.SanitizeLdapDn
 
-// DetectLdapInjection checks if a string contains LDAP injection patterns.
+// DetectLdapInjection checks if a string contains any LDAP injection
+// patterns (including unescaped special chars). Use at sanitization
+// context.
 var DetectLdapInjection = sanitizers.DetectLdapInjection
+
+// DetectLdapInjectionStrict checks only the attack-specific shapes ')(',
+// '*)(', and the v1.6.2 ')(!', '&(!', '|(!' NOT-bypass shapes. Safe to
+// use at request-boundary scanners where DetectLdapInjection would
+// false-positive on legitimate parenthesised input.
+var DetectLdapInjectionStrict = sanitizers.DetectLdapInjectionStrict
+
+// ─── XPath Injection Prevention ──────────────────────────────────────────────
+
+// DetectXPathInjection checks if a string contains XPath injection
+// attack shapes.
+var DetectXPathInjection = sanitizers.DetectXPathInjection
+
+// SanitizeXPath sanitizes a string for safe use inside an XPath expression.
+var SanitizeXPath = sanitizers.SanitizeXPath
+
+// ─── Email-Header Injection Prevention ───────────────────────────────────────
+
+// DetectEmailHeaderInjection checks if a string contains SMTP header
+// injection patterns (CR / LF / NUL plus the Q10 v1.6.2 bare-newline
+// bypass shapes).
+var DetectEmailHeaderInjection = sanitizers.DetectEmailHeaderInjection
+
+// ─── SSTI / XXE Standalone Sanitizers ────────────────────────────────────────
+
+// SanitizeSSTI strips server-side template injection patterns from input.
+var SanitizeSSTI = sanitizers.SanitizeSSTI
+
+// SanitizeXXE strips XML external entity injection patterns from input.
+var SanitizeXXE = sanitizers.SanitizeXXE
+
+// ─── V33 (v1.6.2): Deserialization Marker Detection ──────────────────────────
+
+// DeserializeRuntime is the tag returned by DetectDeserialization.
+type DeserializeRuntime = sanitizers.DeserializeRuntime
+
+// Runtime tags returned by DetectDeserialization.
+const (
+	DeserializePythonPickle          = sanitizers.DeserializePythonPickle
+	DeserializeJavaFastJSON          = sanitizers.DeserializeJavaFastJSON
+	DeserializePhpUnserialize        = sanitizers.DeserializePhpUnserialize
+	DeserializeRubyMarshal           = sanitizers.DeserializeRubyMarshal
+	DeserializeDotnetBinaryFormatter = sanitizers.DeserializeDotnetBinaryFormatter
+	DeserializeNone                  = sanitizers.DeserializeNone
+)
+
+// DetectDeserialization detects modern serialized-object marker bytes
+// (Python pickle, Java FastJSON, PHP unserialize, Ruby Marshal, .NET
+// BinaryFormatter). Returns the runtime tag if a marker matches, or
+// DeserializeNone if the input looks safe. Detection-only.
+var DetectDeserialization = sanitizers.DetectDeserialization
+
+// IsSerializedPayload is the boolean wrapper around DetectDeserialization.
+var IsSerializedPayload = sanitizers.IsSerializedPayload
+
+// ─── V34 (v1.6.2): GraphQL Alias Bomb + Fragment Cycle ───────────────────────
+
+// GraphqlGuardOptions configures the GraphQL query inspector.
+type GraphqlGuardOptions = sanitizers.GraphqlGuardOptions
+
+// GraphqlGuardResult is the structured outcome of inspecting a GraphQL query.
+type GraphqlGuardResult = sanitizers.GraphqlGuardResult
+
+// NewGraphqlGuardOptions returns the documented defaults (MaxDepth: 10,
+// MaxLength: 10000, BlockIntrospection: true, MaxAliases: 50,
+// BlockFragmentCycles: true). Use this instead of GraphqlGuardOptions{}
+// because Go's zero-value semantics on the bool fields would otherwise
+// disable BlockIntrospection + BlockFragmentCycles.
+var NewGraphqlGuardOptions = sanitizers.NewGraphqlGuardOptions
+
+// InspectGraphqlQuery inspects a query against the configured limits.
+// Pure function; middleware wraps it.
+var InspectGraphqlQuery = sanitizers.InspectGraphqlQuery
+
+// DetectGraphqlAbuse returns true if the query would be blocked at
+// default settings. Boolean wrapper around InspectGraphqlQuery.
+var DetectGraphqlAbuse = sanitizers.DetectGraphqlAbuse
+
+// ─── v1.6.2: Stateful Per-IP Correlation Window ──────────────────────────────
+
+// CorrelationWindow tracks a rolling per-IP event window with three
+// detectors: scanner sweep, credential stuffing, race-window probe.
+type CorrelationWindow = middleware.CorrelationWindow
+
+// CorrelationWindowOptions configures the window thresholds.
+type CorrelationWindowOptions = middleware.CorrelationWindowOptions
+
+// CorrelationEvent is one recorded event in the window.
+type CorrelationEvent = middleware.CorrelationEvent
+
+// CorrelationDetections is the result returned from Record.
+type CorrelationDetections = middleware.CorrelationDetections
+
+// NewCorrelationWindow returns a configured CorrelationWindow.
+var NewCorrelationWindow = middleware.NewCorrelationWindow
+
+// NewCorrelationWindowOptions returns the documented defaults
+// (WindowSeconds: 60, MaxIps: 10000, MaxEventsPerIp: 200,
+// ScannerDistinctVectors: 3, ScannerMinRequests: 20,
+// CredentialStuffingDistinctValues: 10, RaceWindowMs: 200).
+var NewCorrelationWindowOptions = middleware.NewCorrelationWindowOptions
+
+// ─── HPP (HTTP Parameter Pollution) Middleware ───────────────────────────────
+
+// HppMiddleware deduplicates HTTP parameters to prevent pollution attacks.
+var HppMiddleware = middleware.HppMiddleware
 
 // ─── Tier 2: File Upload Validation ─────────────────────────────────────────
 

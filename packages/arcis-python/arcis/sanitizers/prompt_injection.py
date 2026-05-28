@@ -51,16 +51,31 @@ _SIGNATURES = [
         #     (like "instructions", "rules") — catches "ignore your safety rules".
         #  2. ignore|disregard|... + (the|all|any) + (previous|above|prior|...)
         #     with no trailing noun — catches "disregard the above".
+        # Verb set widened in v1.7 to include skip/neglect/overlook/omit.
         re.compile(
-            r"\b(?:ignore|disregard|forget|override|bypass)\s+"
-            r"(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety)\s+)*"
-            r"(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives|commands?|restrictions?|filters?|safety|content)\b"
-            r"|\b(?:ignore|disregard|forget|override|bypass)\s+"
-            r"(?:all\s+|the\s+|any\s+)?(?:previous|prior|above|preceding|earlier|original|initial)\b",
+            r"\b(?:ignore|disregard|forget|override|bypass|skip|neglect|overlook|omit)\s+"
+            r"(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety|preceding|earlier|foregoing)\s+)*"
+            r"(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives?|commands?|restrictions?|filters?|safety|content|context|conversation|directive|messages?|communication|requests?|inputs?)\b"
+            r"|\b(?:ignore|disregard|forget|override|bypass|skip|neglect|overlook|omit)\s+"
+            r"(?:all\s+|the\s+|any\s+)?(?:previous|prior|above|preceding|earlier|original|initial|foregoing)\b",
             re.IGNORECASE,
         ),
         "high",
         "Direct instruction override attempt",
+    ),
+    (
+        "instruction-bypass-phrases",
+        # Multi-word verbs that don't fit the single-token alternation in
+        # ``ignore-previous-instructions``. Catches "pay no attention to your
+        # previous instructions", "do not follow the above rules", etc.
+        re.compile(
+            r"\b(?:pay\s+no\s+attention\s+to|do\s+not\s+(?:follow|obey|adhere\s+to|comply\s+with))\s+"
+            r"(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety|preceding|earlier|foregoing)\s+)*"
+            r"(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives?|commands?|restrictions?|filters?|safety|content|context|directive|messages?)\b",
+            re.IGNORECASE,
+        ),
+        "high",
+        "Multi-word instruction-bypass phrase (pay no attention to / do not follow)",
     ),
     (
         "jailbreak-dan",
@@ -293,6 +308,51 @@ _SIGNATURES = [
         ),
         "high",
         "Claude/OpenAI tool-use XML-style tag forgery",
+    ),
+
+    # ── Prompt-template marker forgeries ──────────────────────────────
+    # Catches inline forgery of the special tokens that LLM runtimes use
+    # to delimit roles. If a user can land any of these in their input
+    # and the host concatenates the input into a prompt without
+    # re-tokenizing, the model treats the suffix as a new system turn.
+    #
+    # Covered runtimes:
+    #   - ChatML (OpenAI / Llama 3 chat): <|im_start|>, <|im_end|>
+    #   - Llama 2 chat: [INST] <<SYS>> ... <</SYS>>
+    #   - guidance/handlebars: {{#system~}}, {{/system~}}, {{#assistant~}}
+    #   - Markdown link spoof: [system](#assistant), [admin](#context)
+    (
+        "chatml-template-marker",
+        re.compile(
+            r"<\|im_(?:start|end)\|>(?:\s*(?:system|assistant|user|tool|function))?",
+            re.IGNORECASE,
+        ),
+        "high",
+        "ChatML special token forgery (<|im_start|>...) to spoof a role turn",
+    ),
+    (
+        "llama2-system-marker",
+        re.compile(r"<<\s*/?\s*SYS\s*>>|\[\s*/?\s*INST\s*\]", re.IGNORECASE),
+        "high",
+        "Llama 2 [INST]/<<SYS>> instruction-template marker forgery",
+    ),
+    (
+        "guidance-template-marker",
+        re.compile(
+            r"\{\{\s*[#/]\s*(?:system|assistant|user|tool|function)\s*~?\s*\}\}",
+            re.IGNORECASE,
+        ),
+        "medium",
+        "guidance/handlebars role-block marker forgery ({{#system~}} ...)",
+    ),
+    (
+        "markdown-system-link-spoof",
+        re.compile(
+            r"\[\s*(?:system|admin|root|assistant)\s*\]\s*\(\s*#(?:assistant|context|system|root|admin)\s*\)",
+            re.IGNORECASE,
+        ),
+        "medium",
+        "Markdown link forgery spoofing a role marker ([system](#assistant))",
     ),
 
     # --- LOW severity: ambiguous but worth flagging in strict mode ---

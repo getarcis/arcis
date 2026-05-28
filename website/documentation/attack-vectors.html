@@ -106,7 +106,7 @@
       </div>
 
       <h3>Mutation tester</h3>
-      <p>A test suite that runs every payload through 8 mutators (alternating case, uppercase, URL-encode once, URL-encode twice, HTML hex entity, HTML decimal entity, HTML named entity, fullwidth ASCII) across the XSS, SQL injection, and path traversal corpora. 142 mutation checks per SDK on Python + Node today; Go variant lands in v1.7. If a future pattern change re-opens any of these bypass classes, CI fails loud.</p>
+      <p>A test suite that runs every payload through 8 mutators (alternating case, uppercase, URL-encode once, URL-encode twice, HTML hex entity, HTML decimal entity, HTML named entity, fullwidth ASCII) across the XSS, SQL injection, and path traversal corpora. 142 mutation checks per SDK on Python + Node; Go variant shipped in v1.6.2. If a future pattern change re-opens any of these bypass classes, CI fails loud.</p>
 
       <h2 id="xss">XSS (Cross-Site Scripting)</h2>
       <p>Attackers inject malicious scripts into pages viewed by other users, stealing cookies, sessions, or defacing content.</p>
@@ -165,7 +165,7 @@
 
       <h2 id="bot">Bot Detection</h2>
       <p>Scrapers, crawlers, and scanner bots probe for vulnerabilities or scrape content.</p>
-      <p><strong>How Arcis stops it:</strong> 635 patterns across 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown). Behavioral fingerprinting on top of user-agent matching.</p>
+      <p><strong>How Arcis stops it:</strong> 695 patterns across 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown). Behavioral fingerprinting on top of user-agent matching.</p>
 
       <h2 id="headers">Security Headers</h2>
       <p>Response headers instruct browsers to enforce additional security policies.</p>

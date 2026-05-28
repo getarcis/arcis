@@ -58,8 +58,19 @@ def get_client_ip(request: HttpRequest) -> str:
 
 class ArcisMiddleware(MiddlewareMixin):
     """
-    Django middleware that provides XSS/SQL/NoSQL/Path sanitization,
-    rate limiting, security headers, and error handling.
+    Django middleware that runs the Arcis sanitizer pipeline against
+    request data (XSS, SQL, NoSQL, path, command, SSTI, XXE, LDAP,
+    XPath, email-header, prototype pollution) plus rate limiting,
+    security headers, and error handling.
+
+    Opt-in via config['block'] = True (default False): on a detected
+    attack pattern the middleware returns 403 with reason + rule
+    before the request reaches your view. Pair with config['dry_run']
+    = True to log + record but not refuse (safe rollout).
+
+    Not wired here: bot detection, CSRF, HPP, SSRF URL validation,
+    correlation window, prompt-injection (V32), deserialization (V33),
+    GraphQL guard (V34). Those are opt-in helpers, compose as needed.
 
     Usage:
         # settings.py

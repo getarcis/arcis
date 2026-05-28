@@ -3,10 +3,17 @@ Package fiber provides Arcis middleware adapters for the gofiber/fiber
 v2 web framework (sdk-vectors.md G3 / P2 #27).
 
 Fiber v2's middleware shape is `func(c *fiber.Ctx) error`. This package
-ships a bundle middleware that runs the full Arcis pipeline (rate limit
-+ block-mode threat scan + security headers + sanitizer in context) and
-a set of standalone helpers for users who want to compose individual
-pieces.
+ships a bundle middleware that runs the Arcis pipeline (rate limit +
+block-mode threat scan + security headers + sanitizer in context) and
+standalone RateLimit helpers + WithTelemetry option.
+
+Surface available today: Middleware / MiddlewareWithConfig / RateLimit /
+RateLimitWithStore / RateLimitWithSkip / GetSanitizer / WithTelemetry.
+The granular Headers / Sanitizer / Validate / CsrfProtection /
+SecureCookies / Cors / ErrorHandler helpers that gin / echo / chi expose
+are NOT yet ported to the Fiber adapter — they land in v1.7. For
+granular composition today, use chi (which is stdlib-compatible with
+any router that accepts func(http.Handler) http.Handler).
 
 Usage:
 
@@ -452,18 +459,19 @@ func MiddlewareWithConfig(config Config) fiber.Handler {
 const sanitizerLocalKey = "arcis_sanitizer"
 
 // GetSanitizer retrieves the per-request Sanitizer that
-// MiddlewareWithConfig stashes on the request context. Returns nil
-// when the middleware was not in the chain or sanitization was
-// disabled.
+// MiddlewareWithConfig stashes on the request context. Returns a
+// default sanitizer when the middleware was not in the chain (matches
+// the gin / echo / chi GetSanitizer behavior — handlers stay
+// panic-safe). The default config enables every vector.
 func GetSanitizer(c *fiber.Ctx) *arcis.Sanitizer {
 	v := c.Locals(sanitizerLocalKey)
 	if v == nil {
-		return nil
+		return arcis.NewSanitizer(arcis.DefaultConfig())
 	}
 	if s, ok := v.(*arcis.Sanitizer); ok {
 		return s
 	}
-	return nil
+	return arcis.NewSanitizer(arcis.DefaultConfig())
 }
 
 // Standalone rate-limit middleware. Composes with the fiber pipeline

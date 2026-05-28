@@ -91,7 +91,7 @@ At the checkpoint, Arcis:
 - **One-line setup**: `app.use(arcis())` activates sanitization, rate limiting, and security headers. CSRF, CORS, cookies, bot detection, prompt-injection guard, token-budget guard, and error handling are opt-in middleware.
 - **20+ attack types**: XSS, SQL/NoSQL injection, command injection, path traversal, SSTI, XXE, SSRF, CSRF, HPP, prototype pollution, header injection, open redirect, LDAP injection.
 - **AI-era protections**: `detectPromptInjection` + `sanitizePromptInjection` cover ~28 jailbreak signatures (DAN/STAN/DUDE, system-prompt extraction, fake `<system>` tags, base64 smuggling). `tokenBudget` middleware caps per-key LLM token spend over a sliding window.
-- **635-pattern bot corpus**: Generated from a curated MIT-licensed corpus plus supplementary entries. 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown) with allow/deny lists and behavioral signal detection.
+- **695-pattern bot corpus**: 635 patterns sourced from the standalone [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots) MIT corpus plus 15 Arcis-specific supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes). 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown) with allow/deny lists and behavioral signal detection.
 - **Lean dependencies**: Node + Python SDKs ship with zero runtime dependencies. Go SDK has a stdlib-only core; framework adapters (Gin, Echo, chi, Fiber) are imported on demand.
 - **Three-language parity**: Same API, same behavior, same test results across Node.js, Python, and Go. Enforced by shared test vectors.
 - **Framework adapters (Node)**: ten subpath imports keep each framework SDK as a type-only dependency, so non-users pay nothing. Adapter surface varies by framework:
@@ -125,7 +125,7 @@ At the checkpoint, Arcis:
 | **Open Redirect** | Absolute URLs, `javascript:`, protocol-relative, backslash/control char bypass |
 | **CSRF** | Double-submit cookie, token generation and validation |
 | **Rate Limiting** | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
-| **Bot Detection** | 635 patterns sourced from a curated MIT corpus + supplementary entries, 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. The corpus is also published standalone at [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots). |
+| **Bot Detection** | 695 patterns (635 from the [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots) MIT corpus + 15 Arcis additions for Selenium / Puppeteer / Playwright / Cypress / WebDriver / headless browser fakes). 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. |
 | **MCP server (`@arcis/mcp`)** | Model Context Protocol server exposing `arcis_audit`, `arcis_sca`, `arcis_scan`, and `arcis_detect_prompt_injection` as tools that Cursor and any MCP-aware AI agent can call. |
 | **Prompt Injection** | 28 signatures across HIGH/MEDIUM/LOW tiers: jailbreak frameworks, system-prompt extraction, fake `<system>` tags, conversation-replay forgeries, base64/ROT13 smuggling hints, plus 5 v1.6 agent toolcall patterns (`"tool_call"` / `"function_call"` markers, ANSI escapes, tool-name spoofing) |
 | **Modern Deserialization (v1.6)** | `detectDeserialization()` flags request bodies that look like Python pickle (`\x80\x04`), Java FastJSON (`"@type":`), PHP `unserialize` (`O:N:"Class":`), Ruby Marshal (`\x04\x08`), or .NET BinaryFormatter (`\x00\x01\x00\x00\x00`). Detection-only: caller refuses the request. |
@@ -576,7 +576,7 @@ The script is stripped. The rest of the comment is saved normally.
 - 20+ security flaw coverage (runtime + detection)
 - 3 SDKs (Node.js, Python, Go) at full parity
 - **19 framework adapters**: Express, NestJS, Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt, Bun (Node, 10 total), FastAPI, Flask, Django, Litestar (Python, 4 total), Gin, Echo, chi, Fiber, net/http (Go, 5 total)
-- **635-pattern bot corpus** (was 80) with allow/deny categorization
+- **695-pattern bot corpus** (was 80) with allow/deny categorization
 - **AI/LLM prompt-injection detection** across all 3 SDKs (28 signatures, 3 severity tiers)
 - **`tokenBudget` middleware** for per-key LLM token spend caps
 - 3 rate limiting algorithms (fixed, sliding, token bucket)

@@ -55,15 +55,29 @@ var promptInjectionSignatures = []promptInjectionSignature{
 	// --- HIGH severity: clear override / jailbreak attempts ---
 	{
 		rule: "ignore-previous-instructions",
+		// Verb set widened in v1.7 to include skip/neglect/overlook/omit.
 		pattern: regexp.MustCompile(
-			`(?i)\b(?:ignore|disregard|forget|override|bypass)\s+` +
-				`(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety)\s+)*` +
-				`(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives|commands?|restrictions?|filters?|safety|content)\b` +
-				`|(?i)\b(?:ignore|disregard|forget|override|bypass)\s+` +
-				`(?:all\s+|the\s+|any\s+)?(?:previous|prior|above|preceding|earlier|original|initial)\b`,
+			`(?i)\b(?:ignore|disregard|forget|override|bypass|skip|neglect|overlook|omit)\s+` +
+				`(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety|preceding|earlier|foregoing)\s+)*` +
+				`(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives?|commands?|restrictions?|filters?|safety|content|context|conversation|directive|messages?|communication|requests?|inputs?)\b` +
+				`|(?i)\b(?:ignore|disregard|forget|override|bypass|skip|neglect|overlook|omit)\s+` +
+				`(?:all\s+|the\s+|any\s+)?(?:previous|prior|above|preceding|earlier|original|initial|foregoing)\b`,
 		),
 		severity:    PromptInjectionHigh,
 		description: "Direct instruction override attempt",
+	},
+	{
+		rule: "instruction-bypass-phrases",
+		// Multi-word verbs that don't fit the single-token alternation in
+		// ignore-previous-instructions. Catches "pay no attention to your
+		// previous instructions", "do not follow the above rules", etc.
+		pattern: regexp.MustCompile(
+			`(?i)\b(?:pay\s+no\s+attention\s+to|do\s+not\s+(?:follow|obey|adhere\s+to|comply\s+with))\s+` +
+				`(?:(?:all|your|the|any|previous|prior|above|original|initial|system|safety|preceding|earlier|foregoing)\s+)*` +
+				`(?:instructions?|rules?|directions?|guidelines?|prompts?|policies|directives?|commands?|restrictions?|filters?|safety|content|context|directive|messages?)\b`,
+		),
+		severity:    PromptInjectionHigh,
+		description: "Multi-word instruction-bypass phrase (pay no attention to / do not follow)",
 	},
 	{
 		rule: "jailbreak-dan",
@@ -320,6 +334,48 @@ var promptInjectionSignatures = []promptInjectionSignature{
 		),
 		severity:    PromptInjectionHigh,
 		description: "Tool-use XML-style tag forgery",
+	},
+
+	// ── Prompt-template marker forgeries ────────────────────────────────
+	// Catches inline forgery of the special tokens that LLM runtimes use
+	// to delimit roles. If a user can land any of these in their input and
+	// the host concatenates the input into a prompt without re-tokenizing,
+	// the model treats the suffix as a new system turn.
+	//
+	// Covered runtimes:
+	//   - ChatML (OpenAI / Llama 3 chat): <|im_start|>, <|im_end|>
+	//   - Llama 2 chat: [INST] <<SYS>> ... <</SYS>>
+	//   - guidance/handlebars: {{#system~}}, {{/system~}}, {{#assistant~}}
+	//   - Markdown link spoof: [system](#assistant), [admin](#context)
+	{
+		rule: "chatml-template-marker",
+		pattern: regexp.MustCompile(
+			`(?i)<\|im_(?:start|end)\|>(?:\s*(?:system|assistant|user|tool|function))?`,
+		),
+		severity:    PromptInjectionHigh,
+		description: "ChatML special token forgery (<|im_start|>...) to spoof a role turn",
+	},
+	{
+		rule:        "llama2-system-marker",
+		pattern:     regexp.MustCompile(`(?i)<<\s*/?\s*SYS\s*>>|\[\s*/?\s*INST\s*\]`),
+		severity:    PromptInjectionHigh,
+		description: "Llama 2 [INST]/<<SYS>> instruction-template marker forgery",
+	},
+	{
+		rule: "guidance-template-marker",
+		pattern: regexp.MustCompile(
+			`(?i)\{\{\s*[#/]\s*(?:system|assistant|user|tool|function)\s*~?\s*\}\}`,
+		),
+		severity:    PromptInjectionMedium,
+		description: "guidance/handlebars role-block marker forgery ({{#system~}} ...)",
+	},
+	{
+		rule: "markdown-system-link-spoof",
+		pattern: regexp.MustCompile(
+			`(?i)\[\s*(?:system|admin|root|assistant)\s*\]\s*\(\s*#(?:assistant|context|system|root|admin)\s*\)`,
+		),
+		severity:    PromptInjectionMedium,
+		description: "Markdown link forgery spoofing a role marker ([system](#assistant))",
 	},
 }
 
