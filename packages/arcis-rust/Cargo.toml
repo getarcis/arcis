@@ -64,17 +64,17 @@ ignore = "0.4"
 # `serde_yaml` in 2024). Drop-in API for our use case (decode a stable
 # YAML schema). Declared in workspace dependencies in commit 1 so the
 # pnpm builder in commit 2 doesn't churn Cargo.lock again.
-serde_yml = "0.0.12"
+serde_yml = "0.0.13"
 # Interactive REPL ("arcis console") for v1.6 — drop into a TUI when
 # `arcis` is invoked with no args on a TTY. ratatui ships crossterm as
 # its default backend, so we don't depend on crossterm directly. Pinned
 # minor — 0.29 is the current stable line as of mid-2025; minor bumps
 # can break the Frame API.
-ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 # Direct crossterm dep so we can read key events with the same backend
 # ratatui uses. Version must align with whatever ratatui 0.29 pulls in
 # transitively — 0.28 today.
-crossterm = "0.28"
+crossterm = "0.29"
 
 [profile.release]
 # Smaller, faster binary. The tradeoffs (longer compile, no incremental in
