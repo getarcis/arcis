@@ -19,8 +19,22 @@ name: Pack and Attack QA
 on:
   push:
     branches: [nwl, main]
+    paths-ignore:
+      - "**.md"
+      - "documents/**"
+      - "blog/**"
+      - "LICENSE"
+      - "NOTICE"
+      - "THIRDPARTY-LICENSES.md"
   pull_request:
     branches: [nwl]
+    paths-ignore:
+      - "**.md"
+      - "documents/**"
+      - "blog/**"
+      - "LICENSE"
+      - "NOTICE"
+      - "THIRDPARTY-LICENSES.md"
   # Allow manual trigger for ad-hoc verification
   workflow_dispatch:
 

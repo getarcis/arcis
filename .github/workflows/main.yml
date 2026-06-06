@@ -13,8 +13,22 @@ name: CI
 on:
   push:
     branches: [nwl]
+    paths-ignore:
+      - "**.md"
+      - "documents/**"
+      - "blog/**"
+      - "LICENSE"
+      - "NOTICE"
+      - "THIRDPARTY-LICENSES.md"
   pull_request:
     branches: [nwl]
+    paths-ignore:
+      - "**.md"
+      - "documents/**"
+      - "blog/**"
+      - "LICENSE"
+      - "NOTICE"
+      - "THIRDPARTY-LICENSES.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

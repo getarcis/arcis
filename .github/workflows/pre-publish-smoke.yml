@@ -22,11 +22,16 @@ name: Pre-publish smoke
 
 on:
   pull_request:
-    branches: [nwl, main]
+    # Limited to release PRs (target main) to cut macOS/Windows runner
+    # minutes. CLI/shim PRs to nwl land first; the release PR (nwl -> main)
+    # is the right gate to catch Windows shim crashes before publish.
+    # Manually trigger via workflow_dispatch for ad-hoc validation.
+    branches: [main]
     paths:
       - "packages/arcis-python/**"
       - "packages/arcis-cli-npm/**"
       - ".github/workflows/pre-publish-smoke.yml"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
