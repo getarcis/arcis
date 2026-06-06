@@ -12,7 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/GagancM/arcis/telemetry"
+	"github.com/getarcis/arcis/v2/telemetry"
 )
 
 // recordingServer captures every request body to ch and replies 200.

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/GagancM/arcis/sanitizers"
+	"github.com/getarcis/arcis/v2/sanitizers"
 )
 
 // GraphQL guard middleware (sdk-vectors.md tier 1 #21).
