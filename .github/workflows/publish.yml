@@ -154,7 +154,7 @@ jobs:
           echo "dispatched rust-release.yml for cli-v${v}"
           echo "monitor: https://github.com/${GITHUB_REPOSITORY}/actions/workflows/rust-release.yml"
 
-  # Go SDK uses git tags for versioning — `go get github.com/GagancM/arcis@v1.5.1`
+  # Go SDK uses git tags for versioning — `go get github.com/getarcis/arcis@v1.5.1`
   # resolves to whatever commit the v1.5.1 tag points at. After publish-node +
   # publish-python land on npm + PyPI, push the matching v<version> tag so
   # Go consumers can pull the same release. SDK version is read from
@@ -188,7 +188,7 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag "${TAG}"
             git push origin "${TAG}"
-            echo "pushed tag ${TAG}. Go SDK now resolvable via go get github.com/GagancM/arcis@${TAG}"
+            echo "pushed tag ${TAG}. Go SDK now resolvable via go get github.com/getarcis/arcis@${TAG}"
           fi
 
       - name: Create GitHub Release for SDK version

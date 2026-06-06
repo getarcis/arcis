@@ -19,7 +19,7 @@ version = "1.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["Gagan CM <cm.g@northeastern.edu>"]
-repository = "https://github.com/Gagancm/arcis"
+repository = "https://github.com/getarcis/arcis"
 description = "Native Rust CLI for Arcis security middleware"
 rust-version = "1.75"
 

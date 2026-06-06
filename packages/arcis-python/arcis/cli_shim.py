@@ -274,7 +274,7 @@ def _print_welcome() -> None:
     print("      arcis check '<script>alert(1)</script>'")
     print("      arcis --version")
     print()
-    print("  Docs:  https://github.com/Gagancm/arcis")
+    print("  Docs:  https://github.com/getarcis/arcis")
     print()
 
 

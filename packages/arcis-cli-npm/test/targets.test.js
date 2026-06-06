@@ -67,7 +67,7 @@ test("archiveUrl builds the canonical GitHub download path", () => {
   });
   assert.equal(
     url,
-    "https://github.com/Gagancm/arcis/releases/download/cli-v0.2.0/arcis-0.2.0-x86_64-unknown-linux-musl.tar.gz",
+    "https://github.com/getarcis/arcis/releases/download/cli-v0.2.0/arcis-0.2.0-x86_64-unknown-linux-musl.tar.gz",
   );
 });
 
@@ -83,7 +83,7 @@ test("archiveUrl handles zip archives for Windows", () => {
 test("checksumsUrl points at the SHA256SUMS file at the release root", () => {
   assert.equal(
     checksumsUrl("0.2.0"),
-    "https://github.com/Gagancm/arcis/releases/download/cli-v0.2.0/SHA256SUMS",
+    "https://github.com/getarcis/arcis/releases/download/cli-v0.2.0/SHA256SUMS",
   );
 });
 

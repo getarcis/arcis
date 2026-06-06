@@ -343,7 +343,7 @@ jobs:
             tag="${GITHUB_REF_NAME}"
           fi
           for i in 1 2 3 4 5; do
-            if curl -fsSLI "https://github.com/Gagancm/arcis/releases/tag/${tag}" >/dev/null; then
+            if curl -fsSLI "https://github.com/getarcis/arcis/releases/tag/${tag}" >/dev/null; then
               echo "release page reachable after ${i} attempt(s)"
               break
             fi
