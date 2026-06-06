@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GagancM/arcis/core"
-	"github.com/GagancM/arcis/utils"
+	"github.com/getarcis/arcis/v2/core"
+	"github.com/getarcis/arcis/v2/utils"
 )
 
 // TokenBucketLimiter implements a token bucket rate limiter.

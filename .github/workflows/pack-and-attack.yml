@@ -378,7 +378,16 @@ jobs:
       - name: Point example at local SDK
         working-directory: example
         run: |
-          go mod edit -replace="github.com/GagancM/arcis=$GITHUB_WORKSPACE/arcis/packages/arcis-go"
+          # The SDK module path is now github.com/getarcis/arcis/v2 (Go semver
+          # major-version suffix per the v2.0.0 rename). Until the example
+          # repo is updated to import the /v2 path, this replace does not
+          # match the example's imports and Go falls through to fetching
+          # the previous v1.x.x module from the registry. That still builds
+          # because v1.6.4 was published at the old module path; CI tests
+          # whatever the example currently imports. Update the example repo
+          # to import github.com/getarcis/arcis/v2 to exercise the local
+          # pack against this PR's code.
+          go mod edit -replace="github.com/getarcis/arcis/v2=$GITHUB_WORKSPACE/arcis/packages/arcis-go"
           go mod tidy
           cat go.mod
       - name: Pre-build server + attack binaries

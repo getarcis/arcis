@@ -10,7 +10,7 @@ prototype pollution, SSTI, XXE, and more across the same surface as the
 Node and Python SDKs.
 
 ```bash
-go get github.com/GagancM/arcis@latest
+go get github.com/getarcis/arcis/v2@latest
 ```
 
 ## What's new in v1.6.2 (shipped 2026-05-24)
@@ -31,9 +31,9 @@ These helpers are accessible from their sub-packages today (`arcis/middleware`, 
 
 ## What was new in v1.5.0
 
-- **chi adapter** (`github.com/GagancM/arcis/chi`). Granular helpers (Headers / Sanitizer / Validate / Csrf / SecureCookies / Cors / ErrorHandler) plus the bundle middleware. Stdlib-only at runtime; composes with any router that accepts `func(http.Handler) http.Handler`.
-- **Fiber adapter** (`github.com/GagancM/arcis/fiber`). Bundle middleware + standalone `RateLimit` helpers + `WithTelemetry` option. The Fiber adapter does NOT yet expose the granular Headers / Sanitizer / Validate / Csrf / SecureCookies / Cors / ErrorHandler helpers that the chi adapter does; that surface lands in v1.7. For granular composition today, use chi (also stdlib-only).
-- **net/http stdlib helper** (`github.com/GagancM/arcis/nethttp`). Drop-in for users without a third-party router. Re-exports the chi adapter's bundle middleware and rate-limit helpers, no chi dep needed at runtime. For chi's granular helpers (CSRF, CORS, cookies, error handler) today, import `arcis/chi` directly.
+- **chi adapter** (`github.com/getarcis/arcis/v2/chi`). Granular helpers (Headers / Sanitizer / Validate / Csrf / SecureCookies / Cors / ErrorHandler) plus the bundle middleware. Stdlib-only at runtime; composes with any router that accepts `func(http.Handler) http.Handler`.
+- **Fiber adapter** (`github.com/getarcis/arcis/v2/fiber`). Bundle middleware + standalone `RateLimit` helpers + `WithTelemetry` option. The Fiber adapter does NOT yet expose the granular Headers / Sanitizer / Validate / Csrf / SecureCookies / Cors / ErrorHandler helpers that the chi adapter does; that surface lands in v1.7. For granular composition today, use chi (also stdlib-only).
+- **net/http stdlib helper** (`github.com/getarcis/arcis/v2/nethttp`). Drop-in for users without a third-party router. Re-exports the chi adapter's bundle middleware and rate-limit helpers, no chi dep needed at runtime. For chi's granular helpers (CSRF, CORS, cookies, error handler) today, import `arcis/chi` directly.
 - **Telemetry parity** with Node + Python. `telemetry.NewClient` + `MiddlewareWithConfig`'s `Telemetry` field stream allow / deny decisions to a self-hosted dashboard from gin / echo / chi / fiber / nethttp middleware.
 - **Guards API** (`arcis.NewGuards`). Non-HTTP rule engine for queue consumers, agent tool handlers, background jobs.
 - **AI-era protections**: 28-signature prompt-injection library (`DetectPromptInjection`), per-key `TokenBudget`, 695-pattern bot corpus (635 from `getarcis/well-known-bots` + 15 Arcis additions for Selenium / Puppeteer / Playwright / Cypress / WebDriver / headless browser fakes).
@@ -43,7 +43,7 @@ These helpers are accessible from their sub-packages today (`arcis/middleware`, 
 ```go
 import (
     "github.com/gin-gonic/gin"
-    arcisgin "github.com/GagancM/arcis/gin"
+    arcisgin "github.com/getarcis/arcis/v2/gin"
 )
 
 func main() {
@@ -63,7 +63,7 @@ import (
     "net/http"
 
     "github.com/go-chi/chi/v5"
-    arcischi "github.com/GagancM/arcis/chi"
+    arcischi "github.com/getarcis/arcis/v2/chi"
 )
 
 func main() {
@@ -86,7 +86,7 @@ that accepts stdlib middleware (gorilla/mux, plain `net/http`, etc.).
 ```go
 import (
     "github.com/gofiber/fiber/v2"
-    arcisfiber "github.com/GagancM/arcis/fiber"
+    arcisfiber "github.com/getarcis/arcis/v2/fiber"
 )
 
 func main() {
@@ -104,7 +104,7 @@ func main() {
 ```go
 import (
     "github.com/labstack/echo/v4"
-    arcisecho "github.com/GagancM/arcis/echo"
+    arcisecho "github.com/getarcis/arcis/v2/echo"
 )
 
 func main() {
@@ -126,7 +126,7 @@ decorator. No router dependency.
 ```go
 import (
     "net/http"
-    archttp "github.com/GagancM/arcis/nethttp"
+    archttp "github.com/getarcis/arcis/v2/nethttp"
 )
 
 func main() {
@@ -170,7 +170,7 @@ The Go SDK ships **detection + block middleware + standalone detectors + telemet
 Stream allow / deny decisions from the gin, echo, chi, fiber, or nethttp middleware to a self-hosted Arcis dashboard. Stdlib only; opt-in (nil = zero overhead).
 
 ```go
-import "github.com/GagancM/arcis/telemetry"
+import "github.com/getarcis/arcis/v2/telemetry"
 
 tc, _ := telemetry.NewClient(telemetry.Options{
     Endpoint: "https://arcis.mycorp.com/v1/events",

@@ -3,7 +3,7 @@ package logging
 import (
 	"strings"
 
-	"github.com/GagancM/arcis/core"
+	"github.com/getarcis/arcis/v2/core"
 )
 
 // SafeLogger provides safe logging with automatic redaction of sensitive data.
