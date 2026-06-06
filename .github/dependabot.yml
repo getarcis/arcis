@@ -47,18 +47,8 @@ updates:
       arcis-python:
         patterns: ["*"]
 
-  # Go SDK — gin, echo, chi adapters carry transitive deps
-  - package-ecosystem: "gomod"
-    directory: "/packages/arcis-go"
-    schedule:
-      interval: "monthly"
-    target-branch: "nwl"
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "deps(go)"
-    groups:
-      arcis-go:
-        patterns: ["*"]
+  # Note: Go SDK moved to its own repo at github.com/getarcis/arcis-go.
+  # Dependabot for arcis-go runs from that repo's own .github/dependabot.yml.
 
   # Rust CLI workspace
   - package-ecosystem: "cargo"

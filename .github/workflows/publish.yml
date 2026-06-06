@@ -154,16 +154,18 @@ jobs:
           echo "dispatched rust-release.yml for cli-v${v}"
           echo "monitor: https://github.com/${GITHUB_REPOSITORY}/actions/workflows/rust-release.yml"
 
-  # Go SDK uses git tags for versioning — `go get github.com/getarcis/arcis@v1.5.1`
-  # resolves to whatever commit the v1.5.1 tag points at. After publish-node +
-  # publish-python land on npm + PyPI, push the matching v<version> tag so
-  # Go consumers can pull the same release. SDK version is read from
-  # @arcis/node's package.json (Node + Python share the SDK version line).
-  #
-  # Skip-if-exists: if v<version> tag already on origin, no-op. Lets the
-  # workflow be re-runnable without colliding on the second push.
-  tag-go-sdk:
-    name: Tag Go SDK
+  # Note: Go SDK previously lived in this monorepo and was tagged
+  # alongside Node + Python releases. It moved to its own repo at
+  # github.com/getarcis/arcis-go because the monorepo layout placed
+  # go.mod at a subdirectory which the Go module proxy could not
+  # resolve. arcis-go now releases independently from that repo.
+
+  # Unified release notes for Node + Python publishes. Reads the
+  # version from @arcis/node (Node + Python keep their version lines
+  # in lockstep) and creates a GitHub Release at v<version>. Tag is
+  # created here too so users can reference the monorepo release point.
+  create-release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: [publish-node, publish-python]
     permissions:
@@ -172,12 +174,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - name: Determine SDK version
+      - name: Determine version
         id: ver
         run: |
           VERSION=$(node -p "require('./packages/arcis-node/package.json').version")
           echo "version=v${VERSION}" >> $GITHUB_OUTPUT
-          echo "SDK version is v${VERSION}"
+          echo "Release version is v${VERSION}"
       - name: Push tag if it doesn't already exist
         run: |
           TAG="${{ steps.ver.outputs.version }}"
@@ -188,18 +190,15 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag "${TAG}"
             git push origin "${TAG}"
-            echo "pushed tag ${TAG}. Go SDK now resolvable via go get github.com/getarcis/arcis@${TAG}"
+            echo "pushed tag ${TAG}"
           fi
 
-      - name: Create GitHub Release for SDK version
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.ver.outputs.version }}"
           VERSION="${TAG#v}"
-          # Skip if release already exists (re-run safety). The CLI has
-          # its own release flow at cli-v* tags; this one is the unified
-          # SDK release (Node + Python + Go consumers).
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "release ${TAG} already exists, skipping"
           else

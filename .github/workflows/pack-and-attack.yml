@@ -356,71 +356,10 @@ jobs:
           kill $SERVER_PID || true
           exit $ATTACK_EXIT
 
-  # ─── ATTACK PHASE — Go examples ────────────────────────────────────────
-  # Go uses a go.mod replace directive to point at the local SDK source,
-  # so no per-release pack artifact is needed.
-
-  attack-gin:
-    name: Attack arcis-example-gin
-    runs-on: ubuntu-latest
-    # continue-on-error during the arcis-go v2 path rename transition.
-    # The example repo at getarcis/arcis-example-gin still imports the
-    # old github.com/GagancM/arcis/gin path. After this PR lands, the
-    # follow-up sequence is: update the example repo to import
-    # github.com/getarcis/arcis/v2/gin, publish v2.0.0 of arcis-go, then
-    # revert this continue-on-error in a follow-up PR. Same pattern used
-    # for the NestJS adapter while honest-claims Phase 8 is open.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          path: arcis
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          repository: getarcis/arcis-example-gin
-          path: example
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-          cache-dependency-path: example/go.sum
-      - name: Point example at local SDK
-        working-directory: example
-        run: |
-          # The SDK module path is now github.com/getarcis/arcis/v2 (Go semver
-          # major-version suffix per the v2.0.0 rename). Until the example
-          # repo is updated to import the /v2 path, this replace does not
-          # match the example's imports and Go falls through to fetching
-          # the previous v1.x.x module from the registry. That still builds
-          # because v1.6.4 was published at the old module path; CI tests
-          # whatever the example currently imports. Update the example repo
-          # to import github.com/getarcis/arcis/v2 to exercise the local
-          # pack against this PR's code.
-          go mod edit -replace="github.com/getarcis/arcis/v2=$GITHUB_WORKSPACE/arcis/packages/arcis-go"
-          go mod tidy
-          cat go.mod
-      - name: Pre-build server + attack binaries
-        # Front-load the compile so the boot-wait timer below does not
-        # race against go run's cold-cache build. Cold gin-stack compile
-        # can take 25-30s; the previous `go run . &` + 30s wait loop hit
-        # this exact race on PR #154's first push.
-        working-directory: example
-        run: |
-          go build -o /tmp/arcis-gin-server .
-          go build -tags attack -o /tmp/arcis-gin-attack attack.go
-      - name: Boot server + fire attack
-        working-directory: example
-        run: |
-          /tmp/arcis-gin-server &
-          SERVER_PID=$!
-          for i in $(seq 1 60); do
-            if curl -fs http://localhost:8080/ >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          curl -fs http://localhost:8080/ >/dev/null || { echo "Server did not boot"; kill $SERVER_PID || true; exit 1; }
-          /tmp/arcis-gin-attack
-          ATTACK_EXIT=$?
-          kill $SERVER_PID || true
-          exit $ATTACK_EXIT
+  # Note: Go SDK lives in a separate repo (getarcis/arcis-go). The
+  # arcis-example-gin pack-and-attack validation moved to that repo's
+  # own CI. This workflow now covers only npm + PyPI publishes from the
+  # monorepo.
 
   # ─── SUMMARY ───────────────────────────────────────────────────────────
   # One job that depends on every attack-* job. Provides a single
@@ -437,7 +376,6 @@ jobs:
       - attack-bun
       - attack-mcp
       - attack-fastapi
-      - attack-gin
     if: always()
     steps:
       - name: Report
@@ -451,12 +389,13 @@ jobs:
           echo "Continue-on-error jobs (failure does not gate qa-summary):"
           echo "  NestJS:  ${{ needs.attack-nestjs.result }}  (tracked as honest-claims Phase 8)"
           echo "  Bun:     ${{ needs.attack-bun.result }}     (fix pending in arcis-example-bun#3)"
-          echo "  Gin:     ${{ needs.attack-gin.result }}     (arcis-go v2 path rename transition; restore must-pass after example repo updated)"
           echo ""
+          # Note: Go SDK pack-and-attack validation moved to the
+          # getarcis/arcis-go repo's own CI. Gin attack job removed
+          # from this workflow when arcis-go left the monorepo.
           # Fail summary only if a must-pass job did not succeed. The
-          # continue-on-error jobs (NestJS, Bun, Gin during v2 transition)
-          # are still RUN and visibly red on failure but do not block
-          # this gate.
+          # continue-on-error jobs (NestJS, Bun) are still RUN and
+          # visibly red on failure but do not block this gate.
           MUST_PASS=( "${{ needs.attack-express.result }}" "${{ needs.attack-nextjs.result }}" "${{ needs.attack-fastapi.result }}" "${{ needs.attack-mcp.result }}" )
           for r in "${MUST_PASS[@]}"; do
             if [ "$r" != "success" ]; then
