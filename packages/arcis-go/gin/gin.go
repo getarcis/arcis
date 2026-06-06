@@ -5,7 +5,7 @@ Usage:
 
 	import (
 		"github.com/gin-gonic/gin"
-		arcisgin "github.com/GagancM/arcis/gin"
+		arcisgin "github.com/getarcis/arcis/v2/gin"
 	)
 
 	func main() {
@@ -39,7 +39,7 @@ when your application shuts down to stop this goroutine and release resources:
 		"context"
 		"os/signal"
 		"syscall"
-		arcisgin "github.com/GagancM/arcis/gin"
+		arcisgin "github.com/getarcis/arcis/v2/gin"
 	)
 
 	func main() {
@@ -78,8 +78,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	arcis "github.com/GagancM/arcis"
-	"github.com/GagancM/arcis/telemetry"
+	arcis "github.com/getarcis/arcis/v2"
+	"github.com/getarcis/arcis/v2/telemetry"
 )
 
 // scanRequestForThreats peeks at JSON body, query params, and URL path for

@@ -11,7 +11,7 @@ WithTelemetry option, GetSanitizer, and Cleanup.
 
 For chi's granular helpers (Headers / Sanitizer / Validate /
 CsrfProtection / SecureCookies / Cors / ErrorHandler), import
-github.com/GagancM/arcis/chi directly — chi's middleware signature is
+github.com/getarcis/arcis/v2/chi directly — chi's middleware signature is
 stdlib-compatible, so func(http.Handler) http.Handler composes with
 any router or with raw net/http.
 
@@ -19,7 +19,7 @@ Usage:
 
 	import (
 		"net/http"
-		archttp "github.com/GagancM/arcis/nethttp"
+		archttp "github.com/getarcis/arcis/v2/nethttp"
 	)
 
 	func main() {
@@ -54,7 +54,7 @@ release resources:
 		"net/http"
 		"os/signal"
 		"syscall"
-		archttp "github.com/GagancM/arcis/nethttp"
+		archttp "github.com/getarcis/arcis/v2/nethttp"
 	)
 
 	func main() {
@@ -82,9 +82,9 @@ import (
 	"net/http"
 	"time"
 
-	arcis "github.com/GagancM/arcis"
-	arcischi "github.com/GagancM/arcis/chi"
-	"github.com/GagancM/arcis/telemetry"
+	arcis "github.com/getarcis/arcis/v2"
+	arcischi "github.com/getarcis/arcis/v2/chi"
+	"github.com/getarcis/arcis/v2/telemetry"
 )
 
 // Config holds Arcis middleware configuration. Aliased to the chi

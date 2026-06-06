@@ -25,8 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GagancM/arcis/middleware"
-	"github.com/GagancM/arcis/sanitizers"
+	"github.com/getarcis/arcis/v2/middleware"
+	"github.com/getarcis/arcis/v2/sanitizers"
 )
 
 // ─── Public types ─────────────────────────────────────────────────────────

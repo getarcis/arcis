@@ -10,7 +10,7 @@ For request-body sanitization and block-mode (XSS / SQL / NoSQL / path /
 command / SSTI / XXE / LDAP / XPath / email-header / prototype-pollution
 patterns return 403 before the handler runs), use a framework adapter:
 
-	import arcisgin "github.com/GagancM/arcis/gin"
+	import arcisgin "github.com/getarcis/arcis/v2/gin"
 
 	r := gin.Default()
 	cfg := arcisgin.DefaultConfig()
@@ -35,7 +35,7 @@ V34 inspectors, mutation tester) are accessible from
 
 Usage with net/http:
 
-	import "github.com/GagancM/arcis"
+	import "github.com/getarcis/arcis/v2"
 
 	// Headers + rate-limit only (no body sanitization)
 	http.Handle("/", arcis.Protect(myHandler))
@@ -48,7 +48,7 @@ Usage with net/http:
 	http.Handle("/", s.Handler(myHandler))
 
 	// Full pipeline (body sanitization + block mode) — use chi adapter
-	import archttp "github.com/GagancM/arcis/nethttp"
+	import archttp "github.com/getarcis/arcis/v2/nethttp"
 	cfg := archttp.DefaultConfig()
 	cfg.Block = true
 	var h http.Handler = mux
@@ -56,14 +56,14 @@ Usage with net/http:
 
 Usage with Gin:
 
-	import "github.com/GagancM/arcis/gin"
+	import "github.com/getarcis/arcis/v2/gin"
 
 	r := gin.Default()
 	r.Use(arcisgin.Middleware())
 
 Usage with Echo:
 
-	import "github.com/GagancM/arcis/echo"
+	import "github.com/getarcis/arcis/v2/echo"
 
 	e := echo.New()
 	e.Use(arcisecho.Middleware())
@@ -75,14 +75,14 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/GagancM/arcis/core"
-	"github.com/GagancM/arcis/guards"
-	"github.com/GagancM/arcis/logging"
-	"github.com/GagancM/arcis/middleware"
-	"github.com/GagancM/arcis/sanitizers"
-	"github.com/GagancM/arcis/stores"
-	"github.com/GagancM/arcis/utils"
-	"github.com/GagancM/arcis/validation"
+	"github.com/getarcis/arcis/v2/core"
+	"github.com/getarcis/arcis/v2/guards"
+	"github.com/getarcis/arcis/v2/logging"
+	"github.com/getarcis/arcis/v2/middleware"
+	"github.com/getarcis/arcis/v2/sanitizers"
+	"github.com/getarcis/arcis/v2/stores"
+	"github.com/getarcis/arcis/v2/utils"
+	"github.com/getarcis/arcis/v2/validation"
 )
 
 // ─── Type aliases (backward compatibility) ──────────────────────────────────
