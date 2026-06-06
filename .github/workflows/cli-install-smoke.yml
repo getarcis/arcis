@@ -6,7 +6,10 @@ name: CLI install smoke
 # this job goes red the next morning instead of staying broken for weeks
 # until a user reports a 404.
 #
-# Triggered: 06:00 UTC daily + workflow_dispatch for on-demand runs.
+# Triggered: 06:00 UTC on the 1st of each month + workflow_dispatch
+# for on-demand runs. Previously daily; reduced to monthly to cut
+# macOS/Windows runner minutes (~86% reduction). Manually trigger
+# before each release if the CLI install path changed.
 #
 # What it verifies on each host:
 #   1. `npm install -g @arcis/cli` succeeds + postinstall completes
@@ -22,7 +25,7 @@ name: CLI install smoke
 
 on:
   schedule:
-    - cron: "0 6 * * *"
+    - cron: "0 6 1 * *"  # Monthly: 1st of each month at 06:00 UTC
   workflow_dispatch:
 
 permissions:
