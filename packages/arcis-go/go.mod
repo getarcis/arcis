@@ -1,4 +1,4 @@
-module github.com/getarcis/arcis
+module github.com/GagancM/arcis
 
 go 1.25.0
 

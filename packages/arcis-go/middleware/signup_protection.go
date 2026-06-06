@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getarcis/arcis/validation"
+	"github.com/GagancM/arcis/validation"
 )
 
 // SignupBlockReason is one of the documented reasons a signup is rejected.

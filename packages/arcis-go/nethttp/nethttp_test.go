@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	archttp "github.com/getarcis/arcis/nethttp"
+	archttp "github.com/GagancM/arcis/nethttp"
 )
 
 func helloHandler() http.Handler {

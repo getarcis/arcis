@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/getarcis/arcis/core"
+	"github.com/GagancM/arcis/core"
 )
 
 // RedisClient is a minimal interface for Redis client libraries.

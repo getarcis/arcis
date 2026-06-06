@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getarcis/arcis/sanitizers"
+	"github.com/GagancM/arcis/sanitizers"
 )
 
 // ApiBlockReason is one of the documented reasons an API call is rejected.

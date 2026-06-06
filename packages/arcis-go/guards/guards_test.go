@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcis/arcis/middleware"
+	"github.com/GagancM/arcis/middleware"
 )
 
 // ─── input validation ────────────────────────────────────────────────────

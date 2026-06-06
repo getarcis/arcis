@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcis/arcis/core"
+	"github.com/GagancM/arcis/core"
 )
 
 func TestSecurityHeaders_DefaultHeaders(t *testing.T) {

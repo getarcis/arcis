@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/getarcis/arcis/sanitizers"
+	"github.com/GagancM/arcis/sanitizers"
 )
 
 // HTTP response splitting prevention (sdk-vectors.md tier 1 #27).

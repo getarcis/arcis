@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcis/arcis/sanitizers"
+	"github.com/GagancM/arcis/sanitizers"
 )
 
 // Validation patterns

@@ -3,7 +3,7 @@ package middleware
 import (
 	"fmt"
 
-	"github.com/getarcis/arcis/core"
+	"github.com/GagancM/arcis/core"
 )
 
 // SecurityHeaders handles security header configuration and application.

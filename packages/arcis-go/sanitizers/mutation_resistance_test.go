@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/getarcis/arcis/core"
+	"github.com/GagancM/arcis/core"
 )
 
 // allOnSanitizer returns a Sanitizer with every vector enabled. The

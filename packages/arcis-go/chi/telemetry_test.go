@@ -27,7 +27,7 @@ import (
 
 	chirouter "github.com/go-chi/chi/v5"
 
-	"github.com/getarcis/arcis/telemetry"
+	"github.com/GagancM/arcis/telemetry"
 )
 
 func recordingServer(t *testing.T) (string, <-chan []byte) {

@@ -3,7 +3,7 @@ package sanitizers
 import (
 	"strings"
 
-	"github.com/getarcis/arcis/core"
+	"github.com/GagancM/arcis/core"
 )
 
 // ─── Standalone Sanitize Functions ───────────────────────────────────────────

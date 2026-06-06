@@ -18,7 +18,7 @@ import (
 
 	chirouter "github.com/go-chi/chi/v5"
 
-	arcis "github.com/getarcis/arcis"
+	arcis "github.com/GagancM/arcis"
 )
 
 // newRouter is a small helper so each test gets a fresh chi router with

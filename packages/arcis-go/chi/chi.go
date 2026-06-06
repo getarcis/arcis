@@ -11,7 +11,7 @@ Usage:
 
 	import (
 		"github.com/go-chi/chi/v5"
-		arcischi "github.com/getarcis/arcis/chi"
+		arcischi "github.com/GagancM/arcis/chi"
 	)
 
 	func main() {
@@ -44,7 +44,7 @@ when your application shuts down to stop this goroutine and release resources:
 		"net/http"
 		"os/signal"
 		"syscall"
-		arcischi "github.com/getarcis/arcis/chi"
+		arcischi "github.com/GagancM/arcis/chi"
 	)
 
 	func main() {
@@ -80,8 +80,8 @@ import (
 	"sync"
 	"time"
 
-	arcis "github.com/getarcis/arcis"
-	"github.com/getarcis/arcis/telemetry"
+	arcis "github.com/GagancM/arcis"
+	"github.com/GagancM/arcis/telemetry"
 )
 
 // scanRequestForThreats peeks at JSON or form body, query, and URL path

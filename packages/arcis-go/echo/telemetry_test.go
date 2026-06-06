@@ -12,7 +12,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/getarcis/arcis/telemetry"
+	"github.com/GagancM/arcis/telemetry"
 )
 
 // recordingServer captures every request body to ch and replies 200.
