@@ -12,7 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
-	arcisfiber "github.com/GagancM/arcis/fiber"
+	arcisfiber "github.com/getarcis/arcis/fiber"
 )
 
 // makeApp returns a fiber app with the bundle middleware applied and a

@@ -158,12 +158,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/GagancM/arcis"
+    "url": "https://github.com/getarcis/arcis"
   },
   "bugs": {
-    "url": "https://github.com/GagancM/arcis/issues"
+    "url": "https://github.com/getarcis/arcis/issues"
   },
-  "homepage": "https://github.com/GagancM/arcis#readme",
+  "homepage": "https://github.com/getarcis/arcis#readme",
   "engines": {
     "node": ">=18.0.0"
   }

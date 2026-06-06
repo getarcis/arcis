@@ -30,9 +30,9 @@ What `ArcisMiddleware` actually wires into the request path: XSS, SQL injection,
 
 Available as opt-in helpers (not auto-wired into `ArcisMiddleware`): bot detection (695-pattern corpus, `arcis.middleware.BotProtection`), per-IP correlation window (`arcis.middleware.CorrelationWindow`), HPP guard (`arcis.middleware.HppProtection`), CSRF (`arcis.middleware.CsrfProtection`), V32 toolcall-injection signatures (`arcis.detect_prompt_injection`), V33 deserialization markers (`arcis.detect_deserialization`), V34 GraphQL alias bomb / fragment cycle (`arcis.sanitizers.graphql.inspect_graphql_query`), SSRF URL validation (`arcis.validate_url_ssrf`). Compose as needed.
 
-**Docs**: [Quickstart](https://gagancm.github.io/arcis/documentation/getting-started.html) · [Detector reference](https://gagancm.github.io/arcis/documentation/detectors/) · [Framework adapters](https://gagancm.github.io/arcis/documentation/frameworks.html) · [Why Arcis](https://gagancm.github.io/arcis/documentation/why-arcis.html) · [Release notes](https://gagancm.github.io/arcis/documentation/release-notes.html)
+**Docs**: [Quickstart](https://arcis-website.pages.dev/documentation/getting-started.html) · [Detector reference](https://arcis-website.pages.dev/documentation/detectors/) · [Framework adapters](https://arcis-website.pages.dev/documentation/frameworks.html) · [Why Arcis](https://arcis-website.pages.dev/documentation/why-arcis.html) · [Release notes](https://arcis-website.pages.dev/documentation/release-notes.html)
 
-**Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem.** Node + Python + Go SDKs at full parity from one shared specification. **1,688+ Python tests · 2,116+ Node · 483+ Go.** All passing in CI on every PR.
+**Part of the [Arcis](https://github.com/getarcis/arcis) ecosystem.** Node + Python + Go SDKs at full parity from one shared specification. **1,688+ Python tests · 2,116+ Node · 483+ Go.** All passing in CI on every PR.
 
 ## Framework support
 
@@ -62,7 +62,7 @@ Available as opt-in helpers (not auto-wired into `ArcisMiddleware`): bot detecti
 - **AI-era protections**: 28-signature prompt-injection library, per-key `tokenBudget` middleware, 695-pattern bot corpus, `Guards` API for non-HTTP contexts.
 - **Composite helpers**: `signup_protection` (rate-limit + bot + email-MX). Full recipe for protecting account creation.
 - The middleware API is unchanged. Existing `Arcis(app)` / `app.add_middleware(ArcisMiddleware, ...)` code keeps working.
-- See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
+- See the full release history at [arcis-website.pages.dev/changelog.html](https://arcis-website.pages.dev/changelog.html).
 
 ## Installation
 

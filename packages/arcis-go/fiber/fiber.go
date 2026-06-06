@@ -19,7 +19,7 @@ Usage:
 
 	import (
 		"github.com/gofiber/fiber/v2"
-		arcisfiber "github.com/GagancM/arcis/fiber"
+		arcisfiber "github.com/getarcis/arcis/fiber"
 	)
 
 	func main() {
@@ -50,8 +50,8 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
-	arcis "github.com/GagancM/arcis"
-	"github.com/GagancM/arcis/telemetry"
+	arcis "github.com/getarcis/arcis"
+	"github.com/getarcis/arcis/telemetry"
 )
 
 // scanFiberCtxForThreats peeks at JSON body, query params, and URL path

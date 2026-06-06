@@ -72,8 +72,8 @@ Or set `ARCIS_CLI_SKIP_INSTALL=1` to defer the download intentionally
 ## Source
 
 The binary is built from the `packages/arcis-rust/` Rust workspace in
-the [Arcis monorepo](https://github.com/Gagancm/arcis). Build pipeline:
-[`.github/workflows/rust-release.yml`](https://github.com/Gagancm/arcis/blob/nwl/.github/workflows/rust-release.yml).
+the [Arcis monorepo](https://github.com/getarcis/arcis). Build pipeline:
+[`.github/workflows/rust-release.yml`](https://github.com/getarcis/arcis/blob/nwl/.github/workflows/rust-release.yml).
 
 ## License
 

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/GagancM/arcis/core"
+	"github.com/getarcis/arcis/core"
 	"golang.org/x/text/unicode/norm"
 )
 

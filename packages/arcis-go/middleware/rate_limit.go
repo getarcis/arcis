@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GagancM/arcis/core"
-	"github.com/GagancM/arcis/utils"
+	"github.com/getarcis/arcis/core"
+	"github.com/getarcis/arcis/utils"
 )
 
 // RateLimiter handles rate limiting with configurable limits and windows.

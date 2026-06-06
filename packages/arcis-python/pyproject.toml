@@ -59,10 +59,10 @@ dev = [
 arcis = "arcis.cli_shim:main"
 
 [project.urls]
-Homepage = "https://github.com/GagancM/arcis"
-Documentation = "https://github.com/Gagancm/arcis/wiki"
-Repository = "https://github.com/GagancM/arcis"
-Issues = "https://github.com/GagancM/arcis/issues"
+Homepage = "https://github.com/getarcis/arcis"
+Documentation = "https://github.com/getarcis/arcis/wiki"
+Repository = "https://github.com/getarcis/arcis"
+Issues = "https://github.com/getarcis/arcis/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

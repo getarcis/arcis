@@ -378,7 +378,7 @@ jobs:
       - name: Point example at local SDK
         working-directory: example
         run: |
-          go mod edit -replace="github.com/GagancM/arcis=$GITHUB_WORKSPACE/arcis/packages/arcis-go"
+          go mod edit -replace="github.com/getarcis/arcis=$GITHUB_WORKSPACE/arcis/packages/arcis-go"
           go mod tidy
           cat go.mod
       - name: Pre-build server + attack binaries

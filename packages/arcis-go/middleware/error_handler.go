@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/GagancM/arcis/logging"
+	"github.com/getarcis/arcis/logging"
 )
 
 // Patterns that indicate database or infrastructure internals in error messages.

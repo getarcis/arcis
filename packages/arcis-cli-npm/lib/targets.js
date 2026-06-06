@@ -46,7 +46,7 @@ const TARGETS = {
 
 // Repository slug used to construct release-download URLs. Keep in sync
 // with the repository `repository.url` in package.json.
-const REPO = "Gagancm/arcis";
+const REPO = "getarcis/arcis";
 
 /** Resolve the target descriptor for a (platform, arch) tuple.
  *
@@ -67,7 +67,7 @@ function supportedPlatforms() {
  *
  *   archiveUrl({ version: "0.2.0", target: "x86_64-unknown-linux-musl",
  *                archive: "tar.gz" })
- *     -> https://github.com/Gagancm/arcis/releases/download/cli-v0.2.0/
+ *     -> https://github.com/getarcis/arcis/releases/download/cli-v0.2.0/
  *        arcis-0.2.0-x86_64-unknown-linux-musl.tar.gz
  */
 function archiveUrl({ version, target, archive }) {

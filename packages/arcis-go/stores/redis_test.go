@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GagancM/arcis/core"
+	"github.com/getarcis/arcis/core"
 )
 
 // mockRedis implements RedisClient for testing.

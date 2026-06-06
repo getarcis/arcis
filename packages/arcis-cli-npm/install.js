@@ -285,7 +285,7 @@ async function main() {
     fail(
       `unsupported host: ${platform}/${arch}.\n` +
         `  Supported: ${supportedPlatforms().join(", ")}.\n` +
-        `  Open an issue at https://github.com/Gagancm/arcis/issues if you need this combination.`,
+        `  Open an issue at https://github.com/getarcis/arcis/issues if you need this combination.`,
     );
     return;
   }
@@ -302,7 +302,7 @@ async function main() {
   } catch (err) {
     fail(
       `download failed: ${err.message}\n` +
-        `  Verify a release exists at https://github.com/Gagancm/arcis/releases/tag/cli-v${version}\n` +
+        `  Verify a release exists at https://github.com/getarcis/arcis/releases/tag/cli-v${version}\n` +
         `  Or set ARCIS_CLI_SKIP_INSTALL=1 to defer the download (you'll need to install the binary manually).`,
     );
     return;

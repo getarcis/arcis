@@ -20,7 +20,7 @@ const lines = [
   c('    npm install -g @arcis/cli', '32'),
   '',
   c('  This package is the SDK / middleware. It does not put a CLI on', '2'),
-  c('  your shell PATH. Docs: https://gagancm.github.io/arcis/documentation/cli.html', '2'),
+  c('  your shell PATH. Docs: https://arcis-website.pages.dev/documentation/cli.html', '2'),
   '',
 ];
 for (const line of lines) console.log(line);

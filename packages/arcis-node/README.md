@@ -19,9 +19,9 @@ What `arcis({ block: true })` actually wires into the request path: XSS, SQL inj
 
 Available as opt-in helpers (not auto-wired into `arcis()`): bot detection (695-pattern corpus, `botProtection()`), per-IP correlation window (`new CorrelationWindow(...)`), HPP guard (`hppProtection()`), CSRF (`csrfProtection()`), V32 toolcall-injection signatures (`detectPromptInjection`), V33 deserialization markers (`detectDeserialization`), V34 GraphQL alias bomb / fragment cycle (`graphqlGuard`), SSRF URL validation (`validateUrl`). Compose as needed.
 
-**Docs**: [Quickstart](https://gagancm.github.io/arcis/documentation/getting-started.html) · [Detector reference](https://gagancm.github.io/arcis/documentation/detectors/) · [Framework adapters](https://gagancm.github.io/arcis/documentation/frameworks.html) · [Why Arcis](https://gagancm.github.io/arcis/documentation/why-arcis.html) · [Release notes](https://gagancm.github.io/arcis/documentation/release-notes.html)
+**Docs**: [Quickstart](https://arcis-website.pages.dev/documentation/getting-started.html) · [Detector reference](https://arcis-website.pages.dev/documentation/detectors/) · [Framework adapters](https://arcis-website.pages.dev/documentation/frameworks.html) · [Why Arcis](https://arcis-website.pages.dev/documentation/why-arcis.html) · [Release notes](https://arcis-website.pages.dev/documentation/release-notes.html)
 
-**Part of the [Arcis](https://github.com/Gagancm/arcis) ecosystem.** Node + Python + Go SDKs at full parity from one shared specification. **2,116+ Node tests · 1,688+ Python · 483+ Go.** All passing in CI on every PR.
+**Part of the [Arcis](https://github.com/getarcis/arcis) ecosystem.** Node + Python + Go SDKs at full parity from one shared specification. **2,116+ Node tests · 1,688+ Python · 483+ Go.** All passing in CI on every PR.
 
 ## Framework support
 
@@ -63,7 +63,7 @@ Available as opt-in helpers (not auto-wired into `arcis()`): bot detection (695-
 
 - **Detect-and-block middleware** — opt in with `arcis({ block: true })`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
 - **Telemetry queue cap** — sustained dashboard outage no longer OOMs the worker. Drop-oldest semantics, optional `onQueueOverflow` callback.
-- See the full release history at [gagancm.github.io/arcis/changelog.html](https://gagancm.github.io/arcis/changelog.html).
+- See the full release history at [arcis-website.pages.dev/changelog.html](https://arcis-website.pages.dev/changelog.html).
 
 ## Installation
 
@@ -223,7 +223,7 @@ import { MemoryStore } from '@arcis/node/stores';
 
 ## Documentation
 
-Detailed configuration, API reference, Redis setup, and architecture docs are in the [Wiki](https://github.com/Gagancm/arcis/wiki).
+Detailed configuration, API reference, Redis setup, and architecture docs are in the [Wiki](https://github.com/getarcis/arcis/wiki).
 
 ## Contributing
 

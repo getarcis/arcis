@@ -46,10 +46,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Gagancm/arcis",
+    "url": "https://github.com/getarcis/arcis",
     "directory": "packages/arcis-mcp"
   },
-  "homepage": "https://github.com/Gagancm/arcis/tree/main/packages/arcis-mcp",
+  "homepage": "https://github.com/getarcis/arcis/tree/main/packages/arcis-mcp",
   "engines": {
     "node": ">=18.0.0"
   }

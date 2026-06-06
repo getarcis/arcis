@@ -5,7 +5,7 @@ Usage:
 
 	import (
 		"github.com/labstack/echo/v4"
-		arcisecho "github.com/GagancM/arcis/echo"
+		arcisecho "github.com/getarcis/arcis/echo"
 	)
 
 	func main() {
@@ -39,7 +39,7 @@ when your application shuts down to stop this goroutine and release resources:
 		"context"
 		"os/signal"
 		"syscall"
-		arcisecho "github.com/GagancM/arcis/echo"
+		arcisecho "github.com/getarcis/arcis/echo"
 	)
 
 	func main() {
@@ -79,9 +79,9 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	arcis "github.com/GagancM/arcis"
-	"github.com/GagancM/arcis/sanitizers"
-	"github.com/GagancM/arcis/telemetry"
+	arcis "github.com/getarcis/arcis"
+	"github.com/getarcis/arcis/sanitizers"
+	"github.com/getarcis/arcis/telemetry"
 )
 
 // scanRequestForThreats is a shared helper for block-mode middleware that

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GagancM/arcis/core"
-	"github.com/GagancM/arcis/utils"
+	"github.com/getarcis/arcis/core"
+	"github.com/getarcis/arcis/utils"
 )
 
 // SlidingWindowLimiter implements a weighted sliding window rate limiter.

@@ -2,7 +2,7 @@
   "schema_version": "2",
   "last_updated": "2026-05-07",
   "maintained_by": "Arcis Security",
-  "repository": "https://github.com/Gagancm/arcis",
+  "repository": "https://github.com/getarcis/arcis",
   "contribute": "New supply chain attacks can be reported via GitHub Issues. Each entry is reviewed and sourced before inclusion.",
   "curation_policy": "Two entry types: trojanized packages (specific malicious versions pushed by attackers, matched via malicious_versions) and high-severity exploitable CVEs in widely-installed packages (matched via vulnerable_ranges). Excluded: low-severity DoS, decade-old chaff, deprecated APIs.",
   "threats": [
