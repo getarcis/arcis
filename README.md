@@ -18,7 +18,7 @@ Blocks XSS, SQL injection, SSRF, CSRF, prompt injection, bot traffic, and 20+ mo
 
 **Install once. Protect everything.**
 
-[Docs](https://gagancm.github.io/arcis/documentation/) · [Quickstart](https://gagancm.github.io/arcis/documentation/getting-started.html) · [Detectors](https://gagancm.github.io/arcis/documentation/detectors/) · [Threat DB](https://gagancm.github.io/arcis/documentation/threats-db.html) · [Release notes](https://gagancm.github.io/arcis/documentation/release-notes.html) · [Why Arcis](https://gagancm.github.io/arcis/documentation/why-arcis.html)
+[Docs](https://arcis-website.pages.dev/documentation/) · [Quickstart](https://arcis-website.pages.dev/documentation/getting-started.html) · [Detectors](https://arcis-website.pages.dev/documentation/detectors/) · [Threat DB](https://arcis-website.pages.dev/documentation/threats-db.html) · [Release notes](https://arcis-website.pages.dev/documentation/release-notes.html) · [Why Arcis](https://arcis-website.pages.dev/documentation/why-arcis.html)
 
 ---
 
@@ -53,7 +53,7 @@ Or, in sanitize mode (the default), your handler gets:
 }
 ```
 
-The detection model runs on top of NFKC Unicode normalization + a multi-decode chain, so fullwidth `＜script＞`, URL-encoded `%3Cscript%3E`, and triple-encoded variants reach the detector as the same string. The same call returns the same result in Node, Python, and Go — enforced by [shared test vectors](https://github.com/Gagancm/arcis/blob/main/spec/TEST_VECTORS.json).
+The detection model runs on top of NFKC Unicode normalization + a multi-decode chain, so fullwidth `＜script＞`, URL-encoded `%3Cscript%3E`, and triple-encoded variants reach the detector as the same string. The same call returns the same result in Node, Python, and Go — enforced by [shared test vectors](https://github.com/getarcis/arcis/blob/main/spec/TEST_VECTORS.json).
 
 ---
 
@@ -174,7 +174,7 @@ At the checkpoint, Arcis:
 ```bash
 npm install @arcis/node          # Node.js SDK
 pip install arcis                # Python SDK
-go get github.com/GagancM/arcis  # Go SDK
+go get github.com/getarcis/arcis  # Go SDK
 
 npm install -g @arcis/cli        # CLI: audit / scan / sca (single static binary)
 ```
@@ -605,7 +605,7 @@ The script is stripped. The rest of the comment is saved normally.
 - GitHub Action: automatic security checks on every PR
 - VS Code Extension: real-time security warnings while coding
 
-For full roadmap details, see the [Wiki](https://github.com/Gagancm/arcis/wiki).
+For full roadmap details, see the [Wiki](https://github.com/getarcis/arcis/wiki).
 
 ---
 
@@ -648,7 +648,7 @@ Five public clone-and-run repos that show Arcis blocking real attack payloads en
 
 ## Documentation
 
-Detailed configuration, API reference, Redis setup, granular middleware usage, and architecture docs are in the [Wiki](https://github.com/Gagancm/arcis/wiki).
+Detailed configuration, API reference, Redis setup, granular middleware usage, and architecture docs are in the [Wiki](https://github.com/getarcis/arcis/wiki).
 
 ---
 
@@ -660,8 +660,8 @@ Detailed configuration, API reference, Redis setup, granular middleware usage, a
 4. New features require test cases aligned with `spec/TEST_VECTORS.json`
 5. Pattern changes in `packages/core/patterns.json` must be reflected in all SDKs
 
-- **Report bugs** via [GitHub Issues](https://github.com/Gagancm/arcis/issues)
-- **Suggest features** via [GitHub Discussions](https://github.com/Gagancm/arcis/discussions)
+- **Report bugs** via [GitHub Issues](https://github.com/getarcis/arcis/issues)
+- **Suggest features** via [GitHub Discussions](https://github.com/getarcis/arcis/discussions)
 
 ---
 
@@ -675,7 +675,7 @@ You are free to use, modify, and distribute Arcis in any project, commercial or 
 
 ## Community & Support
 
-- **GitHub**: [github.com/Gagancm/arcis](https://github.com/Gagancm/arcis)
+- **GitHub**: [github.com/getarcis/arcis](https://github.com/getarcis/arcis)
 - **npm**: [@arcis/node](https://www.npmjs.com/package/@arcis/node)
 - **PyPI**: [arcis](https://pypi.org/project/arcis/)
-- **Wiki**: [Documentation](https://github.com/Gagancm/arcis/wiki)
+- **Wiki**: [Documentation](https://github.com/getarcis/arcis/wiki)

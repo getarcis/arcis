@@ -11,7 +11,7 @@
 
     <name>Arcis</name>
     <description>Security middleware for Java web applications. Protects against 42+ security flaws with a lean dependency footprint.</description>
-    <url>https://github.com/GagancM/arcis</url>
+    <url>https://github.com/getarcis/arcis</url>
 
     <licenses>
         <license>
