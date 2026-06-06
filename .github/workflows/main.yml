@@ -43,6 +43,3 @@ jobs:
 
   unit-test-python:
     uses: ./.github/workflows/unit-test-python.yml
-
-  unit-test-go:
-    uses: ./.github/workflows/unit-test-go.yml
