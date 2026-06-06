@@ -1,6 +1,6 @@
 {
   "name": "@arcis/mcp",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Arcis MCP server. Exposes Arcis CLI scanners (audit / scan / sca) and the prompt-injection detector as tools that Cursor and any other MCP-aware AI agent can call. One install, four tools, zero cloud round trip.",
   "main": "dist/server.js",
   "bin": {
