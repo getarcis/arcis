@@ -65,7 +65,11 @@ def get_embedded_patterns() -> Dict:
             },
             "sql_injection": {
                 "rules": [
-                    {"pattern": r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE)\b", "flags": "gi"},
+                    # Multi-token SQL attack shapes. Mirrors sqli-keywords in
+                    # packages/core/patterns.json. Replaces the older bare-keyword
+                    # rule that false-positived on "please select an option" and
+                    # shared code snippets. Benchmark FP class B3, 2026-06-07.
+                    {"pattern": r"(\bUNION\s+(?:ALL\s+)?SELECT\b)|(\b(?:DROP|TRUNCATE)\s+(?:TABLE|DATABASE|INDEX|VIEW|SCHEMA)\b)|(\bINTO\s+(?:OUTFILE|DUMPFILE)\b)|(\bATTACH\s+DATABASE\b)|(\bCREATE\s+(?:USER|FUNCTION|TRIGGER|PROCEDURE)\b)|(\bGRANT\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE)\b)|(\bSHUTDOWN\b)|(\bxp_cmdshell\b)|(\bsp_executesql\b)", "flags": "gi"},
                     {"pattern": r"(--|/\*|\*/)", "flags": "g"},
                     {"pattern": r"(;|\|\||&&)", "flags": "g"},
                     {"pattern": r"\bOR\s+\d+\s*=\s*\d+", "flags": "gi"},
