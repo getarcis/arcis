@@ -7,40 +7,96 @@ import { describe, it, expect } from 'vitest';
 import { sanitizeSql, detectSql } from '../../src/sanitizers/sql';
 
 describe('sanitizeSql', () => {
-  describe('Dangerous Keywords', () => {
-    it('should block DROP keyword', () => {
+  // Updated 2026-06-07 (benchmark FP class B3): bare SQL keywords
+  // (SELECT, INSERT, UPDATE, DELETE, UNION, DROP, etc.) no longer
+  // trigger removal because they false-positive on natural English
+  // ("please select an option", "I'll update you tomorrow"). The
+  // current SQL_PATTERNS rule requires multi-token attack shapes
+  // (UNION SELECT, DROP TABLE, INTO OUTFILE, etc.).
+  describe('Multi-token SQL attack shapes', () => {
+    it('should block DROP TABLE shape', () => {
       const result = sanitizeSql("'; DROP TABLE users; --");
-      expect(result.toUpperCase()).not.toContain('DROP');
+      expect(result.toUpperCase()).not.toContain('DROP TABLE');
     });
 
-    it('should block SELECT keyword', () => {
-      const result = sanitizeSql('SELECT * FROM users');
-      expect(result.toUpperCase()).not.toContain('SELECT');
+    it('should block TRUNCATE TABLE shape', () => {
+      const result = sanitizeSql('1; TRUNCATE TABLE logs --');
+      expect(result.toUpperCase()).not.toContain('TRUNCATE TABLE');
     });
 
-    it('should block DELETE keyword', () => {
-      const result = sanitizeSql('DELETE FROM users WHERE 1=1');
-      expect(result.toUpperCase()).not.toContain('DELETE');
-    });
-
-    it('should block INSERT keyword', () => {
-      const result = sanitizeSql("INSERT INTO users VALUES ('hacker')");
-      expect(result.toUpperCase()).not.toContain('INSERT');
-    });
-
-    it('should block UPDATE keyword', () => {
-      const result = sanitizeSql("UPDATE users SET admin=1 WHERE 1=1");
-      expect(result.toUpperCase()).not.toContain('UPDATE');
-    });
-
-    it('should block UNION keyword', () => {
+    it('should block UNION SELECT shape', () => {
       const result = sanitizeSql('1 UNION SELECT password FROM users');
-      expect(result.toUpperCase()).not.toContain('UNION');
+      expect(result.toUpperCase()).not.toContain('UNION SELECT');
     });
 
-    it('should block EXEC/EXECUTE keywords', () => {
-      const result = sanitizeSql('EXEC xp_cmdshell');
-      expect(result.toUpperCase()).not.toContain('EXEC');
+    it('should block UNION ALL SELECT shape', () => {
+      const result = sanitizeSql('1 UNION ALL SELECT * FROM users');
+      expect(result.toUpperCase()).not.toContain('UNION ALL SELECT');
+    });
+
+    it('should block INTO OUTFILE shape', () => {
+      const result = sanitizeSql("1 UNION SELECT 'pwn' INTO OUTFILE '/var/www/shell.php'");
+      expect(result.toUpperCase()).not.toContain('INTO OUTFILE');
+    });
+
+    it('should block ATTACH DATABASE (SQLite)', () => {
+      const result = sanitizeSql("1; ATTACH DATABASE '/tmp/evil.db' AS evil --");
+      expect(result.toUpperCase()).not.toContain('ATTACH DATABASE');
+    });
+
+    it('should block CREATE USER (privilege escalation)', () => {
+      const result = sanitizeSql("'; CREATE USER hacker --");
+      expect(result.toUpperCase()).not.toContain('CREATE USER');
+    });
+
+    it('should block GRANT ALL', () => {
+      const result = sanitizeSql("'; GRANT ALL ON *.* TO 'hacker'");
+      expect(result.toUpperCase()).not.toContain('GRANT ALL');
+    });
+
+    it('should block xp_cmdshell (SQL Server RCE)', () => {
+      const result = sanitizeSql('1; EXEC xp_cmdshell');
+      expect(result.toLowerCase()).not.toContain('xp_cmdshell');
+    });
+
+    it('should block sp_executesql', () => {
+      const result = sanitizeSql("EXEC sp_executesql @sql");
+      expect(result.toLowerCase()).not.toContain('sp_executesql');
+    });
+
+    it('should block SHUTDOWN', () => {
+      const result = sanitizeSql("'; SHUTDOWN --");
+      expect(result.toUpperCase()).not.toContain('SHUTDOWN');
+    });
+  });
+
+  describe('Benign SQL-shaped content is preserved (FP regression — B3)', () => {
+    it('does not strip the word "select" in plain English', () => {
+      const input = 'please select an option from the dropdown';
+      expect(sanitizeSql(input)).toBe(input);
+    });
+
+    it('does not strip "update" in plain English', () => {
+      const input = "I'll update you tomorrow about the meeting";
+      expect(sanitizeSql(input)).toBe(input);
+    });
+
+    it('does not strip "delete" in plain English', () => {
+      const input = 'You can delete this file from the trash folder';
+      expect(sanitizeSql(input)).toBe(input);
+    });
+
+    it('does not strip code-snippet SELECT * FROM (shared as content)', () => {
+      // User pastes example SQL in a chat/issue/comment. App uses
+      // parameterized queries — middleware shouldn't fight the content.
+      const input = 'SELECT * FROM users WHERE id = ?';
+      expect(sanitizeSql(input)).toBe(input);
+    });
+
+    it('does not strip DROP shipping notification', () => {
+      // Real-world string from logistics apps.
+      const input = 'Please drop off the package at the location.';
+      expect(sanitizeSql(input)).toBe(input);
     });
   });
 
@@ -50,13 +106,32 @@ describe('sanitizeSql', () => {
       expect(result).not.toContain('--');
     });
 
-    // Note: # comments are NOT in current SQL_PATTERNS
-    // Current comment pattern: /(--|\/\*|\*\/)/g
-    // Add /#/g to SQL_PATTERNS in constants.ts if needed
-
     it('should block /* */ comments', () => {
       const result = sanitizeSql('1 /* comment */ OR 1=1');
       expect(result).not.toContain('/*');
+    });
+
+    it('does NOT block markdown # heading (FP regression — B1)', () => {
+      // MySQL # comment was removed from SQL_PATTERNS 2026-06-07
+      // because it false-positived on every hex color, hashtag,
+      // issue ref, and markdown heading.
+      const input = '# Heading';
+      expect(sanitizeSql(input)).toBe(input);
+    });
+
+    it('does NOT block hex colors (FP regression — B1)', () => {
+      const input = '#FF5300 is the primary brand color';
+      expect(sanitizeSql(input)).toBe(input);
+    });
+
+    it('does NOT block hashtags (FP regression — B1)', () => {
+      const input = 'Just shipped v1.7 #releaseday #buildinpublic';
+      expect(sanitizeSql(input)).toBe(input);
+    });
+
+    it('does NOT block issue references (FP regression — B1)', () => {
+      const input = 'see issue #123 and PR-456';
+      expect(sanitizeSql(input)).toBe(input);
     });
   });
 
@@ -125,20 +200,31 @@ describe('sanitizeSql', () => {
       expect(result).toBe('John Doe');
     });
 
-    it('should handle mixed case keywords', () => {
-      const result = sanitizeSql('SeLeCt * FrOm users');
-      expect(result.toUpperCase()).not.toContain('SELECT');
+    it('should handle mixed case attack shapes', () => {
+      // Updated 2026-06-07 (B3): bare `SeLeCt * FrOm` is no longer
+      // treated as injection. Use a real multi-token attack shape.
+      const result = sanitizeSql('1 uNiOn SeLeCt password FROM users');
+      expect(result.toUpperCase()).not.toContain('UNION SELECT');
     });
   });
 });
 
 describe('detectSql', () => {
-  it('should detect DROP keyword', () => {
+  it('should detect DROP TABLE shape', () => {
     expect(detectSql('DROP TABLE users')).toBe(true);
   });
 
-  it('should detect SELECT keyword', () => {
-    expect(detectSql('SELECT * FROM users')).toBe(true);
+  it('should detect UNION SELECT shape', () => {
+    // Updated 2026-06-07 (B3): bare `SELECT * FROM` no longer flagged.
+    // UNION SELECT remains the canonical SQLi exfiltration shape.
+    expect(detectSql('1 UNION SELECT password FROM users')).toBe(true);
+  });
+
+  it('should NOT detect bare SELECT * FROM (FP regression — B3)', () => {
+    // Pasting example SQL in a chat/issue/comment shouldn't trigger.
+    // App responsibility: use parameterized queries. Middleware
+    // responsibility: catch obvious attacker shapes, not all SQL syntax.
+    expect(detectSql('SELECT * FROM users WHERE id = ?')).toBe(false);
   });
 
   it('should detect comment syntax', () => {

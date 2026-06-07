@@ -33,6 +33,12 @@ from .utils.ip import detect_client_ip
 logger = logging.getLogger(__name__)
 
 
+# Sentinel for "param not supplied" so ArcisMiddleware can distinguish
+# rate_limiter=None (explicit disable) from rate_limiter not passed
+# (fall through to the rate_limit bool default). Benchmark E2, 2026-06-07.
+_RL_UNSET = object()
+
+
 # ============================================================================
 # ASYNC RATE LIMITER STORE PROTOCOL
 # ============================================================================
@@ -419,10 +425,14 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # Error handler options
         error_handling: bool = True,
         is_dev: bool = False,
-        # Pre-built components (for Arcis class)
+        # Pre-built components (for Arcis class).
+        # rate_limiter / async_rate_limiter use the `_RL_UNSET` sentinel
+        # so callers can distinguish "not supplied" (use default if
+        # rate_limit=True) from "supplied as None" (explicit disable —
+        # benchmark E2 fix, 2026-06-07).
         sanitizer: Optional[Sanitizer] = None,
-        rate_limiter: Optional[RateLimiter] = None,
-        async_rate_limiter: Optional[AsyncRateLimiter] = None,  # NEW
+        rate_limiter=_RL_UNSET,
+        async_rate_limiter=_RL_UNSET,
         security_headers: Optional[SecurityHeaders] = None,
         error_handler: Optional[ErrorHandler] = None,
         # Telemetry: dict, TelemetryOptions, or pre-built AsyncTelemetryClient.
@@ -442,13 +452,23 @@ class ArcisMiddleware(BaseHTTPMiddleware):
             path=sanitize_path,
         ) if sanitize else None)
         
-        # Determine which rate limiter to use
+        # Determine which rate limiter to use.
+        # Three states per param (`rate_limiter` / `async_rate_limiter`):
+        #   _RL_UNSET — caller didn't pass — fall through to bool default
+        #   None      — caller explicitly disabled (benchmark E2, 2026-06-07)
+        #   object    — caller supplied a custom limiter — use it
         self.async_rate_limiter = None
         self.rate_limiter = None
-        
-        if async_rate_limiter:
+
+        explicit_disable = (rate_limiter is None) or (async_rate_limiter is None)
+        if explicit_disable:
+            # Explicit None for either slot disables rate limiting entirely.
+            # Matches the principle of least surprise: passing `None` to a
+            # parameter that accepts an Optional should mean "no value."
+            pass
+        elif async_rate_limiter is not _RL_UNSET:
             self.async_rate_limiter = async_rate_limiter
-        elif rate_limiter:
+        elif rate_limiter is not _RL_UNSET:
             self.rate_limiter = rate_limiter
         elif rate_limit:
             if use_async_rate_limiter:

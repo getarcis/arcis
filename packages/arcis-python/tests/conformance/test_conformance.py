@@ -79,21 +79,27 @@ class TestConformanceSanitizeXSS:
 # ---------------------------------------------------------------------------
 
 class TestConformanceSanitizeSQL:
+    # Updated 2026-06-07 (benchmark FP class B3): bare SQL keywords
+    # (SELECT, INSERT, UPDATE, DELETE) no longer flagged in isolation
+    # because they false-positive on natural English and code snippets.
+    # Multi-token attack shapes (UNION SELECT, DROP TABLE, INTO OUTFILE)
+    # remain blocked. Sister update: arcis-node/tests/sanitizers/sql.test.ts.
+
     def test_removes_drop_table(self):
         result = sanitize_string("'; DROP TABLE users; --")
-        assert "DROP" not in result.upper()
+        assert "DROP TABLE" not in result.upper()
 
     def test_removes_or_1_equals_1(self):
         result = sanitize_string("1 OR 1=1")
         assert "OR 1" not in result.upper() or "1=1" not in result
 
-    def test_removes_select(self):
-        result = sanitize_string("SELECT * FROM users")
-        assert "SELECT" not in result.upper()
+    def test_removes_union_select(self):
+        result = sanitize_string("1 UNION SELECT password FROM users")
+        assert "UNION SELECT" not in result.upper()
 
-    def test_removes_delete(self):
-        result = sanitize_string("1; DELETE FROM users")
-        assert "DELETE" not in result.upper()
+    def test_removes_into_outfile(self):
+        result = sanitize_string("1 UNION SELECT 'x' INTO OUTFILE '/var/www/x.php'")
+        assert "INTO OUTFILE" not in result.upper()
 
     def test_removes_comments(self):
         result = sanitize_string("admin'--")
@@ -102,6 +108,20 @@ class TestConformanceSanitizeSQL:
     def test_removes_union_and_block_comments(self):
         result = sanitize_string("1 /* comment */ UNION SELECT")
         assert "UNION" not in result.upper()
+
+    # B3 FP-regression guards.
+    def test_preserves_bare_select_from(self):
+        # Sharing SQL example in chat/issue/comment should not trigger.
+        text = "SELECT * FROM users WHERE id = ?"
+        assert sanitize_string(text) == text
+
+    def test_preserves_please_select(self):
+        text = "please select an option from the dropdown"
+        assert sanitize_string(text) == text
+
+    def test_preserves_update_in_english(self):
+        text = "I'll update you tomorrow about the meeting"
+        assert sanitize_string(text) == text
 
 
 # ---------------------------------------------------------------------------

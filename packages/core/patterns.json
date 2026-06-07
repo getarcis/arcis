@@ -175,16 +175,17 @@
       "rules": [
         {
           "id": "sqli-keywords",
-          "pattern": "\\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE)\\b",
+          "pattern": "(\\bUNION\\s+(?:ALL\\s+)?SELECT\\b)|(\\b(?:DROP|TRUNCATE)\\s+(?:TABLE|DATABASE|INDEX|VIEW|SCHEMA)\\b)|(\\bINTO\\s+(?:OUTFILE|DUMPFILE)\\b)|(\\bATTACH\\s+DATABASE\\b)|(\\bCREATE\\s+(?:USER|FUNCTION|TRIGGER|PROCEDURE)\\b)|(\\bGRANT\\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE)\\b)|(\\bSHUTDOWN\\b)|(\\bxp_cmdshell\\b)|(\\bsp_executesql\\b)",
           "flags": "gi",
-          "description": "Detects SQL keywords",
-          "redos_safe": true
+          "description": "Multi-token SQL attack shapes (UNION SELECT, DROP TABLE, INTO OUTFILE, etc.) that real attackers use and benign users essentially never type. Replaces older bare-keyword rule that false-positived on 'please select an option', 'I'll update you tomorrow'. Benchmark FP class B3, 2026-06-07.",
+          "redos_safe": true,
+          "request_boundary_safe": true
         },
         {
           "id": "sqli-comments",
           "pattern": "(--|/\\*|\\*/)",
           "flags": "g",
-          "description": "Detects SQL comments",
+          "description": "Detects SQL comments. MySQL `#` line comment intentionally excluded to avoid FP on hex colors / hashtags / issue refs; real `admin' #` injections are still caught by the quote + keyword combo patterns.",
           "redos_safe": true
         },
         {
@@ -375,6 +376,27 @@
           "pattern": "\\x00",
           "flags": "g",
           "description": "Detects literal NUL byte in path inputs",
+          "redos_safe": true
+        },
+        {
+          "id": "path-mixed-encoded",
+          "pattern": "\\.\\.%2[fF]",
+          "flags": "g",
+          "description": "Detects mixed encoding: literal `..` followed by URL-encoded slash (%2F). Benchmark B6 — Python had no coverage; Node had this pattern. 2026-06-07.",
+          "redos_safe": true
+        },
+        {
+          "id": "path-overlong-utf8-dot",
+          "pattern": "%[Cc]0%[Aa][Ee]",
+          "flags": "g",
+          "description": "Detects overlong UTF-8 encoding of '.' (%C0%AE). Historic IIS/Apache decoder bypass. Real char `.` is %2E; overlong encoding only appears in evasion attempts. Benchmark B6 gap — neither SDK caught this before. 2026-06-07.",
+          "redos_safe": true
+        },
+        {
+          "id": "path-windows-unc",
+          "pattern": "\\\\\\\\[A-Za-z0-9_.-]+\\\\",
+          "flags": "g",
+          "description": "Detects Windows UNC paths (\\\\\\\\server\\\\share) in user input. Legitimate web-app inputs never contain UNC references; attacker UNC payloads leak SMB auth or pull remote payloads. Benchmark B6. 2026-06-07.",
           "redos_safe": true
         }
       ]
