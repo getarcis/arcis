@@ -150,10 +150,37 @@ export const XSS_REMOVE_PATTERNS = [
 // SQL INJECTION PATTERNS
 // =============================================================================
 export const SQL_PATTERNS = [
-  /** SQL keywords */
-  /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE)\b)/gi,
-  /** SQL comments: ANSI (--), C-style (slash-star ... star-slash), MySQL (#) */
-  /(--|\/\*|\*\/|#)/g,
+  /**
+   * Multi-token SQL attack shapes that never appear in normal English.
+   * Replaces the older bare-keyword pattern `\b(SELECT|INSERT|...)\b`
+   * which false-positived on natural language ("please select an option",
+   * "I'll update you tomorrow", "delete this file"). Each shape below
+   * is a token combination that real attackers use and benign users
+   * essentially never type. Matches `sqli-keywords` in
+   * packages/core/patterns.json. Benchmark FP class B3, 2026-06-07.
+   *
+   * Catches:
+   *   UNION SELECT / UNION ALL SELECT          (data exfiltration)
+   *   DROP|TRUNCATE TABLE|DATABASE|INDEX|...   (DDL destruction)
+   *   INTO OUTFILE / INTO DUMPFILE             (MySQL file write RCE)
+   *   ATTACH DATABASE                          (SQLite hijack)
+   *   CREATE USER|FUNCTION|TRIGGER|PROCEDURE   (privilege escalation)
+   *   GRANT ALL|SELECT|INSERT|...              (privilege grant)
+   *   xp_cmdshell / sp_executesql              (SQL Server RCE)
+   *   SHUTDOWN                                 (DoS)
+   */
+  /(\bUNION\s+(?:ALL\s+)?SELECT\b)|(\b(?:DROP|TRUNCATE)\s+(?:TABLE|DATABASE|INDEX|VIEW|SCHEMA)\b)|(\bINTO\s+(?:OUTFILE|DUMPFILE)\b)|(\bATTACH\s+DATABASE\b)|(\bCREATE\s+(?:USER|FUNCTION|TRIGGER|PROCEDURE)\b)|(\bGRANT\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE)\b)|(\bSHUTDOWN\b)|(\bxp_cmdshell\b)|(\bsp_executesql\b)/gi,
+  /**
+   * SQL comments: ANSI (--), C-style (slash-star ... star-slash).
+   * MySQL `#` line comment intentionally excluded: a bare `#` matches
+   * every hex color (#FF5300), hashtag (#trending), issue ref (#123),
+   * markdown heading (# Title). Real `admin' #`-style injections are
+   * already caught by the quote/semicolon + keyword/boolean patterns
+   * below — `#` adds nothing as a primary signal and a lot of FP noise.
+   * Matches `sqli-comments` rule in packages/core/patterns.json (which
+   * also excludes `#`). Benchmark FP class B1, found 2026-06-07.
+   */
+  /(--|\/\*|\*\/)/g,
   /** SQL statement separators */
   /(;|\|\||&&)/g,
   /** Boolean injection: OR 1=1 */
@@ -210,6 +237,25 @@ export const PATH_PATTERNS = [
   /\.{2,}[/\\]{2,}/g,
   /** Null byte injection in paths */
   /\0/g,
+  /**
+   * Mixed encoding: literal `..` + URL-encoded slash (`..%2F`).
+   * Existed in old Node SQL_PATTERNS history; restated explicitly here
+   * for parity with patterns.json `path-mixed-encoded`. Benchmark B6.
+   */
+  /\.\.%2[fF]/g,
+  /**
+   * Overlong UTF-8 encoding of `.` (`%C0%AE`). Historic IIS/Apache
+   * decoder bypass — legitimate `.` is always `%2E`; overlong-form
+   * encoding only appears in evasion attempts. Benchmark B6 gap that
+   * neither SDK caught before 2026-06-07.
+   */
+  /%[Cc]0%[Aa][Ee]/g,
+  /**
+   * Windows UNC paths (`\\server\share`) in user input. Legitimate
+   * web-app inputs never contain UNC references; attacker UNC
+   * payloads leak SMB auth or pull remote payloads. Benchmark B6.
+   */
+  /\\\\[A-Za-z0-9_.-]+\\/g,
 ] as const;
 
 // =============================================================================

@@ -79,12 +79,26 @@ describe('Conformance: sanitizeString', () => {
       expect(() => sanitizeString('1 OR 1=1', { mode: 'reject' })).toThrow();
     });
 
-    it('must reject SELECT keyword (reject mode)', () => {
-      expect(() => sanitizeString('SELECT * FROM users', { mode: 'reject' })).toThrow();
+    // Updated 2026-06-07 (benchmark FP class B3): bare SELECT / DELETE
+    // FROM no longer reject because they false-positive on natural text
+    // and shared code snippets. Multi-token attack shapes (UNION SELECT,
+    // DROP TABLE, INTO OUTFILE, etc.) remain reject targets.
+    it('must reject UNION SELECT shape (reject mode)', () => {
+      expect(() => sanitizeString('1 UNION SELECT password FROM users', { mode: 'reject' })).toThrow();
     });
 
-    it('must reject DELETE keyword (reject mode)', () => {
-      expect(() => sanitizeString('1; DELETE FROM users', { mode: 'reject' })).toThrow();
+    it('must reject INTO OUTFILE shape (reject mode)', () => {
+      expect(() => sanitizeString("1 UNION SELECT 'x' INTO OUTFILE '/var/www/x.php'", { mode: 'reject' })).toThrow();
+    });
+
+    it('must NOT reject bare SELECT * FROM (FP regression — B3)', () => {
+      // Sharing example SQL in chat/issue/comment is benign content.
+      // Real SQL injection has additional shape (quotes, ;, --, UNION).
+      expect(() => sanitizeString('SELECT * FROM users WHERE id = ?', { mode: 'reject' })).not.toThrow();
+    });
+
+    it('must NOT reject "please select" plain English (FP regression — B3)', () => {
+      expect(() => sanitizeString('please select an option', { mode: 'reject' })).not.toThrow();
     });
 
     it('must reject -- comment syntax (reject mode)', () => {

@@ -105,6 +105,33 @@ describe('sanitizePath', () => {
     });
   });
 
+  // Added 2026-06-07 (benchmark B6): three path-traversal gaps the
+  // Python SDK missed and Node partially covered — now in patterns.json
+  // + Node SQL_PATTERNS for both.
+  describe('Benchmark B6 gaps', () => {
+    it('should block mixed-encoded traversal (..%2F)', () => {
+      const result = sanitizePath('..%2F..%2F..%2Fetc%2Fpasswd');
+      expect(result).not.toContain('..%2F');
+    });
+
+    it('should block overlong UTF-8 (%c0%ae)', () => {
+      const result = sanitizePath('%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd');
+      expect(result).not.toMatch(/%c0%ae/i);
+    });
+
+    it('should block Windows UNC paths in user input', () => {
+      const result = sanitizePath('\\\\evil-server\\share\\stolen');
+      expect(result).not.toContain('\\\\evil-server');
+    });
+
+    it('should preserve normal Windows absolute paths (UNC FP regression)', () => {
+      // C:\Users\Public is NOT a UNC path — single drive letter +
+      // single backslash separators. UNC starts with double backslash.
+      const safe = 'C:\\Users\\Public\\file.txt';
+      expect(sanitizePath(safe)).toBe(safe);
+    });
+  });
+
   describe('Threat Collection', () => {
     it('should collect threat info when requested', () => {
       const result = sanitizePath('../../etc/passwd', true);
