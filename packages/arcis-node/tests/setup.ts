@@ -104,12 +104,16 @@ export const XSS_VECTORS = [
   { input: 'data:text/html,<script>', check: (s: string) => !s.includes('data:') },
 ];
 
-/** Common SQL injection vectors for testing */
+// Updated 2026-06-07 (benchmark FP class B3): bare-keyword payloads
+// (`SELECT * FROM`, `1; DELETE FROM`) replaced with multi-token attack
+// shapes. Standalone SELECT/INSERT/UPDATE/DELETE no longer trigger
+// sanitization because they false-positive on code snippets and
+// natural English. UNION SELECT, DROP TABLE, INTO OUTFILE etc. stay.
 export const SQL_VECTORS = [
   "'; DROP TABLE users; --",
   "1 OR 1=1",
-  "SELECT * FROM users",
-  "1; DELETE FROM users",
+  "1 UNION SELECT password FROM users",
+  "1; TRUNCATE TABLE logs",
   "admin'--",
   "1 /* comment */ UNION SELECT",
 ];

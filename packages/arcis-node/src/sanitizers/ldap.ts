@@ -10,16 +10,24 @@
  * while making it safe to embed in LDAP queries.
  */
 
-// LDAP filter special characters per RFC 4515 (single pass includes NUL)
+// LDAP filter special characters per RFC 4515 (single pass includes NUL).
+// Used for ESCAPING — broad set is fine here because escaping a benign
+// char is safe; the value just gets a `\xx` representation.
 const LDAP_FILTER_CHARS = /[*()\\\x00]/g;
 
 // LDAP DN special characters per RFC 4514 (single pass includes NUL)
 const LDAP_DN_CHARS = /[,+<>;"=\/\\\x00*()\x00]/g;
 
-// Detection pattern — unescaped LDAP special chars in filter context
-const LDAP_DETECT_PATTERN = /[*()\\\x00]/;
+// Wildcard-value detection: `=*` inside a filter (e.g. `(uid=*)`).
+// Real LDAP filter abuse; legitimate values don't end in `=*`.
+const LDAP_WILDCARD_VALUE_PATTERN = /=\s*\*/;
 
-// Detection pattern for OR/AND bypass and wildcard abuse
+// NUL byte detection — used for LDAP query truncation attacks.
+// Bare `\x00` is suspicious in any field that flows to an LDAP query.
+const LDAP_NUL_PATTERN = /\x00/;
+
+// Detection pattern for OR/AND bypass and wildcard abuse.
+// Real shapes: `*)(uid=*` (break the filter, inject a new clause).
 const LDAP_INJECTION_PATTERN = /\)\s*\(|\*\s*\)\s*\(/;
 
 // Detection pattern for LDAP NOT-operator bypass (improvements.md Q8).
@@ -61,18 +69,31 @@ export function sanitizeLdapDn(input: string): string {
  * Detects potential LDAP injection patterns in a string.
  * Does not sanitize — use sanitizeLdapFilter() or sanitizeLdapDn() for that.
  *
+ * Designed for request-boundary scanning: matches only the specific
+ * shapes real LDAP injection produces. The older broad
+ * `[*()\\\x00]` pattern was removed because it false-positived on
+ * every markdown bold `**bold**`, every parenthesised string, every
+ * apostrophe-in-name. Mirrors the `ldap-injection-strict` +
+ * `ldap-not-bypass` rules from packages/core/patterns.json which are
+ * marked `request_boundary_safe: true`. Benchmark FP class B2, 2026-06-07.
+ *
  * @param input - The string to check
  * @returns True if LDAP injection patterns detected
  *
  * @example
- * detectLdapInjection("*)(uid=*))(|(uid=*")  // true
+ * detectLdapInjection("*)(uid=*))(|(uid=*")  // true  — filter break-out
+ * detectLdapInjection("(uid=*)")              // true  — wildcard value
+ * detectLdapInjection("ad\x00min")            // true  — NUL truncation
+ * detectLdapInjection("**bold**")             // false — markdown
+ * detectLdapInjection("hello *world*")        // false — emphasis
  * detectLdapInjection("john")                 // false
  */
 export function detectLdapInjection(input: string): boolean {
   if (typeof input !== 'string') return false;
   return (
-    LDAP_DETECT_PATTERN.test(input) ||
     LDAP_INJECTION_PATTERN.test(input) ||
-    LDAP_NOT_BYPASS_PATTERN.test(input)
+    LDAP_NOT_BYPASS_PATTERN.test(input) ||
+    LDAP_WILDCARD_VALUE_PATTERN.test(input) ||
+    LDAP_NUL_PATTERN.test(input)
   );
 }

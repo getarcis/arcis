@@ -36,6 +36,13 @@ class Arcis:
         sanitize_sql: bool = True,
         sanitize_nosql: bool = True,
         sanitize_path: bool = True,
+        # Block mode: return 403 on detected attack instead of silently
+        # sanitizing. FastAPI / Starlette only — Flask path keeps
+        # sanitize-on-read semantics. Mirrors Node's `block:true`.
+        # Added 2026-06-07 (benchmark T3): previously block mode was
+        # only reachable by bypassing this wrapper and using
+        # ArcisMiddleware + Sanitizer() directly.
+        block: bool = False,
         # Rate limiter options
         rate_limit: bool = True,
         rate_limit_max: int = DEFAULT_MAX_REQUESTS,
@@ -49,6 +56,7 @@ class Arcis:
         error_handler: bool = True,
         is_dev: bool = False,
     ):
+        self.block = block
         self.sanitizer = Sanitizer(
             xss=sanitize_xss,
             sql=sanitize_sql,
@@ -156,4 +164,5 @@ class Arcis:
             rate_limiter=self.rate_limiter,
             security_headers=self.security_headers,
             error_handler=self.error_handler,
+            block=self.block,
         )

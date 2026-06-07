@@ -145,7 +145,11 @@ SQL_CASES = [
     ("'; DROP TABLE users--", ["drop"]),
     ("UNION SELECT * FROM users", ["union", "select"]),
     ("admin'--", ["--"]),
-    ("1; DELETE FROM users", ["delete"]),
+    # 2026-06-07 (benchmark FP class B3): bare `DELETE FROM` no longer
+    # flagged because the SDK also allows benign `SELECT * FROM` content.
+    # Real DELETE injection has `;`, `--`, or quote shape that other
+    # patterns catch. Replaced with INTO OUTFILE (attacker file-write).
+    ("1 UNION SELECT 'x' INTO OUTFILE '/var/www/x.php'", ["into outfile"]),
     ("SLEEP(5)", ["sleep("]),
     # improvements.md §1.1.e Q3: Oracle DBMS_* packages.
     ("foo; DBMS_LOCK.SLEEP(5)", ["dbms_"]),

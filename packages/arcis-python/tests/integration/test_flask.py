@@ -236,12 +236,23 @@ class TestFlaskSanitization:
         result = response.get_json()
         assert 'DROP' not in result['received'].get('query', '').upper()
     
-    def test_sanitizes_sql_select(self, client):
-        data = {"query": "SELECT * FROM users"}
+    def test_sanitizes_sql_into_outfile(self, client):
+        # Updated 2026-06-07 (benchmark FP class B3): bare `SELECT * FROM`
+        # no longer flagged because the SDK allows benign code snippets.
+        # INTO OUTFILE is the exclusive attacker file-write primitive.
+        data = {"query": "1 UNION SELECT 'x' INTO OUTFILE '/var/www/x.php'"}
         response = client.post('/echo', json=data)
-        
+
         result = response.get_json()
-        assert 'SELECT' not in result['received'].get('query', '').upper()
+        assert 'INTO OUTFILE' not in result['received'].get('query', '').upper()
+
+    def test_preserves_bare_select_from_b3_fp(self, client):
+        # Sharing example SQL in a comment / chat / issue is benign.
+        # Real injection has additional shape that other patterns catch.
+        text = "SELECT * FROM users WHERE id = ?"
+        response = client.post('/echo', json={"query": text})
+        result = response.get_json()
+        assert result['received'].get('query') == text
     
     def test_sanitizes_sql_union(self, client):
         data = {"query": "1 UNION SELECT password FROM users"}

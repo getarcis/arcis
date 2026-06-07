@@ -1,6 +1,6 @@
 {
   "name": "@arcis/node",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "Inside-the-app security middleware for Node.js. Express and NestJS run the full sanitizer pipeline (XSS, SQL, NoSQL, SSTI, XXE, path, command, prompt injection, prototype pollution, LDAP, XPath, header injection, plus 20+ more attack types). Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt, and Bun ship rate-limit + bot detection + security headers as v1 adapters; pair them with `sanitizeObject` from @arcis/node/sanitizers for body inspection. v1.6 ships interactive REPL, NFKC + multi-decode hardening, deserialization markers (V33), GraphQL alias-bomb guard (V34), and a stateful per-IP correlation window. Includes prompt-injection signature library, LLM token-budget middleware, 695-pattern bot corpus, and the @arcis/cli native CLI.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -144,13 +144,13 @@
     "express": ">=4.0.0"
   },
   "devDependencies": {
-    "@nestjs/common": "^11.1.21",
+    "@nestjs/common": "^11.1.24",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.9.1",
-    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@types/node": "^25.9.2",
+    "@typescript-eslint/eslint-plugin": "^8.60.1",
     "@typescript-eslint/parser": "^8.58.0",
-    "@vitest/coverage-v8": "^4.1.7",
-    "eslint": "^10.4.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "eslint": "^10.4.1",
     "express": "^5.2.1",
     "tsup": "^8.0.1",
     "typescript": "^6.0.3",

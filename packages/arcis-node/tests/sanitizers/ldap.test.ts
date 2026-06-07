@@ -76,23 +76,25 @@ describe('sanitizeLdapDn', () => {
 });
 
 describe('detectLdapInjection', () => {
-  it('detects wildcard injection', () => {
-    expect(detectLdapInjection('*')).toBe(true);
+  // Wildcard in filter value context — `=*` shape only, not bare `*`.
+  // Updated 2026-06-07 (benchmark FP class B2): bare `*` was too broad.
+  it('detects wildcard value in filter context: =*', () => {
+    expect(detectLdapInjection('(uid=*)')).toBe(true);
+  });
+
+  it('detects wildcard value with whitespace: = *', () => {
+    expect(detectLdapInjection('uid = *')).toBe(true);
   });
 
   it('detects OR bypass payload', () => {
     expect(detectLdapInjection('*)(uid=*))(|(uid=*')).toBe(true);
   });
 
-  it('detects parentheses', () => {
+  it('detects parentheses break-out: )(', () => {
     expect(detectLdapInjection('admin)(&(password=*)')).toBe(true);
   });
 
-  it('detects backslash', () => {
-    expect(detectLdapInjection('ad\\min')).toBe(true);
-  });
-
-  it('detects NUL byte', () => {
+  it('detects NUL byte (LDAP query truncation)', () => {
     expect(detectLdapInjection('ad\x00min')).toBe(true);
   });
 
@@ -113,6 +115,33 @@ describe('detectLdapInjection', () => {
     expect(detectLdapInjection('johndoe')).toBe(false);
     expect(detectLdapInjection('john.doe@example.com')).toBe(false);
     expect(detectLdapInjection('John Doe')).toBe(false);
+  });
+
+  // Benchmark FP class B2 — false-positive regression guards.
+  // These payloads previously triggered LDAP detection via the
+  // overly-broad `[*()\\\x00]` rule and would block every markdown
+  // editor, math expression, and parenthetical comment.
+  it('returns false for markdown bold (**)', () => {
+    expect(detectLdapInjection('this is **bold** text')).toBe(false);
+  });
+
+  it('returns false for markdown italic (*)', () => {
+    expect(detectLdapInjection('hello *world* hi')).toBe(false);
+  });
+
+  it('returns false for math expression with asterisk', () => {
+    expect(detectLdapInjection('area = x * y')).toBe(false);
+  });
+
+  it('returns false for parenthetical text', () => {
+    expect(detectLdapInjection('one (two) three')).toBe(false);
+  });
+
+  it('returns false for single backslash in text', () => {
+    // Single `\` is escape syntax — only meaningful adjacent to a real
+    // LDAP special. Bare `\` in middle of text is legitimate (e.g.
+    // Windows-style file paths shared in a comment).
+    expect(detectLdapInjection('ad\\min')).toBe(false);
   });
 
   it('returns false for empty string', () => {
