@@ -226,6 +226,22 @@ _SIGNATURES = [
         "Conditional output redirection",
     ),
     (
+        # System-prompt extraction via the "repeat the words above" trick
+        # (Bing/Sydney leak 2023). Requires output verb + words/text
+        # object + above/before anchor, so it won't fire on ordinary
+        # "repeat that" conversational text.
+        "repeat-words-above",
+        re.compile(
+            r"\b(?:repeat|print|output|echo|reproduce|reveal|show)\s+(?:me\s+)?"
+            r"(?:the\s+|all\s+(?:the\s+)?|every\s+)?"
+            r"(?:words?|text|lines?|content|everything|message|sentences?|prompt)\s+"
+            r"(?:above|before|preceding|prior|earlier|that\s+(?:came|appear|precede))",
+            re.IGNORECASE,
+        ),
+        "medium",
+        'System-prompt extraction via "repeat the words above"',
+    ),
+    (
         "translate-but-do-other",
         re.compile(
             r"\b(?:translate|summari[sz]e|paraphrase|rewrite)\s+.{0,80}\b"
@@ -277,6 +293,18 @@ _SIGNATURES = [
         'Injected agent tool-call JSON shape (e.g. {"tool_call":{...}})',
     ),
     (
+        # Bracket-style tool marker: [TOOL_USE: shell, command="..."].
+        # The JSON-shape rule above misses this inline form that
+        # ReAct-style / text-protocol agents parse out of model output.
+        "agent-toolcall-bracket",
+        re.compile(
+            r"\[\s*(?:TOOL_USE|TOOL_CALL|FUNCTION_CALL|TOOL|FUNCTION|ACTION|EXECUTE)\s*[:=]",
+            re.IGNORECASE,
+        ),
+        "high",
+        "Injected bracket-style agent tool marker (e.g. [TOOL_USE: shell])",
+    ),
+    (
         "agent-tool-name-spoof",
         re.compile(
             r'"name"\s*:\s*"(?:exec|shell|run_command|system|bash|cmd|python|eval|read_file|write_file|delete_file)"',
@@ -299,6 +327,16 @@ _SIGNATURES = [
         re.compile(r"\x1b\["),
         "medium",
         "ANSI escape sequence (terminal hijack / output spoofing on CLI agents)",
+    ),
+    (
+        # Unicode Tag characters (U+E0000-U+E007F). Invisible in nearly
+        # every renderer but tokenizable by LLMs, so an attacker hides
+        # "Ignore previous instructions" inside what looks like plain
+        # text. No legitimate use in user input.
+        "unicode-tag-smuggle",
+        re.compile(r"[\U000E0000-\U000E007F]"),
+        "high",
+        "Unicode Tag characters smuggling hidden instructions",
     ),
     (
         "claude-tool-use-tags",

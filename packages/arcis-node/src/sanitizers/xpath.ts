@@ -27,8 +27,11 @@ const XPATH_INJECTION_CHARS = /['"|,()]/;
 
 // Common operator-injection patterns: unescaped boolean injection
 // (`' or '1'='1`), function tampering (`,`), and union (`|`).
+// Also blind-extraction functions (`substring(name(...))`,
+// `string-length(`, `count(/`) used to leak the document one char at a
+// time. Benchmark xpath-blind-substring.
 const XPATH_INJECTION_PATTERN =
-  /('\s*(or|and)\s*'|"\s*(or|and)\s*"|\)\s*(or|and)\s*\(|\|\s*\/)/i;
+  /('\s*(or|and)\s*'|"\s*(or|and)\s*"|\)\s*(or|and)\s*\(|\|\s*\/|\bsubstring\s*\(\s*name\s*\(|\bstring-length\s*\(|\bcount\s*\(\s*\/)/i;
 
 /**
  * Detects XPath-injection-shaped patterns in a string. Returns true when

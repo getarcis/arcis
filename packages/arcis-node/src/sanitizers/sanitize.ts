@@ -4,7 +4,7 @@
  */
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
-import { INPUT, DANGEROUS_PROTO_KEYS, NOSQL_DANGEROUS_KEYS } from '../core/constants';
+import { INPUT, DANGEROUS_PROTO_KEYS, NOSQL_DANGEROUS_KEYS, AUTH_FIELDS } from '../core/constants';
 import { InputTooLargeError, SecurityThreatError } from '../core/errors';
 import type { SanitizeOptions } from '../core/types';
 import { sanitizeXss, detectXss } from './xss';
@@ -15,7 +15,8 @@ import { detectSsti } from './ssti';
 import { detectXxe } from './xxe';
 import { detectLdapInjection } from './ldap';
 import { detectXpathInjection } from './xpath';
-import { detectHeaderInjection } from './headers';
+import { detectHeaderInjectionStrict } from './headers';
+import { detectDeserialization } from './deserialization';
 
 /**
  * Sanitize a string value against multiple attack vectors.
@@ -249,7 +250,8 @@ export interface ThreatHit {
     | 'xxe'
     | 'ldap'
     | 'xpath'
-    | 'header';
+    | 'header'
+    | 'deserialization';
   rule: string;
   matchedPattern: string;
 }
@@ -272,7 +274,17 @@ export function scanThreats(data: unknown, depth = 0): ThreatHit | null {
       if (NOSQL_DANGEROUS_KEYS.has(key)) {
         return { vector: 'nosql', rule: 'nosql/match', matchedPattern: key };
       }
-      const inner = scanThreats((data as Record<string, unknown>)[key], depth + 1);
+      const value = (data as Record<string, unknown>)[key];
+      // NoSQL type-juggling: an auth/identity field whose value is an
+      // ARRAY instead of a scalar (e.g. {"username":["admin"]}). MongoDB
+      // turns the array into an $in-style operator, bypassing string
+      // equality. Only arrays are flagged: operator-objects ({"$ne":...})
+      // are caught by NOSQL_DANGEROUS_KEYS, and a plain nested object under
+      // an auth field is legitimate. Benchmark nosql-mongo-type-juggle.
+      if (AUTH_FIELDS.has(lower) && Array.isArray(value)) {
+        return { vector: 'nosql', rule: 'nosql/type-juggle', matchedPattern: key };
+      }
+      const inner = scanThreats(value, depth + 1);
       if (inner) return inner;
     }
     return null;
@@ -288,33 +300,57 @@ export function scanThreats(data: unknown, depth = 0): ThreatHit | null {
 
   if (typeof data !== 'string') return null;
 
-  const sample = data.slice(0, 80);
-  if (detectXss(data)) {
+  // SECURITY: normalize the SAME way sanitizeString does before any
+  // detector runs, so block-mode detection honors the NFKC + multi-decode
+  // bypass protection. Without this, block mode missed fullwidth
+  // `<script>` (U+FF1C), `%3Cscript%3E`, and HTML-entity-encoded payloads
+  // that sanitize-mode already caught. (v1.7 parity fix 2026-06-08.)
+  const norm = multiDecode(data.normalize('NFKC'));
+
+  const sample = norm.slice(0, 80);
+  // __proto__ as a STRING VALUE (e.g. ["__proto__","isAdmin"] gadget-chain
+  // path array). The key-based check above only sees object keys; a dunder
+  // proto token as a value is the array-form signal. Only the dunder forms
+  // (never legit prose) are flagged, so the words "constructor"/"prototype"
+  // in normal text don't trip it. Benchmark proto-pollution-array-index.
+  if (norm.includes('__proto__')) {
+    return { vector: 'prototype', rule: 'prototype/match', matchedPattern: sample };
+  }
+  if (detectXss(norm)) {
     return { vector: 'xss', rule: 'xss/match', matchedPattern: sample };
   }
-  if (detectSsti(data)) {
+  if (detectSsti(norm)) {
     return { vector: 'ssti', rule: 'ssti/match', matchedPattern: sample };
   }
-  if (detectXxe(data)) {
+  if (detectXxe(norm)) {
     return { vector: 'xxe', rule: 'xxe/match', matchedPattern: sample };
   }
-  if (detectSql(data)) {
+  // Deserialization markers (pickle incl. base64, Ruby Marshal, .NET,
+  // FastJSON, PHP). Wired into block mode in v1.7 (was detection-only).
+  const deser = detectDeserialization(norm);
+  if (deser) {
+    return { vector: 'deserialization', rule: `deserialization/${deser}`, matchedPattern: sample };
+  }
+  if (detectSql(norm)) {
     return { vector: 'sql', rule: 'sql/match', matchedPattern: sample };
   }
-  if (detectPathTraversal(data)) {
+  // Path detection runs on the RAW string so the encoded-form patterns
+  // (%C0%AE overlong UTF-8, %2e%2e, %252f) still fire; multiDecode would
+  // otherwise strip them. The decoded `../` form survives in raw too.
+  if (detectPathTraversal(data) || detectPathTraversal(norm)) {
     return { vector: 'path', rule: 'path/match', matchedPattern: sample };
   }
-  if (detectCommandInjection(data)) {
+  if (detectCommandInjection(norm)) {
     return { vector: 'command', rule: 'command/match', matchedPattern: sample };
   }
   // LDAP + XPath checks come AFTER command/path so a string that's
   // primarily a path-traversal payload (`../`) gets attributed to
   // path, not LDAP (the `\` in `..\..\` would otherwise hit the LDAP
   // backslash filter).
-  if (detectLdapInjection(data)) {
+  if (detectLdapInjection(norm)) {
     return { vector: 'ldap', rule: 'ldap/match', matchedPattern: sample };
   }
-  if (detectXpathInjection(data)) {
+  if (detectXpathInjection(norm)) {
     return { vector: 'xpath', rule: 'xpath/match', matchedPattern: sample };
   }
   // Header injection (HTTP response splitting + email-header injection
@@ -322,7 +358,7 @@ export function scanThreats(data: unknown, depth = 0): ThreatHit | null {
   // concatenated into a header). Last in the chain so the more-specific
   // detectors (xss / sql / etc.) win on input that's both — e.g. an XSS
   // payload with a stray newline still attributes to xss.
-  if (detectHeaderInjection(data)) {
+  if (detectHeaderInjectionStrict(norm)) {
     return { vector: 'header', rule: 'header/match', matchedPattern: sample };
   }
   return null;

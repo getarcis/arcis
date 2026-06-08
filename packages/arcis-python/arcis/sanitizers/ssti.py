@@ -27,6 +27,13 @@ _SSTI_DETECT_PATTERNS = [
         r"\{\{\s*(?:self|request|lipsum|cycler|joiner|namespace|range)\b",
         re.IGNORECASE,
     ),
+    # Velocity #set/#foreach directives and OGNL/Velocity method calls
+    # ($rt.exec, .getRuntime). Benchmark ssti-velocity-runtime.
+    re.compile(
+        r"#set\s*\(\s*\$|#foreach\s*\(\s*\$"
+        r"|\$\w+\.(?:exec|getClass|getRuntime|getMethod|invoke)\b",
+        re.IGNORECASE,
+    ),
 ]
 
 # Removal patterns — used by sanitize_ssti()

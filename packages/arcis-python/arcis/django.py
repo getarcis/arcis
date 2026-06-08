@@ -27,9 +27,10 @@ Usage:
     }
 """
 
+import functools
 import json
 import logging
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, List, Optional, Dict, Any
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -417,3 +418,241 @@ class ArcisErrorMiddleware(MiddlewareMixin):
         except Exception as e:
             error_response = self.error_handler.handle(e, 500)
             return JsonResponse(error_response, status=500)
+
+
+# ============================================================================
+# PROTECT FACTORIES (improvements.md §1.4)
+# ============================================================================
+# Per-framework wrappers around the composite login / signup / api checks
+# plus a shared CorrelationWindow. Each factory returns a Django view
+# decorator that auto-extracts the client IP (X-Forwarded-For first hop,
+# then META REMOTE_ADDR) and the route path, forwards them into the base
+# check with the right vector tag, and returns a JsonResponse on denial.
+#
+# Rate limiting stays a separate concern (Pattern 3): mount
+# ArcisRateLimitMiddleware for the Node-parity limits (login 5/min, signup
+# 3/min, api 100/min). These decorators own the correlation + bot +
+# credential / threat wiring.
+
+
+class _BodyRequest:
+    """Wrapper exposing a parsed body dict + headers to the base checks.
+
+    The base checks read the body via a synchronous ``body`` / ``json`` /
+    ``form`` attribute and headers via a ``.get``-able mapping. A Django
+    request stores its JSON body as raw bytes, so the decorator parses it
+    once and hands the base check this duck-typed shim.
+    """
+
+    def __init__(self, body: Any, headers: Any) -> None:
+        self.body = body
+        self.headers = headers
+
+
+def _django_json_body(request: HttpRequest) -> Any:
+    """Best-effort parse of a JSON request body. Returns None on error."""
+    content_type = (request.content_type or '').lower()
+    if 'application/json' not in content_type:
+        return None
+    try:
+        return json.loads(request.body.decode('utf-8'))
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def _django_client_ip(request: HttpRequest) -> Optional[str]:
+    """Resolve client IP: X-Forwarded-For first hop, then REMOTE_ADDR."""
+    from .middleware.protect_factories import client_ip_from_xff_then
+
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    fallback = request.META.get('REMOTE_ADDR')
+    return client_ip_from_xff_then(xff, fallback)
+
+
+def protect_login(
+    *,
+    username_field: str = 'username',
+    password_field: str = 'password',
+    require_credentials: bool = True,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+) -> Callable[[Callable], Callable]:
+    """Django login-protection view decorator factory.
+
+    Returns a decorator that runs the login check with the auto-extracted
+    client IP, the route path, and the ``"login"`` vector, forwarding an
+    optional shared :class:`CorrelationWindow`. On denial it returns a
+    ``JsonResponse`` (429 for correlation, 403 for bot, 400 for missing
+    credentials) with body ``{"error": reason}``; otherwise it calls the
+    wrapped view.
+
+    Args:
+        username_field: Body field carrying the username.
+        password_field: Body field carrying the password.
+        require_credentials: Forwarded to the login check.
+        check_bot: Forwarded to the login check.
+        allowed_bot_categories: Forwarded to the login check.
+        correlation_window: Optional shared window.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        A view decorator.
+    """
+    from .middleware.protect_factories import block_status_code, check_login
+
+    def decorator(view: Callable) -> Callable:
+        @functools.wraps(view)
+        def wrapped(request: HttpRequest, *args: Any, **kwargs: Any):
+            shim = _BodyRequest(_django_json_body(request), request.headers)
+            result = check_login(
+                shim,
+                username_field=username_field,
+                password_field=password_field,
+                require_credentials=require_credentials,
+                check_bot=check_bot,
+                allowed_bot_categories=allowed_bot_categories,
+                correlation_window=correlation_window,
+                client_ip=_django_client_ip(request),
+                route=route if route is not None else request.path,
+            )
+            if not result.allowed:
+                return JsonResponse(
+                    {'error': result.reason},
+                    status=block_status_code(result.reason),
+                )
+            return view(request, *args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def protect_signup(
+    *,
+    email_field: str = 'email',
+    check_email: bool = True,
+    block_disposable: bool = True,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    allowed_email_domains: Optional[List[str]] = None,
+    blocked_email_domains: Optional[List[str]] = None,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+) -> Callable[[Callable], Callable]:
+    """Django signup-protection view decorator factory.
+
+    Returns a decorator that runs the signup check (bot + email
+    validation) then consults an optional shared
+    :class:`CorrelationWindow` (vector ``"signup"``). On denial it returns
+    a ``JsonResponse`` (429 for correlation, 403 for bot, 400 for email
+    errors) with body ``{"error": reason}``; otherwise it calls the
+    wrapped view.
+
+    Args:
+        email_field: Body field carrying the email.
+        check_email: Forwarded to the signup check.
+        block_disposable: Forwarded to the signup check.
+        check_bot: Forwarded to the signup check.
+        allowed_bot_categories: Forwarded to the signup check.
+        allowed_email_domains: Forwarded to the signup check.
+        blocked_email_domains: Forwarded to the signup check.
+        correlation_window: Optional shared window.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        A view decorator.
+    """
+    from .middleware.protect_factories import (
+        block_status_code,
+        signup_check_with_correlation,
+    )
+
+    def decorator(view: Callable) -> Callable:
+        @functools.wraps(view)
+        def wrapped(request: HttpRequest, *args: Any, **kwargs: Any):
+            shim = _BodyRequest(_django_json_body(request), request.headers)
+            result = signup_check_with_correlation(
+                shim,
+                correlation_window=correlation_window,
+                client_ip=_django_client_ip(request),
+                route=route if route is not None else request.path,
+                email_field=email_field,
+                check_email=check_email,
+                block_disposable=block_disposable,
+                check_bot=check_bot,
+                allowed_bot_categories=allowed_bot_categories,
+                allowed_email_domains=allowed_email_domains,
+                blocked_email_domains=blocked_email_domains,
+            )
+            if not result.allowed:
+                return JsonResponse(
+                    {'error': result.reason},
+                    status=block_status_code(result.reason),
+                )
+            return view(request, *args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def protect_api(
+    *,
+    expected_origins: Optional[List[str]] = None,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    scan_body: bool = True,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+) -> Callable[[Callable], Callable]:
+    """Django API-protection view decorator factory.
+
+    Returns a decorator that runs the API check (origin + bot + body
+    threat scan) with the auto-extracted client IP, the route path, and
+    the ``"api"`` vector, forwarding an optional shared
+    :class:`CorrelationWindow`. On denial it returns a ``JsonResponse``
+    (429 for correlation, 403 for bot / bad-origin / threat) with body
+    ``{"error": reason}``; otherwise it calls the wrapped view.
+
+    Args:
+        expected_origins: Forwarded to the API check.
+        check_bot: Forwarded to the API check.
+        allowed_bot_categories: Forwarded to the API check.
+        scan_body: Forwarded to the API check.
+        correlation_window: Optional shared window.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        A view decorator.
+    """
+    from .middleware.protect_factories import block_status_code, check_api
+
+    def decorator(view: Callable) -> Callable:
+        @functools.wraps(view)
+        def wrapped(request: HttpRequest, *args: Any, **kwargs: Any):
+            shim = _BodyRequest(_django_json_body(request), request.headers)
+            result = check_api(
+                shim,
+                expected_origins=expected_origins,
+                check_bot=check_bot,
+                allowed_bot_categories=allowed_bot_categories,
+                scan_body=scan_body,
+                correlation_window=correlation_window,
+                client_ip=_django_client_ip(request),
+                route=route if route is not None else request.path,
+            )
+            if not result.allowed:
+                return JsonResponse(
+                    {'error': result.reason},
+                    status=block_status_code(result.reason),
+                )
+            return view(request, *args, **kwargs)
+
+        return wrapped
+
+    return decorator

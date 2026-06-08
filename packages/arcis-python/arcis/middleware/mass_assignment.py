@@ -34,7 +34,107 @@ Mirrors ``arcis-node/src/middleware/mass-assign.ts``.
 
 from dataclasses import dataclass
 import json
-from typing import Any, Callable, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Iterable, List, Optional, Set, Tuple
+
+
+# ── v1.7 W4: denylist detection of privilege-escalation fields ──────────
+#
+# The allowlist filter above is the robust fix but needs a per-route field
+# list, so it cannot be default-on. This detector is the default-on
+# complement: it recursively scans a body for a curated set of
+# privilege/auth field NAMES a normal client request almost never sets.
+# Mirrors arcis-node/src/sanitizers/mass-assignment.ts.
+
+SENSITIVE_FIELD_NAMES: Set[str] = {
+    "isadmin",
+    "issuperuser",
+    "superuser",
+    "issuperadmin",
+    "superadmin",
+    "isstaff",
+    "isverified",
+    "isroot",
+    "isowner",
+    "role",
+    "roles",
+    "userrole",
+    "permission",
+    "permissions",
+    "privilege",
+    "privileges",
+    "accesslevel",
+    "accounttype",
+    "isactive",
+    "emailverified",
+}
+
+
+def _normalize_field_key(key: str) -> str:
+    """Lowercase + strip ``_`` and ``-`` so is_admin / isAdmin / is-admin
+    all collapse to the same canonical form."""
+    return key.lower().replace("_", "").replace("-", "")
+
+
+@dataclass(frozen=True)
+class MassAssignDetectResult:
+    """Outcome of scanning a body for privilege-escalation field names.
+
+    Attributes:
+        detected: True if a sensitive field name was found anywhere.
+        field: The offending field name (original casing) or None.
+    """
+
+    detected: bool
+    field: Optional[str]
+
+
+def detect_mass_assignment(
+    body: Any,
+    *,
+    sensitive_fields: Optional[Iterable[str]] = None,
+    max_depth: int = 8,
+) -> MassAssignDetectResult:
+    """Recursively scan ``body`` for privilege-escalation field names.
+
+    Detection only. Does not strip or rewrite. Recurses into nested
+    dicts and lists so ``{"profile": {"permissions": [...]}}`` is caught.
+    Value-agnostic: the presence of the key is the signal.
+
+    Args:
+        body: Parsed request body (typically from ``request.json()``).
+        sensitive_fields: Override the default field set. Compared after
+            normalization (lowercased, separators stripped).
+        max_depth: Max recursion depth into nested structures. Default 8.
+
+    Returns:
+        ``MassAssignDetectResult`` with the first offending key, if any.
+    """
+    if sensitive_fields is not None:
+        sensitive = {_normalize_field_key(f) for f in sensitive_fields}
+    else:
+        sensitive = SENSITIVE_FIELD_NAMES
+
+    def walk(value: Any, depth: int) -> Optional[str]:
+        if depth > max_depth:
+            return None
+        if isinstance(value, dict):
+            for key in value.keys():
+                if isinstance(key, str) and _normalize_field_key(key) in sensitive:
+                    return key
+            for v in value.values():
+                hit = walk(v, depth + 1)
+                if hit is not None:
+                    return hit
+            return None
+        if isinstance(value, list):
+            for item in value:
+                hit = walk(item, depth + 1)
+                if hit is not None:
+                    return hit
+        return None
+
+    field = walk(body, 0)
+    return MassAssignDetectResult(detected=field is not None, field=field)
 
 
 @dataclass(frozen=True)

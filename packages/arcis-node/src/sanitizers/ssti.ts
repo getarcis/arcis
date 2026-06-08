@@ -26,6 +26,8 @@ const SSTI_DETECT_PATTERNS = [
   /\{\{\s*config[.\[]/gi,
   /** Jinja2 built-in objects */
   /\{\{\s*(?:self|request|lipsum|cycler|joiner|namespace|range)\b/gi,
+  /** Velocity #set/#foreach + OGNL/Velocity method calls ($rt.exec, .getRuntime). Benchmark ssti-velocity-runtime. */
+  /#set\s*\(\s*\$|#foreach\s*\(\s*\$|\$\w+\.(?:exec|getClass|getRuntime|getMethod|invoke)\b/gi,
 ] as const;
 
 /**

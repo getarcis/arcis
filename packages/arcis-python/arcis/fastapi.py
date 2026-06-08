@@ -17,6 +17,12 @@ from .sanitizers.sanitize import Sanitizer, scan_threats
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
 from .middleware.headers import SecurityHeaders
 from .middleware.error_handler import ErrorHandler
+from .middleware.bot_detection import BotProtection, BotDenied
+from .middleware.sensitive_paths import detect_sensitive_path, SENSITIVE_PATH_PATTERNS
+from .sanitizers.graphql import inspect_graphql_query, GraphqlGuardOptions
+from .middleware.mass_assignment import detect_mass_assignment
+from .validation.url import scan_for_ssrf, ValidateUrlOptions
+from .sanitizers.prompt_injection import detect_prompt_injection
 from .middleware.telemetry import (
     ARCIS_MARKER_ATTR,
     ArcisTelemetryMarker,
@@ -37,6 +43,39 @@ logger = logging.getLogger(__name__)
 # rate_limiter=None (explicit disable) from rate_limiter not passed
 # (fall through to the rate_limit bool default). Benchmark E2, 2026-06-07.
 _RL_UNSET = object()
+
+
+_PROMPT_SEVERITY_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
+
+# Forwarded / client-IP headers to inspect for loopback spoofing (v1.7 W7).
+_FORWARDED_HEADERS = (
+    "x-forwarded-for", "x-forwarded-host", "x-real-ip",
+    "forwarded", "client-ip", "true-client-ip",
+)
+import re as _re
+_LOOPBACK_HEADER = _re.compile(
+    r"(?:^|[\s,@=])(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1|0\.0\.0\.0|localhost)(?::\d+)?(?:$|[\s,;])",
+    _re.IGNORECASE,
+)
+
+
+def _scan_prompt_injection(body: Any, min_severity: str, depth: int = 0) -> bool:
+    """Recursively scan body string values for prompt-injection signatures.
+
+    Returns True if any string matches at or above ``min_severity``.
+    v1.7 W6 wire-up helper.
+    """
+    if depth > 8:
+        return False
+    min_rank = _PROMPT_SEVERITY_RANK.get(min_severity, 2)
+    if isinstance(body, str):
+        result = detect_prompt_injection(body)
+        return result.detected and _PROMPT_SEVERITY_RANK.get(str(result.severity), 0) >= min_rank
+    if isinstance(body, dict):
+        return any(_scan_prompt_injection(v, min_severity, depth + 1) for v in body.values())
+    if isinstance(body, list):
+        return any(_scan_prompt_injection(v, min_severity, depth + 1) for v in body)
+    return False
 
 
 # ============================================================================
@@ -419,6 +458,56 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         rate_limit_max: int = DEFAULT_MAX_REQUESTS,
         rate_limit_window_ms: int = DEFAULT_WINDOW_MS,
         use_async_rate_limiter: bool = True,  # NEW: default to async
+        # Bot UA classification options (v1.7 W1). Default-on. Deny list
+        # defaults to ['AUTOMATED', 'SCRAPER'] to catch curl / python-requests
+        # / sqlmap / nikto / nuclei out of the box. Pass bot=False to disable
+        # entirely, or override bot_deny / bot_allow for custom policy.
+        bot: bool = True,
+        bot_deny: Optional[List[str]] = None,
+        bot_allow: Optional[List[str]] = None,
+        bot_message: str = "Access denied.",
+        # Scanner-path probe blocking (v1.7 W2). Default-on. Blocks
+        # well-known probe paths (/.env, /.git, /wp-admin, /phpmyadmin,
+        # /admin, etc). Pass scanner_paths=False to disable; pass a
+        # custom list to override the default patterns entirely.
+        scanner_paths: bool = True,
+        scanner_path_patterns: Optional[List[Any]] = None,
+        # GraphQL inspection (v1.7 W3). Default-on. When request body
+        # has a `query` field that looks like a GraphQL document, run
+        # the inspector (depth-bomb, alias-bomb, fragment cycle,
+        # introspection). Tighter defaults than the standalone factory:
+        # max_aliases=10, max_depth=10. Pass graphql=False to disable;
+        # pass GraphqlGuardOptions for custom thresholds.
+        graphql: bool = True,
+        graphql_options: Optional[GraphqlGuardOptions] = None,
+        # Mass-assignment field detection (v1.7 W4). Default-on. Scans
+        # JSON bodies (recursively) for privilege-escalation field names
+        # (isAdmin, role, permissions, ...) and blocks when one is
+        # present. Pass mass_assign=False to disable; pass a custom
+        # field list to override the defaults.
+        mass_assign: bool = True,
+        mass_assign_fields: Optional[List[str]] = None,
+        # SSRF body-URL validation (v1.7 W5). Default-on. Walks JSON
+        # bodies for URL-shaped strings and validates each; blocks
+        # private/loopback/metadata/file/gopher URLs, passes public ones.
+        # Pass ssrf=False to disable; pass ValidateUrlOptions to customize.
+        ssrf: bool = True,
+        ssrf_options: Optional[ValidateUrlOptions] = None,
+        # Prompt-injection detection on body strings (v1.7 W6). Default-on.
+        # Scans JSON body string values for prompt-injection / jailbreak /
+        # tool-call-forgery signatures; blocks at or above min_severity
+        # (default "medium"). Pass prompt_injection=False to disable, or
+        # min_prompt_severity="high" to only block the strongest overrides.
+        prompt_injection: bool = True,
+        min_prompt_severity: str = "medium",
+        # Forwarded-header inspection (v1.7 W7). Default-on. Flags a loopback
+        # address (127.x, ::1, localhost) in a forwarded/client-IP header
+        # (spoofing to bypass IP allowlists). Private ranges are NOT flagged
+        # (internal LBs use them). Pass trusted_hosts=[...] to also reject
+        # Host / X-Forwarded-Host not in the allowlist. forwarded_headers=False
+        # disables.
+        forwarded_headers: bool = True,
+        trusted_hosts: Optional[List[str]] = None,
         # Security headers options
         headers: bool = True,
         csp: Optional[str] = None,
@@ -485,7 +574,53 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         self.security_headers = security_headers or (SecurityHeaders(
             content_security_policy=csp,
         ) if headers else None)
-        
+
+        # Bot UA classification (v1.7 W1 wire-up). Constructed only when
+        # bot=True, kept as instance attribute so dispatch can call it on
+        # every request without re-parsing the corpus.
+        if bot:
+            self.bot_guard = BotProtection(
+                allow=bot_allow,
+                deny=bot_deny if bot_deny is not None else ["AUTOMATED", "SCRAPER"],
+                message=bot_message,
+            )
+        else:
+            self.bot_guard = None
+
+        # Scanner-path probe blocking (v1.7 W2 wire-up).
+        self.scanner_paths_enabled = scanner_paths
+        self.scanner_path_patterns = scanner_path_patterns
+
+        # GraphQL inspection (v1.7 W3 wire-up). Tighter defaults than
+        # the standalone factory: 12-alias bombs bypass the default 50.
+        self.graphql_enabled = graphql
+        if graphql_options is not None:
+            self.graphql_options = graphql_options
+        else:
+            self.graphql_options = GraphqlGuardOptions(
+                max_depth=10,
+                max_length=10000,
+                block_introspection=True,
+                max_aliases=10,
+                block_fragment_cycles=True,
+            )
+
+        # Mass-assignment field detection (v1.7 W4 wire-up).
+        self.mass_assign_enabled = mass_assign
+        self.mass_assign_fields = mass_assign_fields
+
+        # SSRF body-URL validation (v1.7 W5 wire-up).
+        self.ssrf_enabled = ssrf
+        self.ssrf_options = ssrf_options
+
+        # Prompt-injection detection on body strings (v1.7 W6 wire-up).
+        self.prompt_injection_enabled = prompt_injection
+        self.min_prompt_severity = min_prompt_severity
+
+        # Forwarded-header inspection (v1.7 W7 wire-up).
+        self.forwarded_headers_enabled = forwarded_headers
+        self.trusted_hosts = [h.lower() for h in trusted_hosts] if trusted_hosts else None
+
         self.error_handler = error_handler or (ErrorHandler(
             is_dev=is_dev,
         ) if error_handling else None)
@@ -542,6 +677,77 @@ class ArcisMiddleware(BaseHTTPMiddleware):
             # ``request.state._ArcisMiddleware__arcis`` inside this class.
             setattr(request.state, ARCIS_MARKER_ATTR, ArcisTelemetryMarker())
 
+        # Forwarded-header inspection (v1.7 W7). Loopback in a forwarded /
+        # client-IP header is a spoof; optional trusted-host allowlist on
+        # Host / X-Forwarded-Host. Runs first (header-only). Skipped in dry-run.
+        if self.forwarded_headers_enabled and not self.dry_run:
+            for hname in _FORWARDED_HEADERS:
+                hval = request.headers.get(hname)
+                if hval and _LOOPBACK_HEADER.search(hval):
+                    response = JSONResponse(
+                        content={
+                            "error": "Request blocked for security reasons",
+                            "code": "SECURITY_THREAT",
+                            "vector": "header",
+                            "rule": "header/forwarded-loopback-spoof",
+                        },
+                        status_code=403,
+                    )
+                    self._maybe_record(request, response, telemetry_start)
+                    return response
+            if self.trusted_hosts is not None:
+                for hname in ("host", "x-forwarded-host"):
+                    hval = request.headers.get(hname)
+                    if hval:
+                        host = hval.split(":")[0].lower()
+                        if host not in self.trusted_hosts:
+                            response = JSONResponse(
+                                content={
+                                    "error": "Request blocked for security reasons",
+                                    "code": "SECURITY_THREAT",
+                                    "vector": "header",
+                                    "rule": "header/untrusted-host",
+                                },
+                                status_code=403,
+                            )
+                            self._maybe_record(request, response, telemetry_start)
+                            return response
+
+        # Scanner-path probe blocking (v1.7 W2). Runs BEFORE bot detection
+        # because some scanner UAs forge a browser UA but still hit dotfile /
+        # WordPress probe paths. Dry-run skips the block.
+        if self.scanner_paths_enabled and not self.dry_run:
+            matched = detect_sensitive_path(
+                request.url.path,
+                self.scanner_path_patterns,
+            )
+            if matched is not None:
+                response = JSONResponse(
+                    content={
+                        "error": "Access denied.",
+                        "code": "SECURITY_THREAT",
+                        "vector": "scanner-path",
+                    },
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
+
+        # Bot UA classification (v1.7 W1). Runs BEFORE rate-limit so bots
+        # don't consume legitimate-traffic quota. Dry-run skips the deny
+        # path: detection still runs and the marker is tagged via the
+        # BotProtection.check() telemetry hook, but the request continues.
+        if self.bot_guard is not None and not self.dry_run:
+            try:
+                self.bot_guard.check(request)
+            except BotDenied as e:
+                response = JSONResponse(
+                    content={"error": e.message},
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
+
         # Rate limiting (async or sync)
         rate_limit_info = None
 
@@ -568,10 +774,19 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 self._maybe_record(request, response, telemetry_start)
                 return response
         
-        # Read JSON body once (used by both block scan and sanitizer below).
+        # Read JSON body once (used by GraphQL inspection, block scan, and
+        # sanitizer below). v1.7 W3 added graphql_enabled as a body-needing
+        # gate so the body is read even when block + sanitize are both off.
         body: Any = None
         body_read = False
-        if (self.block or self.sanitizer):
+        if (
+            self.block
+            or self.sanitizer
+            or (self.graphql_enabled and not self.dry_run)
+            or (self.mass_assign_enabled and not self.dry_run)
+            or (self.ssrf_enabled and not self.dry_run)
+            or (self.prompt_injection_enabled and not self.dry_run)
+        ):
             content_type = request.headers.get("content-type", "")
             if "application/json" in content_type:
                 try:
@@ -584,6 +799,131 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                     )
                 except Exception:
                     body = None
+            elif "application/xml" in content_type or "text/xml" in content_type:
+                # XML bodies (XXE vector). Read as text so scan_threats sees
+                # the raw markup. Starlette caches the body, so the handler
+                # can still re-read it. Parity with the Node proxy's
+                # express.text({type: xml}) + arcis scan.
+                try:
+                    raw = await request.body()
+                    body = raw.decode("utf-8", errors="replace") if raw else None
+                    body_read = body is not None
+                except Exception:
+                    body = None
+            elif "application/x-www-form-urlencoded" in content_type:
+                # Form bodies (LDAP / XPath / many vectors arrive this way).
+                # Parse with stdlib parse_qs from the raw bytes rather than
+                # request.form(), which requires the python-multipart package
+                # even for urlencoded. Arcis ships zero runtime deps, so we
+                # decode it ourselves. Starlette caches request.body() so the
+                # handler can still re-read.
+                try:
+                    from urllib.parse import parse_qs
+
+                    raw = await request.body()
+                    parsed = parse_qs(raw.decode("utf-8", errors="replace"))
+                    body = {k: (v[0] if len(v) == 1 else v) for k, v in parsed.items()}
+                    body_read = True
+                except Exception:
+                    body = None
+            elif "multipart/form-data" in content_type:
+                # Multipart genuinely needs python-multipart. Attempt via
+                # request.form() and skip gracefully if the lib is absent.
+                try:
+                    form = await request.form()
+                    body = {k: v for k, v in form.items() if isinstance(v, str)}
+                    body_read = True
+                except Exception:
+                    body = None
+
+        # GraphQL inspection (v1.7 W3). When the parsed body has a string
+        # `query` field, run the depth-bomb / alias-bomb / introspection
+        # / fragment-cycle inspector. Skipped in dry-run.
+        if (
+            self.graphql_enabled
+            and not self.dry_run
+            and isinstance(body, dict)
+            and isinstance(body.get("query"), str)
+            and body["query"]
+        ):
+            gql_result = inspect_graphql_query(body["query"], self.graphql_options)
+            if gql_result.blocked:
+                response = JSONResponse(
+                    content={
+                        "error": "Request blocked for security reasons",
+                        "code": "SECURITY_THREAT",
+                        "vector": "graphql",
+                        "rule": f"graphql/{gql_result.reason}",
+                    },
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
+
+        # Mass-assignment field detection (v1.7 W4). Scan the parsed body
+        # for privilege-escalation field names. Skipped in dry-run.
+        if (
+            self.mass_assign_enabled
+            and not self.dry_run
+            and body is not None
+        ):
+            ma_result = detect_mass_assignment(
+                body, sensitive_fields=self.mass_assign_fields
+            )
+            if ma_result.detected:
+                response = JSONResponse(
+                    content={
+                        "error": "Request blocked for security reasons",
+                        "code": "SECURITY_THREAT",
+                        "vector": "mass-assignment",
+                        "rule": "mass-assignment/sensitive-field",
+                    },
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
+
+        # SSRF body-URL validation (v1.7 W5). Walk the parsed body for
+        # URL-shaped strings and validate each. Skipped in dry-run.
+        if (
+            self.ssrf_enabled
+            and not self.dry_run
+            and body is not None
+        ):
+            ssrf_result = scan_for_ssrf(body, self.ssrf_options)
+            if ssrf_result.detected:
+                response = JSONResponse(
+                    content={
+                        "error": "Request blocked for security reasons",
+                        "code": "SECURITY_THREAT",
+                        "vector": "ssrf",
+                        "rule": "ssrf/blocked-url",
+                    },
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
+
+        # Prompt-injection detection on body strings (v1.7 W6). Walk the
+        # parsed body for string values and run the detector; block at or
+        # above min_prompt_severity. Skipped in dry-run.
+        if (
+            self.prompt_injection_enabled
+            and not self.dry_run
+            and body is not None
+        ):
+            if _scan_prompt_injection(body, self.min_prompt_severity):
+                response = JSONResponse(
+                    content={
+                        "error": "Request blocked for security reasons",
+                        "code": "SECURITY_THREAT",
+                        "vector": "prompt-injection",
+                        "rule": "prompt-injection/detected",
+                    },
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
 
         # Block mode: scan body + query params for attack patterns. On match,
         # write the telemetry marker (so the dashboard records vector/rule)
@@ -905,3 +1245,243 @@ def create_login_protection_dependency(
         return result
 
     return login_protection_dependency
+
+
+# ============================================================================
+# PROTECT FACTORIES (improvements.md §1.4)
+# ============================================================================
+# Per-framework wrappers around the composite login / signup / api checks
+# plus a shared CorrelationWindow. Each factory returns a FastAPI/Starlette
+# async dependency that auto-extracts the client IP (X-Forwarded-For first
+# hop, then request.client.host) and the route path, forwards them into the
+# base check with the right vector tag, and raises HTTPException on denial.
+#
+# Rate limiting stays the RateLimiter middleware's job (Pattern 3). Mount
+# create_rate_limit_dependency / ArcisMiddleware at the route for the
+# Node-parity limits (login 5/min, signup 3/min, api 100/min); these
+# factories own the correlation + bot + credential / threat wiring.
+
+
+class _BodyRequest:
+    """Wrapper exposing a parsed body dict + headers to the base checks.
+
+    A Starlette ``Request`` only exposes the body via the async
+    ``request.json()`` coroutine, which the synchronous base checks
+    cannot read. The factory reads it once (async) and hands the base
+    check this duck-typed shim instead.
+    """
+
+    def __init__(self, body: Any, headers: Any) -> None:
+        self.body = body
+        self.headers = headers
+
+
+async def _read_json_body(request: Request) -> Any:
+    """Best-effort async read of a JSON body. Returns None on any error."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" not in content_type:
+        return None
+    try:
+        return await request.json()
+    except Exception:
+        return None
+
+
+def _starlette_client_ip(request: Request) -> Optional[str]:
+    """Resolve client IP: X-Forwarded-For first hop, then socket peer."""
+    from .middleware.protect_factories import client_ip_from_xff_then
+
+    fallback = request.client.host if request.client else None
+    return client_ip_from_xff_then(
+        request.headers.get("x-forwarded-for"), fallback
+    )
+
+
+def protect_login(
+    *,
+    username_field: str = "username",
+    password_field: str = "password",
+    require_credentials: bool = True,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+):
+    """FastAPI/Starlette login-protection dependency factory.
+
+    Returns an async dependency that runs :func:`check_login` with the
+    auto-extracted client IP, the route path, and the ``"login"`` vector,
+    forwarding an optional shared :class:`CorrelationWindow`. On denial it
+    raises ``HTTPException`` (429 for correlation, 403 for bot, 400 for
+    missing credentials) with body ``{"error": reason}``.
+
+    Args:
+        username_field: Body field carrying the username. Default
+            ``"username"``.
+        password_field: Body field carrying the password. Default
+            ``"password"``.
+        require_credentials: Forwarded to :func:`check_login`.
+        check_bot: Forwarded to :func:`check_login`.
+        allowed_bot_categories: Forwarded to :func:`check_login`.
+        correlation_window: Optional shared window. Pass the same
+            instance to several factories to share per-IP state.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        An async FastAPI dependency callable.
+    """
+    from fastapi import HTTPException
+
+    from .middleware.protect_factories import block_status_code, check_login
+
+    async def login_dependency(request: Request):
+        client_ip = _starlette_client_ip(request)
+        body = await _read_json_body(request)
+        shim = _BodyRequest(body, request.headers)
+        result = check_login(
+            shim,
+            username_field=username_field,
+            password_field=password_field,
+            require_credentials=require_credentials,
+            check_bot=check_bot,
+            allowed_bot_categories=allowed_bot_categories,
+            correlation_window=correlation_window,
+            client_ip=client_ip,
+            route=route if route is not None else request.url.path,
+        )
+        if not result.allowed:
+            raise HTTPException(
+                status_code=block_status_code(result.reason),
+                detail={"error": result.reason},
+            )
+        return result
+
+    return login_dependency
+
+
+def protect_signup(
+    *,
+    email_field: str = "email",
+    check_email: bool = True,
+    block_disposable: bool = True,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    allowed_email_domains: Optional[List[str]] = None,
+    blocked_email_domains: Optional[List[str]] = None,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+):
+    """FastAPI/Starlette signup-protection dependency factory.
+
+    Returns an async dependency that runs the signup check (bot + email
+    validation) then consults an optional shared
+    :class:`CorrelationWindow` (vector ``"signup"``). On denial it raises
+    ``HTTPException`` (429 for correlation, 403 for bot, 400 for email
+    errors) with body ``{"error": reason}``.
+
+    Args:
+        email_field: Body field carrying the email. Default ``"email"``.
+        check_email: Forwarded to the signup check.
+        block_disposable: Forwarded to the signup check.
+        check_bot: Forwarded to the signup check.
+        allowed_bot_categories: Forwarded to the signup check.
+        allowed_email_domains: Forwarded to the signup check.
+        blocked_email_domains: Forwarded to the signup check.
+        correlation_window: Optional shared window.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        An async FastAPI dependency callable.
+    """
+    from fastapi import HTTPException
+
+    from .middleware.protect_factories import (
+        block_status_code,
+        signup_check_with_correlation,
+    )
+
+    async def signup_dependency(request: Request):
+        client_ip = _starlette_client_ip(request)
+        body = await _read_json_body(request)
+        shim = _BodyRequest(body, request.headers)
+        result = signup_check_with_correlation(
+            shim,
+            correlation_window=correlation_window,
+            client_ip=client_ip,
+            route=route if route is not None else request.url.path,
+            email_field=email_field,
+            check_email=check_email,
+            block_disposable=block_disposable,
+            check_bot=check_bot,
+            allowed_bot_categories=allowed_bot_categories,
+            allowed_email_domains=allowed_email_domains,
+            blocked_email_domains=blocked_email_domains,
+        )
+        if not result.allowed:
+            raise HTTPException(
+                status_code=block_status_code(result.reason),
+                detail={"error": result.reason},
+            )
+        return result
+
+    return signup_dependency
+
+
+def protect_api(
+    *,
+    expected_origins: Optional[List[str]] = None,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    scan_body: bool = True,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+):
+    """FastAPI/Starlette API-protection dependency factory.
+
+    Returns an async dependency that runs :func:`check_api` (origin + bot
+    + body threat scan) with the auto-extracted client IP, the route
+    path, and the ``"api"`` vector, forwarding an optional shared
+    :class:`CorrelationWindow`. On denial it raises ``HTTPException`` (429
+    for correlation, 403 for bot / bad-origin / threat) with body
+    ``{"error": reason}``.
+
+    Args:
+        expected_origins: Forwarded to :func:`check_api`.
+        check_bot: Forwarded to :func:`check_api`.
+        allowed_bot_categories: Forwarded to :func:`check_api`.
+        scan_body: Forwarded to :func:`check_api`.
+        correlation_window: Optional shared window.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        An async FastAPI dependency callable.
+    """
+    from fastapi import HTTPException
+
+    from .middleware.protect_factories import block_status_code, check_api
+
+    async def api_dependency(request: Request):
+        client_ip = _starlette_client_ip(request)
+        body = await _read_json_body(request)
+        shim = _BodyRequest(body, request.headers)
+        result = check_api(
+            shim,
+            expected_origins=expected_origins,
+            check_bot=check_bot,
+            allowed_bot_categories=allowed_bot_categories,
+            scan_body=scan_body,
+            correlation_window=correlation_window,
+            client_ip=client_ip,
+            route=route if route is not None else request.url.path,
+        )
+        if not result.allowed:
+            raise HTTPException(
+                status_code=block_status_code(result.reason),
+                detail={"error": result.reason},
+            )
+        return result
+
+    return api_dependency

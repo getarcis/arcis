@@ -5863,7 +5863,7 @@
   {
     "id": "ext-ahrefsbotsiteaudit",
     "name": "ahrefsbotsiteaudit",
-    "category": "SEO",
+    "category": "SEARCH_ENGINE",
     "patterns": [
       "Ahrefs(Bot|SiteAudit)"
     ],
@@ -5890,7 +5890,7 @@
   {
     "id": "ext-cclaudebbot",
     "name": "cclaudebbot",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "[cC]laude[bB]ot"
     ],
@@ -5899,7 +5899,7 @@
   {
     "id": "ext-meta-externalagent",
     "name": "meta-externalagent",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "meta-externalagent\\/"
     ],
@@ -5908,7 +5908,7 @@
   {
     "id": "ext-meta-externalfetcher",
     "name": "meta-externalfetcher",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "meta-externalfetcher\\/"
     ],
@@ -5926,7 +5926,7 @@
   {
     "id": "ext-yextbot",
     "name": "yextbot",
-    "category": "SEO",
+    "category": "SEARCH_ENGINE",
     "patterns": [
       "YextBot\\/"
     ],
@@ -5962,7 +5962,7 @@
   {
     "id": "ext-alittleclient",
     "name": "alittleclient",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "ALittle Client"
     ],
@@ -5971,7 +5971,7 @@
   {
     "id": "ext-aliyunsecbot",
     "name": "aliyunsecbot",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "AliyunSecBot"
     ],
@@ -5980,7 +5980,7 @@
   {
     "id": "ext-claude-web",
     "name": "claude-web",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "Claude-Web"
     ],
@@ -5989,7 +5989,7 @@
   {
     "id": "ext-google-extended",
     "name": "google-extended",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "Google-Extended"
     ],
@@ -5998,7 +5998,7 @@
   {
     "id": "ext-serankingbacklinksbot",
     "name": "serankingbacklinksbot",
-    "category": "SEO",
+    "category": "SEARCH_ENGINE",
     "patterns": [
       "SERankingBacklinksBot"
     ],
@@ -6007,7 +6007,7 @@
   {
     "id": "ext-cmschecker",
     "name": "cmschecker",
-    "category": "SEO",
+    "category": "SEARCH_ENGINE",
     "patterns": [
       "CMSChecker"
     ],
@@ -6016,7 +6016,7 @@
   {
     "id": "ext-wayback",
     "name": "wayback",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "Wayback"
     ],
@@ -6025,7 +6025,7 @@
   {
     "id": "ext-playwright",
     "name": "playwright",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "Playwright"
     ],
@@ -6034,7 +6034,7 @@
   {
     "id": "ext-puppeteer",
     "name": "puppeteer",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "Puppeteer"
     ],
@@ -6043,7 +6043,7 @@
   {
     "id": "ext-selenium",
     "name": "selenium",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "Selenium"
     ],
@@ -6052,7 +6052,7 @@
   {
     "id": "ext-nikto",
     "name": "nikto",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "Nikto"
     ],
@@ -6061,7 +6061,7 @@
   {
     "id": "ext-sqlmap",
     "name": "sqlmap",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "sqlmap"
     ],
@@ -6070,7 +6070,7 @@
   {
     "id": "ext-zmeu",
     "name": "zmeu",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "ZmEu"
     ],
@@ -6079,7 +6079,7 @@
   {
     "id": "ext-masscan",
     "name": "masscan",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "masscan"
     ],
@@ -6088,7 +6088,7 @@
   {
     "id": "ext-wpscan",
     "name": "wpscan",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "WPScan"
     ],
@@ -6097,7 +6097,7 @@
   {
     "id": "ext-aacunetix",
     "name": "aacunetix",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "[aA]cunetix"
     ],
@@ -6106,7 +6106,7 @@
   {
     "id": "ext-nessus",
     "name": "nessus",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "Nessus"
     ],
@@ -6115,7 +6115,7 @@
   {
     "id": "ext-ddirbbuster",
     "name": "ddirbbuster",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "[dD]ir[Bb]uster"
     ],
@@ -6124,7 +6124,7 @@
   {
     "id": "ext-colly",
     "name": "colly",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "colly"
     ],
@@ -6133,7 +6133,7 @@
   {
     "id": "ext-mmechanize",
     "name": "mmechanize",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "[mM]echanize"
     ],
@@ -6142,7 +6142,7 @@
   {
     "id": "ext-airaiscanning",
     "name": "airaiscanning",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "air\\.ai\\/scanning"
     ],
@@ -6151,7 +6151,7 @@
   {
     "id": "ext-asnriskscorer",
     "name": "asnriskscorer",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "asnriskscorer"
     ],
@@ -6169,7 +6169,7 @@
   {
     "id": "ext-l9scan",
     "name": "l9scan",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "l9scan"
     ],
@@ -6178,7 +6178,7 @@
   {
     "id": "ext-slaccalebot",
     "name": "slaccalebot",
-    "category": "SEO",
+    "category": "SEARCH_ENGINE",
     "patterns": [
       "SlaccaleBot"
     ],
@@ -6187,7 +6187,7 @@
   {
     "id": "ext-customasynchttpclient",
     "name": "customasynchttpclient",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "CustomAsyncHttpClient"
     ],
@@ -6223,7 +6223,7 @@
   {
     "id": "ext-meta-webindexer",
     "name": "meta-webindexer",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "meta-webindexer"
     ],
@@ -6241,7 +6241,7 @@
   {
     "id": "ext-mistralai-user",
     "name": "mistralai-user",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "MistralAI-User"
     ],
@@ -6250,7 +6250,7 @@
   {
     "id": "ext-webzio",
     "name": "webzio",
-    "category": "SEO",
+    "category": "SEARCH_ENGINE",
     "patterns": [
       "webzio"
     ],
@@ -6259,9 +6259,18 @@
   {
     "id": "ext-newsai",
     "name": "newsai",
-    "category": "GENERIC",
+    "category": "SCRAPER",
     "patterns": [
       "newsai\\/"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "arcis-nuclei",
+    "category": "SCRAPER",
+    "name": "nuclei",
+    "patterns": [
+      "Nuclei"
     ],
     "forbidden": []
   }

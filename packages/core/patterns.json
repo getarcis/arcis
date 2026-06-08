@@ -158,6 +158,13 @@
           "flags": "gi",
           "description": "Detects link tag injection used for stylesheet or preload CSRF attacks",
           "redos_safe": true
+        },
+        {
+          "id": "xss-css-expression",
+          "pattern": "expression\\s*\\(",
+          "flags": "gi",
+          "description": "Legacy IE CSS expression() in a style context, executes JS. Benchmark xss-style-expression.",
+          "redos_safe": true
         }
       ],
       "encoding": {
@@ -183,16 +190,9 @@
         },
         {
           "id": "sqli-comments",
-          "pattern": "(--|/\\*|\\*/)",
+          "pattern": "(--(?:[\\s-]|$)|/\\*|\\*/)",
           "flags": "g",
-          "description": "Detects SQL comments. MySQL `#` line comment intentionally excluded to avoid FP on hex colors / hashtags / issue refs; real `admin' #` injections are still caught by the quote + keyword combo patterns.",
-          "redos_safe": true
-        },
-        {
-          "id": "sqli-operators",
-          "pattern": "(;|\\|\\||&&)",
-          "flags": "g",
-          "description": "Detects SQL operators",
+          "description": "SQL comments. ANSI -- requires a following space / dash / end-of-string so it matches a real trailing comment (1=1--, -- -) but not CLI flags (--max-retries). C-style /* */ kept. MySQL # excluded (see sqli-comment-quote). FPR pass 2026-06-08.",
           "redos_safe": true
         },
         {
@@ -257,6 +257,22 @@
           "flags": "gi",
           "description": "Detects Oracle DBMS_* package references used in time-based blind SQLi (DBMS_LOCK.SLEEP, DBMS_PIPE.RECEIVE_MESSAGE) and other Oracle stdlib abuse paths. Broad match — no legitimate user input contains these (improvements.md §1.1.e Q3).",
           "redos_safe": true
+        },
+        {
+          "id": "sqli-hex-blob",
+          "pattern": "\\b0x[0-9a-fA-F]{16,}\\b",
+          "flags": "gi",
+          "description": "Long hex-encoded blob (8+ bytes) smuggling SQL past keyword filters; far longer than any hex color. Benchmark sql-hex-encoded.",
+          "redos_safe": true,
+          "request_boundary_safe": true
+        },
+        {
+          "id": "sqli-comment-quote",
+          "pattern": "'\\s*#",
+          "flags": "g",
+          "description": "Single-quote immediately followed by a MySQL # line comment (admin' #). Quote anchor avoids FP on bare # (hex colors, hashtags). Benchmark sql-comment-hash.",
+          "redos_safe": true,
+          "request_boundary_safe": true
         }
       ]
     },
@@ -273,7 +289,43 @@
           "redos_safe": true
         }
       ],
-      "dangerous_keys": ["$gt", "$gte", "$lt", "$lte", "$ne", "$eq", "$in", "$nin", "$and", "$or", "$not", "$nor", "$exists", "$type", "$regex", "$where", "$expr", "$mod", "$text", "$jsonSchema", "$function", "$accumulator", "$elemMatch", "$all", "$size", "$lookup", "$match", "$project", "$group", "$sort", "$limit", "$skip", "$unwind", "$addFields", "$replaceRoot"]
+      "dangerous_keys": [
+        "$gt",
+        "$gte",
+        "$lt",
+        "$lte",
+        "$ne",
+        "$eq",
+        "$in",
+        "$nin",
+        "$and",
+        "$or",
+        "$not",
+        "$nor",
+        "$exists",
+        "$type",
+        "$regex",
+        "$where",
+        "$expr",
+        "$mod",
+        "$text",
+        "$jsonSchema",
+        "$function",
+        "$accumulator",
+        "$elemMatch",
+        "$all",
+        "$size",
+        "$lookup",
+        "$match",
+        "$project",
+        "$group",
+        "$sort",
+        "$limit",
+        "$skip",
+        "$unwind",
+        "$addFields",
+        "$replaceRoot"
+      ]
     },
     "command_injection": {
       "name": "Command Injection",
@@ -282,9 +334,9 @@
       "rules": [
         {
           "id": "cmdi-shell-chars",
-          "pattern": "[;&|`]",
+          "pattern": "[;&|]\\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\\b",
           "flags": "g",
-          "description": "Detects shell metacharacters that enable command chaining. Bare ( and ) are excluded — they appear in legitimate values (function calls in code fields, math expressions). Command substitution $(...) is caught by cmdi-command-substitution.",
+          "description": "Shell command chained after a metacharacter (; cat, | nc, & curl). Replaces the bare [;&|`] rule, which flagged every semicolon / ampersand in code, URLs and prose. FPR pass 2026-06-08.",
           "redos_safe": true
         },
         {
@@ -310,9 +362,37 @@
         },
         {
           "id": "cmdi-redirection",
-          "pattern": "(>>|<<|[<>]\\s+[/\\w])",
+          "pattern": "(>>|<<<?)",
           "flags": "g",
-          "description": "Detects shell redirection operators. Requires whitespace before the path for single < or > to avoid false-positives on HTML tags like <b> or </b>.",
+          "description": "Append (>>) and here-doc (<<, <<<) redirection. The bare [<>] space form was dropped (matched 'a > b', 'RAM > 16GB'); redirect-to-file is covered by cmdi-redirect-syspath. FPR pass 2026-06-08.",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-env-assign",
+          "pattern": "\\b(?:LD_PRELOAD|LD_LIBRARY_PATH|BASH_ENV|PYTHONPATH|PERL5LIB|DYLD_INSERT_LIBRARIES)\\s*=",
+          "flags": "gi",
+          "description": "Dangerous env-var assignment to smuggle code into a spawned process (LD_PRELOAD=). Benchmark cmd-env-var-smuggling.",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-redirect-syspath",
+          "pattern": ">\\s*/(?:etc|var|tmp|usr|bin|sbin|root|home|dev|proc|opt)\\b",
+          "flags": "g",
+          "description": "Shell output redirect to a system directory (> /var/www/shell.php). Anchored to system dirs to avoid math/text FP. Benchmark cmd-redirect-overwrite.",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-newline-command",
+          "pattern": "[\\n\\r]\\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\\b",
+          "flags": "gi",
+          "description": "Newline followed by a shell command (host\\ncat /etc/passwd). Benchmark cmd-newline-injection.",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-backtick-command",
+          "pattern": "`\\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\\b",
+          "flags": "gi",
+          "description": "Backtick command substitution wrapping a known command (`whoami`). Avoids FP on markdown inline code like `npm install`. FPR pass 2026-06-08.",
           "redos_safe": true
         }
       ]
@@ -405,8 +485,19 @@
       "name": "Prototype Pollution",
       "severity": "high",
       "owasp": "A03:2021",
-      "languages": ["javascript", "typescript"],
-      "dangerous_keys": ["__proto__", "constructor", "prototype", "__definegetter__", "__definesetter__", "__lookupgetter__", "__lookupsetter__"]
+      "languages": [
+        "javascript",
+        "typescript"
+      ],
+      "dangerous_keys": [
+        "__proto__",
+        "constructor",
+        "prototype",
+        "__definegetter__",
+        "__definesetter__",
+        "__lookupgetter__",
+        "__lookupsetter__"
+      ]
     },
     "ldap_injection": {
       "name": "LDAP Injection",
@@ -435,6 +526,14 @@
           "description": "Detects LDAP NOT-operator bypass shapes ')(!', '&(!', and '|(!'. Catches injections where attacker appends a NOT clause to enumerate or exclude specific entries, e.g. '*)(uid=*)(!(uid=admin))'. Companion to ldap-injection-strict; together they cover the OR-then-NOT enumeration corpus that legitimate LDAP queries never produce. (improvements.md Q8.)",
           "redos_safe": true,
           "request_boundary_safe": true
+        },
+        {
+          "id": "ldap-null-byte",
+          "pattern": "\\\\00|\\x00",
+          "flags": "g",
+          "description": "LDAP null-byte truncation (admin\\00) used to terminate a filter early and bypass appended constraints. Benchmark ldap-null-byte-truncate.",
+          "redos_safe": true,
+          "request_boundary_safe": true
         }
       ]
     },
@@ -448,6 +547,14 @@
           "pattern": "('\\s*(or|and)\\s*'|\"\\s*(or|and)\\s*\"|\\)\\s*(or|and)\\s*\\(|\\|\\s*/)",
           "flags": "gi",
           "description": "Detects XPath injection patterns: boolean-injection (' or ' / \" or \"), function-arity tampering with closing+opening parens around or/and, and union operator before path step. Request-boundary safe.",
+          "redos_safe": true,
+          "request_boundary_safe": true
+        },
+        {
+          "id": "xpath-blind-substring",
+          "pattern": "\\bsubstring\\s*\\(\\s*name\\s*\\(|\\bstring-length\\s*\\(|\\bcount\\s*\\(\\s*/",
+          "flags": "gi",
+          "description": "Blind XPath extraction via substring(name()), string-length(), count(/...). Benchmark xpath-blind-substring.",
           "redos_safe": true,
           "request_boundary_safe": true
         }
@@ -531,6 +638,13 @@
           "flags": "gi",
           "description": "Detects Jinja2 built-in object/function access",
           "redos_safe": true
+        },
+        {
+          "id": "ssti-velocity-ognl",
+          "pattern": "#set\\s*\\(\\s*\\$|#foreach\\s*\\(\\s*\\$|\\$\\w+\\.(?:exec|getClass|getRuntime|getMethod|invoke)\\b",
+          "flags": "gi",
+          "description": "Velocity #set/#foreach directives and OGNL/Velocity method calls. Benchmark ssti-velocity-runtime.",
+          "redos_safe": true
         }
       ]
     },
@@ -586,12 +700,34 @@
     }
   },
   "sensitive_keys": [
-    "password", "passwd", "pwd", "secret", "token", "apikey",
-    "api_key", "apiKey", "auth", "authorization", "credit_card",
-    "creditcard", "cc", "ssn", "social_security", "private_key",
-    "privateKey", "access_token", "accessToken", "refresh_token",
-    "refreshToken", "bearer", "jwt", "session", "cookie",
-    "x-api-key", "x-auth-token", "credentials"
+    "password",
+    "passwd",
+    "pwd",
+    "secret",
+    "token",
+    "apikey",
+    "api_key",
+    "apiKey",
+    "auth",
+    "authorization",
+    "credit_card",
+    "creditcard",
+    "cc",
+    "ssn",
+    "social_security",
+    "private_key",
+    "privateKey",
+    "access_token",
+    "accessToken",
+    "refresh_token",
+    "refreshToken",
+    "bearer",
+    "jwt",
+    "session",
+    "cookie",
+    "x-api-key",
+    "x-auth-token",
+    "credentials"
   ],
   "validation": {
     "email": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",

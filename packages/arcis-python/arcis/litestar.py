@@ -456,4 +456,258 @@ class ArcisMiddleware:
             await self.app(scope, wrapped_receive, send)
 
 
-__all__ = ["ArcisMiddleware"]
+# ============================================================================
+# PROTECT FACTORIES (improvements.md §1.4)
+# ============================================================================
+# Per-framework wrappers around the composite login / signup / api checks
+# plus a shared CorrelationWindow. Each factory returns an async callable
+# usable as a Litestar dependency (or any async-callable guard) that
+# auto-extracts the client IP (X-Forwarded-For first hop, then the socket
+# peer) and the route path, forwards them into the base check with the
+# right vector tag, and raises Litestar's HTTPException on denial.
+#
+# Rate limiting stays a separate concern (Pattern 3): mount Litestar's
+# rate-limit middleware or the bundled RateLimiter for the Node-parity
+# limits (login 5/min, signup 3/min, api 100/min). These factories own
+# the correlation + bot + credential / threat wiring.
+
+
+class _BodyRequest:
+    """Wrapper exposing a parsed body dict + headers to the base checks.
+
+    A Litestar ``Request`` exposes the body only via the async
+    ``request.json()`` coroutine, which the synchronous base checks
+    cannot read. The factory reads it once and hands the base check this
+    duck-typed shim instead.
+    """
+
+    def __init__(self, body: Any, headers: Any) -> None:
+        self.body = body
+        self.headers = headers
+
+
+def _litestar_client_ip(request: Any) -> Optional[str]:
+    """Resolve client IP: X-Forwarded-For first hop, then socket peer."""
+    from .middleware.protect_factories import client_ip_from_xff_then
+
+    headers = getattr(request, "headers", None)
+    xff = None
+    if headers is not None and hasattr(headers, "get"):
+        xff = headers.get("x-forwarded-for")
+    fallback: Optional[str] = None
+    client = getattr(request, "client", None)
+    if client is not None:
+        host = getattr(client, "host", None)
+        if host is None and isinstance(client, (list, tuple)) and client:
+            host = client[0]
+        if host:
+            fallback = str(host)
+    return client_ip_from_xff_then(xff, fallback)
+
+
+def _litestar_route(request: Any, route: Optional[str]) -> str:
+    """Resolve the route label: explicit override, else the URL path."""
+    if route is not None:
+        return route
+    url = getattr(request, "url", None)
+    path = getattr(url, "path", None) if url is not None else None
+    return path or "/"
+
+
+async def _litestar_json_body(request: Any) -> Any:
+    """Best-effort async read of a JSON body. Returns None on any error."""
+    json_method = getattr(request, "json", None)
+    if not callable(json_method):
+        return None
+    try:
+        return await json_method()
+    except Exception:
+        return None
+
+
+def _raise_litestar_block(status_code: int, reason: str) -> None:
+    """Raise Litestar's HTTPException with the standard block body."""
+    from litestar.exceptions import HTTPException
+
+    raise HTTPException(status_code=status_code, detail={"error": reason})
+
+
+def protect_login(
+    *,
+    username_field: str = "username",
+    password_field: str = "password",
+    require_credentials: bool = True,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+):
+    """Litestar login-protection dependency factory.
+
+    Returns an async callable (Litestar dependency) that runs the login
+    check with the auto-extracted client IP, the route path, and the
+    ``"login"`` vector, forwarding an optional shared
+    :class:`CorrelationWindow`. On denial it raises Litestar's
+    ``HTTPException`` (429 for correlation, 403 for bot, 400 for missing
+    credentials) with body ``{"error": reason}``.
+
+    Args:
+        username_field: Body field carrying the username.
+        password_field: Body field carrying the password.
+        require_credentials: Forwarded to the login check.
+        check_bot: Forwarded to the login check.
+        allowed_bot_categories: Forwarded to the login check.
+        correlation_window: Optional shared window.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        An async Litestar dependency callable.
+    """
+    from .middleware.protect_factories import block_status_code, check_login
+
+    async def login_dependency(request: Any):
+        client_ip = _litestar_client_ip(request)
+        body = await _litestar_json_body(request)
+        shim = _BodyRequest(body, getattr(request, "headers", {}))
+        result = check_login(
+            shim,
+            username_field=username_field,
+            password_field=password_field,
+            require_credentials=require_credentials,
+            check_bot=check_bot,
+            allowed_bot_categories=allowed_bot_categories,
+            correlation_window=correlation_window,
+            client_ip=client_ip,
+            route=_litestar_route(request, route),
+        )
+        if not result.allowed:
+            _raise_litestar_block(block_status_code(result.reason), result.reason)
+        return result
+
+    return login_dependency
+
+
+def protect_signup(
+    *,
+    email_field: str = "email",
+    check_email: bool = True,
+    block_disposable: bool = True,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    allowed_email_domains: Optional[List[str]] = None,
+    blocked_email_domains: Optional[List[str]] = None,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+):
+    """Litestar signup-protection dependency factory.
+
+    Returns an async callable that runs the signup check (bot + email
+    validation) then consults an optional shared
+    :class:`CorrelationWindow` (vector ``"signup"``). On denial it raises
+    Litestar's ``HTTPException`` (429 for correlation, 403 for bot, 400
+    for email errors) with body ``{"error": reason}``.
+
+    Args:
+        email_field: Body field carrying the email.
+        check_email: Forwarded to the signup check.
+        block_disposable: Forwarded to the signup check.
+        check_bot: Forwarded to the signup check.
+        allowed_bot_categories: Forwarded to the signup check.
+        allowed_email_domains: Forwarded to the signup check.
+        blocked_email_domains: Forwarded to the signup check.
+        correlation_window: Optional shared window.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        An async Litestar dependency callable.
+    """
+    from .middleware.protect_factories import (
+        block_status_code,
+        signup_check_with_correlation,
+    )
+
+    async def signup_dependency(request: Any):
+        client_ip = _litestar_client_ip(request)
+        body = await _litestar_json_body(request)
+        shim = _BodyRequest(body, getattr(request, "headers", {}))
+        result = signup_check_with_correlation(
+            shim,
+            correlation_window=correlation_window,
+            client_ip=client_ip,
+            route=_litestar_route(request, route),
+            email_field=email_field,
+            check_email=check_email,
+            block_disposable=block_disposable,
+            check_bot=check_bot,
+            allowed_bot_categories=allowed_bot_categories,
+            allowed_email_domains=allowed_email_domains,
+            blocked_email_domains=blocked_email_domains,
+        )
+        if not result.allowed:
+            _raise_litestar_block(block_status_code(result.reason), result.reason)
+        return result
+
+    return signup_dependency
+
+
+def protect_api(
+    *,
+    expected_origins: Optional[List[str]] = None,
+    check_bot: bool = True,
+    allowed_bot_categories: Optional[List[str]] = None,
+    scan_body: bool = True,
+    correlation_window: Any = None,
+    route: Optional[str] = None,
+):
+    """Litestar API-protection dependency factory.
+
+    Returns an async callable that runs the API check (origin + bot +
+    body threat scan) with the auto-extracted client IP, the route path,
+    and the ``"api"`` vector, forwarding an optional shared
+    :class:`CorrelationWindow`. On denial it raises Litestar's
+    ``HTTPException`` (429 for correlation, 403 for bot / bad-origin /
+    threat) with body ``{"error": reason}``.
+
+    Args:
+        expected_origins: Forwarded to the API check.
+        check_bot: Forwarded to the API check.
+        allowed_bot_categories: Forwarded to the API check.
+        scan_body: Forwarded to the API check.
+        correlation_window: Optional shared window.
+        route: Route label recorded in the window. Defaults to the
+            request path.
+
+    Returns:
+        An async Litestar dependency callable.
+    """
+    from .middleware.protect_factories import block_status_code, check_api
+
+    async def api_dependency(request: Any):
+        client_ip = _litestar_client_ip(request)
+        body = await _litestar_json_body(request)
+        shim = _BodyRequest(body, getattr(request, "headers", {}))
+        result = check_api(
+            shim,
+            expected_origins=expected_origins,
+            check_bot=check_bot,
+            allowed_bot_categories=allowed_bot_categories,
+            scan_body=scan_body,
+            correlation_window=correlation_window,
+            client_ip=client_ip,
+            route=_litestar_route(request, route),
+        )
+        if not result.allowed:
+            _raise_litestar_block(block_status_code(result.reason), result.reason)
+        return result
+
+    return api_dependency
+
+
+__all__ = [
+    "ArcisMiddleware",
+    "protect_login",
+    "protect_signup",
+    "protect_api",
+]

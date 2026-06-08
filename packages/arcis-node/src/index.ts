@@ -93,6 +93,14 @@ export type {
   GraphqlGuardResult,
   GraphqlViolation,
 } from './sanitizers/graphql';
+export {
+  detectMassAssignment,
+  SENSITIVE_FIELD_NAMES,
+} from './sanitizers/mass-assignment';
+export type {
+  MassAssignDetectOptions,
+  MassAssignDetectResult,
+} from './sanitizers/mass-assignment';
 export { Guards } from './guards';
 export type {
   GuardsConfig,
@@ -148,7 +156,7 @@ export { encodeForHtml, encodeForAttribute, encodeForJs, encodeForUrl, encodeFor
 // VALIDATION
 // =============================================================================
 export { validate, createValidator } from './validation/schema';
-export { validateUrl, isUrlSafe } from './validation/url';
+export { validateUrl, isUrlSafe, scanForSsrf } from './validation/url';
 export { validateRedirect, isRedirectSafe } from './validation/redirect';
 export { validateFile, sanitizeFilename, isDangerousExtension } from './validation/file';
 export { validateEmail, verifyEmailMx, isValidEmailSyntax } from './validation/email';
@@ -219,7 +227,7 @@ export type {
 } from './core/types';
 
 // URL validation types
-export type { ValidateUrlOptions, ValidateUrlResult } from './validation/url';
+export type { ValidateUrlOptions, ValidateUrlResult, SsrfScanResult } from './validation/url';
 export {
   validateUrlAsync,
   pinnedDnsLookup,

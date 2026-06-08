@@ -41,6 +41,7 @@ from arcis.django import (
     get_sanitized_body,
     get_client_ip,
 )
+from arcis.stores.memory import InMemoryStore
 
 
 # ============================================================================
@@ -146,6 +147,15 @@ class TestArcisMiddleware:
 class TestArcisMiddlewareRateLimiting:
     """Test rate limiting in Arcis middleware."""
 
+    def setup_method(self):
+        # The rate limiter and its store are cached at class scope (shared
+        # across requests in production). Reset both before each test so
+        # one test's config and counters do not leak into the next, and so
+        # override_settings can bind a fresh limiter (it cannot rebind one
+        # that an earlier test already created).
+        ArcisMiddleware._rate_limiter = None
+        ArcisMiddleware._rate_limit_store = InMemoryStore()
+
     @override_settings(ARCIS_CONFIG={'rate_limit_max': 3, 'rate_limit_window_ms': 60000})
     def test_blocks_over_limit(self, rf, simple_view):
         middleware = ArcisMiddleware(simple_view)
@@ -166,18 +176,15 @@ class TestArcisMiddlewareRateLimiting:
         data = json.loads(response.content)
         assert 'error' in data
     
+    @override_settings(ARCIS_CONFIG={'rate_limit_max': 2, 'rate_limit_window_ms': 60000})
     def test_different_ips_have_separate_limits(self, rf, simple_view):
-        # Create fresh middleware for this test
-        middleware = ArcisMiddleware.__new__(ArcisMiddleware)
-        middleware.get_response = simple_view
+        # Construct through the normal __init__ so every attribute the
+        # middleware relies on is set. The limiter keys on client IP, so
+        # two different IPs each get their own counter.
+        middleware = ArcisMiddleware(simple_view)
 
-        # Configure with low limit
-        from arcis.core import Sanitizer, RateLimiter, SecurityHeaders
-        middleware.sanitizer = Sanitizer()
-        middleware.rate_limiter = RateLimiter(max_requests=2, window_ms=60000)
-        middleware.security_headers = SecurityHeaders()
-        
-        # Two different IPs should each get their own limit
+        # Each IP makes 2 requests, all under its own per-IP cap of 2, so
+        # all pass. A shared counter would block the 3rd request overall.
         for ip in ['192.168.1.1', '192.168.1.2']:
             for _ in range(2):
                 request = rf.get('/')

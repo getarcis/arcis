@@ -27,6 +27,13 @@ export type DeserializeRuntime =
 // Python pickle: \x80 followed by version byte 0x02-0x05.
 const PICKLE_HEAD = /^\x80[\x02-\x05]/;
 
+// Base64-encoded pickle. Attackers ship pickle over JSON/text as base64,
+// so the raw head-byte check never sees \x80. The base64 of \x80\x02..05
+// always starts "gA" + a known char; we pre-filter cheaply, then decode
+// and re-check the head byte. Benchmark deser-python-pickle-marker.
+const PICKLE_B64_PREFIX = /^gA[I-Z]/;
+const B64_SHAPE = /^[A-Za-z0-9+/]{12,}={0,2}$/;
+
 // Ruby Marshal magic: \x04\x08 at start (Ruby 1.9+).
 const RUBY_MARSHAL_HEAD = /^\x04\x08/;
 
@@ -53,6 +60,22 @@ export function detectDeserialization(
     return null;
   }
   if (PICKLE_HEAD.test(payload)) return 'python_pickle';
+  // Base64-encoded pickle: prefix pre-filter, then decode + re-check head.
+  if (PICKLE_B64_PREFIX.test(payload) && B64_SHAPE.test(payload)) {
+    try {
+      const decoded = Buffer.from(payload, 'base64');
+      if (
+        decoded.length >= 2 &&
+        decoded[0] === 0x80 &&
+        decoded[1] >= 0x02 &&
+        decoded[1] <= 0x05
+      ) {
+        return 'python_pickle';
+      }
+    } catch {
+      // not valid base64 — fall through
+    }
+  }
   if (RUBY_MARSHAL_HEAD.test(payload)) return 'ruby_marshal';
   if (DOTNET_BINFMT_HEAD.test(payload)) return 'dotnet_binary_formatter';
   if (FASTJSON_AUTOTYPE.test(payload)) return 'java_fastjson';

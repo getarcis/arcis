@@ -99,6 +99,11 @@ export const XSS_PATTERNS = [
   /** style tag — CSS expression() / behavior: / IE-era attacks. Mirrors
    *  Python's xss-style-tag from packages/core/patterns.json. */
   /<style[\s>]/gi,
+  /** CSS expression() in a style ATTRIBUTE (no <style> tag), e.g.
+   *  `<div style="x:expression(alert(1))">`. Legacy IE but still a live
+   *  vector on old renderers. Mirrors `xss-css-expression` in
+   *  patterns.json. Benchmark xss-style-expression. */
+  /expression\s*\(/gi,
 ] as const;
 
 /**
@@ -180,9 +185,13 @@ export const SQL_PATTERNS = [
    * Matches `sqli-comments` rule in packages/core/patterns.json (which
    * also excludes `#`). Benchmark FP class B1, found 2026-06-07.
    */
-  /(--|\/\*|\*\/)/g,
-  /** SQL statement separators */
-  /(;|\|\||&&)/g,
+  /**
+   * SQL comments. ANSI `--` requires a trailing space / dash / end-of-string
+   * so it matches a real trailing comment (`1=1--`, `-- -`) but not CLI
+   * flags like `--max-retries`. C-style block comments kept. MySQL `#`
+   * excluded (see the quote-anchored rule below). FPR pass 2026-06-08.
+   */
+  /(--(?:[\s-]|$)|\/\*|\*\/)/g,
   /** Boolean injection: OR 1=1 */
   /\bOR\s+\d+\s*=\s*\d+/gi,
   /** Boolean injection: OR 'a'='a' or OR "a"="a" (including mixed quotes) */
@@ -210,6 +219,21 @@ export const SQL_PATTERNS = [
    * migrates to patterns.json-at-runtime (planned v1.7).
    */
   /\bDBMS_(?:LOCK|PIPE|UTILITY|XSLPROCESSOR|JAVA|OUTPUT|SCHEDULER)\b/gi,
+  /**
+   * Long hex-encoded blob (8+ bytes / 16+ hex chars) used to smuggle a
+   * SQL string past keyword filters, e.g. `0x53454C...` = "SELECT...".
+   * Far longer than any hex color (#FF5300 is 6). Mirrors `sqli-hex-blob`
+   * in patterns.json. Benchmark sql-hex-encoded.
+   */
+  /\b0x[0-9a-fA-F]{16,}\b/gi,
+  /**
+   * Single-quote immediately followed by a MySQL `#` line comment
+   * (`admin' #`). The quote anchor is what makes `#` safe here — a bare
+   * `#` matches hex colors / hashtags / issue refs, but `'` directly
+   * before `#` is an injection shape. Mirrors `sqli-comment-quote` in
+   * patterns.json. Benchmark sql-comment-hash.
+   */
+  /'\s*#/g,
 ] as const;
 
 // =============================================================================
@@ -263,15 +287,19 @@ export const PATH_PATTERNS = [
 // =============================================================================
 export const COMMAND_PATTERNS = [
   /**
-   * Shell metacharacters that enable command chaining/substitution.
-   * Bare ( and ) are excluded — they appear in common legitimate values
-   * (function calls in code fields, math expressions, etc.).
-   * Command substitution is caught by the $( combined pattern below.
-   * NOTE: ';', '&', '|' may appear in legitimate URL query strings
-   * and Markdown; consider disabling command checking (command: false)
-   * for fields that intentionally allow those characters.
+   * Shell command chained after a metacharacter (`; cat`, `| nc`,
+   * `& curl`). Replaces the old bare `[;&|`]` rule, which flagged every
+   * semicolon in code (`const x = 1;`), ampersand in a URL query
+   * (`?a=1&b=2`), and backtick in markdown (`` `npm install` ``). Now the
+   * metacharacter must be followed by a known command. FPR pass 2026-06-08.
    */
-  /[;&|`]/g,
+  /[;&|]\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\b/gi,
+  /**
+   * Backtick command substitution wrapping a known command (`` `whoami` ``).
+   * Avoids the FP on markdown inline code like `` `npm install` ``.
+   * FPR pass 2026-06-08.
+   */
+  /`\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\b/gi,
   /** Command substitution: $( ... ) — matched as a pair to reduce false positives */
   /\$\(/g,
   /**
@@ -285,6 +313,25 @@ export const COMMAND_PATTERNS = [
   /\$\{IFS(?:%[^}]*)?\}/g,
   /** URL-encoded control characters (%00-%0F): null, tab, vtab, formfeed, LF, CR */
   /%0[0-9a-f]/gi,
+  /**
+   * Dangerous environment-variable assignment used to smuggle code into
+   * a spawned process (`LD_PRELOAD=/tmp/evil.so /bin/ls`). Mirrors
+   * `cmdi-env-assign` in patterns.json. Benchmark cmd-env-var-smuggling.
+   */
+  /\b(?:LD_PRELOAD|LD_LIBRARY_PATH|BASH_ENV|PYTHONPATH|PERL5LIB|DYLD_INSERT_LIBRARIES)\s*=/gi,
+  /**
+   * Shell output redirect to a system directory (`> /var/www/shell.php`).
+   * Anchored to known system dirs so math/text (`5 > 3`) doesn't trip it.
+   * Mirrors `cmdi-redirect-syspath` in patterns.json. Benchmark
+   * cmd-redirect-overwrite.
+   */
+  />\s*\/(?:etc|var|tmp|usr|bin|sbin|root|home|dev|proc|opt)\b/g,
+  /**
+   * Newline followed by a shell command (`host\ncat /etc/passwd`) —
+   * argument-to-command injection via an embedded newline. Mirrors
+   * `cmdi-newline-command` in patterns.json. Benchmark cmd-newline-injection.
+   */
+  /[\n\r]\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\b/gi,
 ] as const;
 
 // =============================================================================
@@ -327,6 +374,17 @@ export const NOSQL_DANGEROUS_KEYS = new Set([
   // Aggregation pipeline operators (injectable via $lookup etc.)
   '$lookup', '$match', '$project', '$group', '$sort', '$limit', '$skip',
   '$unwind', '$addFields', '$replaceRoot',
+]);
+
+/**
+ * Identity/auth field names that must hold a scalar value. A field here
+ * carrying an array or object is a NoSQL type-juggling operator-injection
+ * shape (e.g. {"username":["admin"]}). v1.7 nosql-type-juggle.
+ */
+export const AUTH_FIELDS = new Set([
+  'username', 'user', 'userid', 'user_id', 'login', 'email',
+  'password', 'pass', 'passwd', 'pwd', 'token', 'apikey', 'api_key',
+  'secret', 'otp', 'pin',
 ]);
 
 // =============================================================================
