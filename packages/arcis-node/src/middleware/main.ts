@@ -17,6 +17,12 @@ import { createHeaders } from './headers';
 import { createRateLimiter } from './rate-limit';
 import { createErrorHandler } from './error-handler';
 import { createTelemetryEmitter, tapSanitizerThreats } from './telemetry';
+import { botProtection, type BotProtectionOptions } from './bot-detection';
+import { scannerPathProtection, type ScannerPathsOptions } from './sensitive-paths';
+import { inspectGraphqlQuery, type GraphqlGuardOptions } from '../sanitizers/graphql';
+import { detectMassAssignment, type MassAssignDetectOptions } from '../sanitizers/mass-assignment';
+import { scanForSsrf, type ValidateUrlOptions } from '../validation/url';
+import { detectPromptInjection, type PromptInjectionSeverity } from '../sanitizers/prompt-injection';
 import { createSanitizer, scanThreats } from '../sanitizers';
 import { validate } from '../validation';
 import { createSafeLogger } from '../logging';
@@ -215,6 +221,101 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
     middlewares.push(createHeaders(headerOpts));
   }
 
+  // Scanner-path probe blocking (v1.7 W2). Runs BEFORE bot detection because
+  // some scanner UAs forge a browser UA but still hit dotfile / WordPress
+  // probe paths. Dry-run skips the block.
+  if (options.scannerPaths !== false && !dryRun) {
+    const scannerOpts: ScannerPathsOptions = typeof options.scannerPaths === 'object'
+      ? options.scannerPaths
+      : {};
+    middlewares.push(scannerPathProtection(scannerOpts));
+  }
+
+  // Forwarded-header inspection (v1.7 W7). Flags a loopback address in a
+  // forwarded / client-IP header (spoofing to bypass IP allowlists), and
+  // optionally rejects Host / X-Forwarded-Host not in a trustedHosts
+  // allowlist. Runs early (header read, no body needed). Skipped in dry-run.
+  if (options.forwardedHeaders !== false && !dryRun) {
+    const FORWARDED = ['x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'forwarded', 'client-ip', 'true-client-ip'];
+    const LOOPBACK = /(?:^|[\s,@=])(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1|0\.0\.0\.0|localhost)(?::\d+)?(?:$|[\s,;])/i;
+    const trustedHosts = typeof options.forwardedHeaders === 'object' && options.forwardedHeaders.trustedHosts
+      ? options.forwardedHeaders.trustedHosts.map((h) => h.toLowerCase())
+      : null;
+    middlewares.push((req, res, next): void => {
+      for (const name of FORWARDED) {
+        const raw = req.headers[name];
+        const value = Array.isArray(raw) ? raw.join(',') : raw;
+        if (typeof value === 'string' && LOOPBACK.test(value)) {
+          res.status(403).json({
+            error: 'Request blocked for security reasons',
+            code: 'SECURITY_THREAT',
+            vector: 'header',
+            rule: 'header/forwarded-loopback-spoof',
+          });
+          return;
+        }
+      }
+      if (trustedHosts) {
+        for (const name of ['host', 'x-forwarded-host']) {
+          const raw = req.headers[name];
+          const value = Array.isArray(raw) ? raw[0] : raw;
+          if (typeof value === 'string' && value) {
+            const host = value.split(':')[0].toLowerCase();
+            if (!trustedHosts.includes(host)) {
+              res.status(403).json({
+                error: 'Request blocked for security reasons',
+                code: 'SECURITY_THREAT',
+                vector: 'header',
+                rule: 'header/untrusted-host',
+              });
+              return;
+            }
+          }
+        }
+      }
+      next();
+    });
+  }
+
+  // Bot UA classification — runs BEFORE rate-limit so bots don't consume
+  // legitimate-traffic rate-limit quota. v1.7 W1 wire-up (was opt-in via
+  // standalone botProtection() factory; now default-on). Dry-run mode skips
+  // the deny step (detection still attaches result to req.botDetection) so
+  // dashboards can see "would have blocked" decisions.
+  if (options.bot !== false) {
+    const userBotOpts: BotProtectionOptions = typeof options.bot === 'object'
+      ? options.bot
+      : {};
+    const botOpts: BotProtectionOptions = {
+      // Default deny: AUTOMATED (headless browser automation: Selenium /
+      // Puppeteer / Playwright / PhantomJS / WebDriver / Headless Chrome) and
+      // SECURITY_SCANNER (offensive scanners: sqlmap / nikto / nuclei / nmap /
+      // masscan / wpscan / Acunetix / Nessus / dirbuster). SCRAPER is NOT
+      // default-denied: it also covers curl / wget / python-requests /
+      // monitoring and other legitimate non-browser clients, so blocking it by
+      // default would break health checks and server-to-server traffic. Add it
+      // explicitly with arcis({ bot: { deny: ['AUTOMATED', 'SCRAPER'] } }).
+      deny: userBotOpts.deny ?? ['AUTOMATED', 'SECURITY_SCANNER'],
+      allow: userBotOpts.allow,
+      defaultAction: userBotOpts.defaultAction,
+      statusCode: userBotOpts.statusCode,
+      message: userBotOpts.message,
+      detectBehavior: userBotOpts.detectBehavior,
+      onDetected: userBotOpts.onDetected,
+    };
+    if (dryRun) {
+      // Dry-run: classify + attach to req for observation, but never deny.
+      const classifyOnly: BotProtectionOptions = {
+        ...botOpts,
+        deny: [],
+        defaultAction: 'allow',
+      };
+      middlewares.push(botProtection(classifyOnly));
+    } else {
+      middlewares.push(botProtection(botOpts));
+    }
+  }
+
   // Issue #47 — observer pre-scan. Sits BEFORE the rate-limit + sanitizer so
   // the callback fires on every request that contains a threat, not just
   // those that survive rate-limiting. Skipped when no callback is set so
@@ -234,6 +335,125 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
     const rateLimiter = createRateLimiter(rateLimitOpts);
     middlewares.push(dryRun ? suppressRateLimit429(rateLimiter) : rateLimiter);
     cleanupFns.push(() => rateLimiter.close());
+  }
+
+  // GraphQL inspection (v1.7 W3). When the JSON body has a `query`
+  // field, treat it as a GraphQL document and run the inspector. Sits
+  // between rate-limit and sanitizer so the depth/alias-bomb check
+  // happens BEFORE the regex-heavy body sanitizer chews on it. Skipped
+  // in dry-run mode.
+  if (options.graphql !== false && !dryRun) {
+    const userGqlOpts: GraphqlGuardOptions = typeof options.graphql === 'object'
+      ? options.graphql
+      : {};
+    // Tighter defaults than the standalone factory: 12-alias bombs
+    // bypass the standalone default of 50, and most legit queries
+    // never need >10 aliases. Users running Apollo Studio in dev
+    // pass blockIntrospection: false explicitly.
+    const gqlOpts: GraphqlGuardOptions = {
+      maxDepth: userGqlOpts.maxDepth ?? 10,
+      maxLength: userGqlOpts.maxLength ?? 10000,
+      blockIntrospection: userGqlOpts.blockIntrospection ?? true,
+      maxAliases: userGqlOpts.maxAliases ?? 10,
+      blockFragmentCycles: userGqlOpts.blockFragmentCycles ?? true,
+    };
+    middlewares.push((req, res, next) => {
+      const body = req.body as Record<string, unknown> | undefined;
+      const query = body && typeof body === 'object' ? body.query : undefined;
+      if (typeof query !== 'string' || query.length === 0) {
+        return next();
+      }
+      const result = inspectGraphqlQuery(query, gqlOpts);
+      if (!result.blocked) {
+        return next();
+      }
+      res.status(403).json({
+        error: 'Request blocked for security reasons',
+        code: 'SECURITY_THREAT',
+        vector: 'graphql',
+        rule: `graphql/${result.reason}`,
+      });
+    });
+  }
+
+  // Mass-assignment field detection (v1.7 W4). Scan the JSON body for
+  // privilege-escalation field names. Runs after GraphQL (cheap key walk
+  // vs the GraphQL string parse) and before the sanitizer. Skipped in
+  // dry-run.
+  if (options.massAssign !== false && !dryRun) {
+    const massAssignOpts: MassAssignDetectOptions = typeof options.massAssign === 'object'
+      ? options.massAssign
+      : {};
+    middlewares.push((req, res, next) => {
+      const result = detectMassAssignment(req.body, massAssignOpts);
+      if (!result.detected) {
+        return next();
+      }
+      res.status(403).json({
+        error: 'Request blocked for security reasons',
+        code: 'SECURITY_THREAT',
+        vector: 'mass-assignment',
+        rule: 'mass-assignment/sensitive-field',
+      });
+    });
+  }
+
+  // SSRF body-URL validation (v1.7 W5). Walk the JSON body for URL-shaped
+  // strings and validate each. Skipped in dry-run.
+  if (options.ssrf !== false && !dryRun) {
+    const ssrfOpts: ValidateUrlOptions = typeof options.ssrf === 'object'
+      ? options.ssrf
+      : {};
+    middlewares.push((req, res, next) => {
+      const result = scanForSsrf(req.body, ssrfOpts);
+      if (!result.detected) {
+        return next();
+      }
+      res.status(403).json({
+        error: 'Request blocked for security reasons',
+        code: 'SECURITY_THREAT',
+        vector: 'ssrf',
+        rule: 'ssrf/blocked-url',
+      });
+    });
+  }
+
+  // Prompt-injection detection on body strings (v1.7 W6). Walk the JSON
+  // body for string values and run the prompt-injection detector; block
+  // when a match at or above the configured severity is found. Skipped
+  // in dry-run.
+  if (options.promptInjection !== false && !dryRun) {
+    const piRank: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3 };
+    const minSeverity: PromptInjectionSeverity =
+      typeof options.promptInjection === 'object' && options.promptInjection.minSeverity
+        ? options.promptInjection.minSeverity
+        : 'medium';
+    const minRank = piRank[minSeverity];
+    const scanPromptInjection = (value: unknown, depth: number): boolean => {
+      if (depth > 8 || value === null) return false;
+      if (typeof value === 'string') {
+        const r = detectPromptInjection(value);
+        return r.detected && piRank[r.severity] >= minRank;
+      }
+      if (typeof value !== 'object') return false;
+      if (Array.isArray(value)) {
+        return value.some((v) => scanPromptInjection(v, depth + 1));
+      }
+      return Object.values(value as Record<string, unknown>).some((v) =>
+        scanPromptInjection(v, depth + 1),
+      );
+    };
+    middlewares.push((req, res, next) => {
+      if (!scanPromptInjection(req.body, 0)) {
+        return next();
+      }
+      res.status(403).json({
+        error: 'Request blocked for security reasons',
+        code: 'SECURITY_THREAT',
+        vector: 'prompt-injection',
+        rule: 'prompt-injection/detected',
+      });
+    });
   }
 
   // Input sanitization — wrap with telemetry tap so SecurityThreatError

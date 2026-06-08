@@ -157,6 +157,111 @@ export function isUrlSafe(url: string, options: ValidateUrlOptions = {}): boolea
 }
 
 /**
+ * Matches a string that begins with a URL scheme + `://` (or `scheme:/`
+ * for the `file:///path` form). Used by the body walker to decide which
+ * string values are worth running through `validateUrl`. Anchored at
+ * start, case-insensitive, scheme charset per RFC 3986.
+ */
+const URL_SHAPED = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/** Result of scanning a request body for SSRF-shaped URL values. */
+export interface SsrfScanResult {
+  /** True if any URL-shaped string value failed validation. */
+  detected: boolean;
+  /** The offending URL string, or null. */
+  url: string | null;
+  /** Why it was blocked (from validateUrl), or null. */
+  reason: string | null;
+}
+
+/**
+ * Body-scan profile (v1.7 W5). When a request body is walked for URLs,
+ * the threat is private/internal targets and file-read schemes, not the
+ * `localhost` hostname or non-http fetch schemes that show up constantly
+ * in legitimate config payloads. So the body scan:
+ *
+ * - Allows `http` / `https` / `ftp` / `ftps`. Blocks `file:` / `gopher:` /
+ *   `dict:` and other SSRF-amplifying schemes.
+ * - Allows the literal `localhost` hostname (and `*.localhost`), which is
+ *   ubiquitous in dev/staging webhook + health-check fields, while STILL
+ *   blocking loopback expressed as an IP (`127.x`, decimal, hex) since
+ *   that is the encoding an attacker reaches for.
+ *
+ * Apps that fetch a user-supplied URL directly should call the strict
+ * `validateUrl` / `Guards.checkUrl` on that one field instead — the body
+ * scan is the broad default, not a replacement for a focused guard.
+ */
+const SSRF_BODY_SCAN_PROTOCOLS = ['http:', 'https:', 'ftp:', 'ftps:'];
+
+function isLocalhostHostname(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'localhost' || host.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Recursively walk a parsed request body and run `validateUrl` on every
+ * string value that looks like a URL (`scheme://...`). Returns the first
+ * unsafe URL found. v1.7 W5 wire-up.
+ *
+ * Public URLs pass, so a body carrying `{ website: "https://example.com" }`
+ * is not blocked; only private / loopback-IP / link-local / metadata /
+ * file-read-scheme URLs trip it. See `SSRF_BODY_SCAN_PROTOCOLS` for the
+ * scheme + localhost policy.
+ *
+ * @param body - Parsed request body (object, array, or scalar).
+ * @param options - Forwarded to `validateUrl`. When `allowedProtocols`
+ *   is not set, the body-scan profile (http/https/ftp/ftps) is used.
+ * @param maxDepth - Max recursion depth. Default 8.
+ */
+export function scanForSsrf(
+  body: unknown,
+  options: ValidateUrlOptions = {},
+  maxDepth = 8,
+): SsrfScanResult {
+  const scanOptions: ValidateUrlOptions = {
+    ...options,
+    allowedProtocols: options.allowedProtocols ?? SSRF_BODY_SCAN_PROTOCOLS,
+  };
+  function walk(value: unknown, depth: number): SsrfScanResult | null {
+    if (depth > maxDepth) return null;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (URL_SHAPED.test(trimmed)) {
+        // The localhost hostname is allowed (dev config); loopback IPs
+        // are not (attacker evasion). Both would otherwise be flagged.
+        if (isLocalhostHostname(trimmed)) {
+          return null;
+        }
+        const result = validateUrl(trimmed, scanOptions);
+        if (!result.safe) {
+          return { detected: true, url: value, reason: result.reason ?? 'unsafe URL' };
+        }
+      }
+      return null;
+    }
+    if (value === null || typeof value !== 'object') return null;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const hit = walk(item, depth + 1);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      const hit = walk((value as Record<string, unknown>)[key], depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  return walk(body, 0) ?? { detected: false, url: null, reason: null };
+}
+
+/**
  * Check if a hostname is a private/internal IP address.
  * Returns the reason string if private, or null if not.
  */

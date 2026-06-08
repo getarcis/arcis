@@ -1,29 +1,41 @@
-name: Rust data vendoring sync check
+name: Data sync check
 
-# Verifies that the vendored JSON data files inside the Rust workspace
-# at packages/arcis-rust/crates/arcis-data/data/ match the canonical
-# Python copies at packages/arcis-python/arcis/data/.
+# Verifies the shared JSON data files stay in sync across the three
+# copies the monorepo keeps:
 #
-# WHY: the Rust CLI release build (rust-release.yml) uses `cross` for
-# Linux musl targets, which runs Cargo inside a Docker container that
-# only mounts packages/arcis-rust/ as /project. That breaks any
-# include_bytes!() path that reaches outside the crate root. The
-# vendored copy fixes the build; this job stops the two copies from
-# drifting after a Python-side edit.
+#   1. packages/core/patterns.json            <- canonical, human-edited
+#   2. packages/arcis-python/arcis/data/      <- bundled copy the Python
+#                                                 package loads at runtime
+#   3. packages/arcis-rust/crates/arcis-data/data/ <- vendored copy the
+#                                                 Rust CLI build needs
 #
-# Fails on any sha256 mismatch. Fix is a one-liner: copy the Python
-# canonical files into the vendored location, commit. The fix is
-# also printed in the failure message.
+# WHY (core check): patterns.json is edited in packages/core/ but the
+# Python package ships its own bundled copy. v1.6.5 published a stale
+# Python wheel because an edit to core/patterns.json never reached the
+# bundled copy and no CI step compared them. This job now fails when the
+# canonical core file drifts from the bundled Python copy.
+#
+# WHY (vendored check): the Rust CLI release build (rust-release.yml)
+# uses `cross` for Linux musl targets, which runs Cargo inside a Docker
+# container that only mounts packages/arcis-rust/ as /project. That
+# breaks any include_bytes!() path reaching outside the crate root. The
+# vendored copy fixes the build; this job stops it drifting from Python.
+#
+# Fails on any sha256 mismatch and prints the one-line fix. threat-db.json
+# has no core copy (the Python data dir is its canonical source), so only
+# patterns.json is checked against core.
 
 on:
   pull_request:
     paths:
+      - "packages/core/patterns.json"
       - "packages/arcis-python/arcis/data/threat-db.json"
       - "packages/arcis-python/arcis/data/patterns.json"
       - "packages/arcis-rust/crates/arcis-data/data/**"
   push:
     branches: [main, nwl]
     paths:
+      - "packages/core/patterns.json"
       - "packages/arcis-python/arcis/data/threat-db.json"
       - "packages/arcis-python/arcis/data/patterns.json"
       - "packages/arcis-rust/crates/arcis-data/data/**"
@@ -38,23 +50,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - name: Verify vendored data matches Python canonical
+      - name: Verify data files are in sync across copies
         shell: bash
         run: |
-          set -e
+          set -u
+          fail=0
+
+          sha() { sha256sum "$1" | awk '{print $1}'; }
+
+          # 1. Canonical patterns.json (packages/core) must match the
+          #    bundled Python copy. This is the check that was missing
+          #    when v1.6.5 shipped a stale wheel.
+          core="packages/core/patterns.json"
+          py_patterns="packages/arcis-python/arcis/data/patterns.json"
+          if [ ! -f "$core" ]; then
+            echo "::error file=$core::canonical file missing"
+            fail=1
+          elif [ ! -f "$py_patterns" ]; then
+            echo "::error file=$py_patterns::bundled file missing"
+            fail=1
+          else
+            core_hash=$(sha "$core")
+            py_hash=$(sha "$py_patterns")
+            if [ "$core_hash" != "$py_hash" ]; then
+              echo "::error::canonical $core has drifted from bundled $py_patterns"
+              echo "  canonical (core)   sha256: $core_hash"
+              echo "  bundled   (python) sha256: $py_hash"
+              echo "  fix:"
+              echo "    cp $core $py_patterns"
+              echo "    git add $py_patterns && git commit -m 'chore: resync bundled patterns.json'"
+              fail=1
+            else
+              echo "ok: patterns.json core matches python bundled ($core_hash)"
+            fi
+          fi
+
+          # 2. Bundled Python copies must match the Rust vendored copies.
           for f in threat-db.json patterns.json; do
             canonical="packages/arcis-python/arcis/data/$f"
             vendored="packages/arcis-rust/crates/arcis-data/data/$f"
             if [ ! -f "$canonical" ]; then
               echo "::error file=$canonical::canonical file missing"
-              exit 1
+              fail=1
+              continue
             fi
             if [ ! -f "$vendored" ]; then
               echo "::error file=$vendored::vendored file missing"
-              exit 1
+              fail=1
+              continue
             fi
-            c_hash=$(sha256sum "$canonical" | awk '{print $1}')
-            v_hash=$(sha256sum "$vendored" | awk '{print $1}')
+            c_hash=$(sha "$canonical")
+            v_hash=$(sha "$vendored")
             if [ "$c_hash" != "$v_hash" ]; then
               echo "::error::vendored $vendored has drifted from canonical $canonical"
               echo "  canonical sha256: $c_hash"
@@ -62,7 +108,10 @@ jobs:
               echo "  fix:"
               echo "    cp $canonical $vendored"
               echo "    git add $vendored && git commit -m 'chore(rust): resync vendored $f'"
-              exit 1
+              fail=1
+            else
+              echo "ok: $f python matches rust vendored ($c_hash)"
             fi
-            echo "ok: $f matches ($c_hash)"
           done
+
+          exit $fail

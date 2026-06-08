@@ -1,6 +1,6 @@
 {
   "schema_version": "2",
-  "last_updated": "2026-05-07",
+  "last_updated": "2026-06-08",
   "maintained_by": "Arcis Security",
   "repository": "https://github.com/getarcis/arcis",
   "contribute": "New supply chain attacks can be reported via GitHub Issues. Each entry is reviewed and sourced before inclusion.",
@@ -2014,6 +2014,84 @@
       "trojanized_deps": [],
       "persistence_artifacts": [],
       "remediation": "Upgrade werkzeug to >=3.0.6."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "jsonpath",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<=1.2.1"
+      ],
+      "attack_vector": "The library evaluates JSON Path expressions through an unsafe code path. An attacker who controls a path expression can inject arbitrary JavaScript that runs as remote code on a Node.js server, or as XSS in a browser.",
+      "severity": "high",
+      "cve": "CVE-2026-1615",
+      "disclosure_date": "2026-02-09",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-87r5-mp6g-5w5j"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade jsonpath to >=1.3.0. Never build a JSON Path expression from untrusted input."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "rollup",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<2.80.0",
+        ">=3.0.0,<3.30.0",
+        ">=4.0.0,<4.59.0"
+      ],
+      "attack_vector": "Rollup does not sanitize output filenames, so a crafted import or plugin-supplied name containing path traversal sequences writes files outside the configured output directory, which can lead to arbitrary file write and code execution during a build.",
+      "severity": "high",
+      "cve": "CVE-2026-27606",
+      "disclosure_date": "2026-02-23",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-mw96-cpmx-2vgc"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade rollup to 2.80.0, 3.30.0, or 4.59.0 (or a later release on the same branch)."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "flatted",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<=3.4.1"
+      ],
+      "attack_vector": "The parse() function does not validate array indices, letting crafted input reach __proto__ and obtain a reference to Array.prototype. That enables prototype pollution, which downstream code can turn into denial of service or property injection.",
+      "severity": "high",
+      "cve": "CVE-2026-33228",
+      "disclosure_date": "2026-03-19",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-rf6f-7fwh-wjgh"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade flatted to >=3.4.2."
+    },
+    {
+      "ecosystem": "npm",
+      "name": "node-forge",
+      "malicious_versions": [],
+      "vulnerable_ranges": [
+        "<1.3.2"
+      ],
+      "attack_vector": "An ASN.1 validator desynchronization lets an attacker craft structures that the validator and the parser interpret differently, bypassing the signature and integrity checks that downstream security decisions depend on.",
+      "severity": "high",
+      "cve": "CVE-2025-12816",
+      "disclosure_date": "2025-11-25",
+      "source": "GitHub Security Advisory",
+      "references": [
+        "https://github.com/advisories/GHSA-5gfm-wpxj-wjgq"
+      ],
+      "trojanized_deps": [],
+      "persistence_artifacts": [],
+      "remediation": "Upgrade node-forge to >=1.3.2."
     }
   ]
 }

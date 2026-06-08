@@ -181,6 +181,16 @@ const SIGNATURES: PromptInjectionSignature[] = [
     description: 'Conditional output redirection',
   },
   {
+    // System-prompt extraction via the "repeat the words above" trick
+    // (Bing/Sydney leak 2023). Requires an output verb + a "words/text/
+    // everything" object + an "above/before/preceding" anchor, so it
+    // does not fire on ordinary "repeat that" conversational text.
+    rule: 'repeat-words-above',
+    pattern: /\b(?:repeat|print|output|echo|reproduce|reveal|show)\s+(?:me\s+)?(?:the\s+|all\s+(?:the\s+)?|every\s+)?(?:words?|text|lines?|content|everything|message|sentences?|prompt)\s+(?:above|before|preceding|prior|earlier|that\s+(?:came|appear|precede))/i,
+    severity: 'medium',
+    description: 'System-prompt extraction via "repeat the words above"',
+  },
+  {
     rule: 'translate-but-do-other',
     pattern: /\b(?:translate|summari[sz]e|paraphrase|rewrite)\s+.{0,80}\b(?:but|then|after|and)\s+(?:also\s+)?(?:do|say|output|tell|reveal|print)\b/i,
     severity: 'medium',
@@ -217,6 +227,17 @@ const SIGNATURES: PromptInjectionSignature[] = [
     description: 'Injected agent tool-call JSON shape (e.g. {"tool_call":{...}})',
   },
   {
+    // Bracket-style tool marker: `[TOOL_USE: shell, command="..."]`. The
+    // JSON-shape rule above misses this inline form, which is what
+    // ReAct-style and text-protocol agents actually parse out of model
+    // output. Won't fire on prose because it requires the bracket + a
+    // tool keyword + `:` or `=` immediately after.
+    rule: 'agent-toolcall-bracket',
+    pattern: /\[\s*(?:TOOL_USE|TOOL_CALL|FUNCTION_CALL|TOOL|FUNCTION|ACTION|EXECUTE)\s*[:=]/i,
+    severity: 'high',
+    description: 'Injected bracket-style agent tool marker (e.g. [TOOL_USE: shell])',
+  },
+  {
     rule: 'agent-tool-name-spoof',
     pattern:
       /"name"\s*:\s*"(?:exec|shell|run_command|system|bash|cmd|python|eval|read_file|write_file|delete_file)"/i,
@@ -234,6 +255,16 @@ const SIGNATURES: PromptInjectionSignature[] = [
     pattern: /\x1b\[/,
     severity: 'medium',
     description: 'ANSI escape sequence (terminal hijack / output spoofing on CLI agents)',
+  },
+  {
+    // Unicode Tag characters (U+E0000-U+E007F). Invisible in nearly
+    // every renderer but tokenizable by LLMs, so an attacker hides
+    // "Ignore previous instructions" inside what looks like plain text.
+    // These code points have no legitimate use in user input.
+    rule: 'unicode-tag-smuggle',
+    pattern: /[\u{E0000}-\u{E007F}]/u,
+    severity: 'high',
+    description: 'Unicode Tag characters smuggling hidden instructions',
   },
   {
     rule: 'claude-tool-use-tags',

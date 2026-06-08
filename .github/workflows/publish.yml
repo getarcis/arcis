@@ -198,12 +198,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.ver.outputs.version }}"
-          VERSION="${TAG#v}"
+          NOTES_FILE="release-notes/${TAG}.md"
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "release ${TAG} already exists, skipping"
+          elif [ -f "${NOTES_FILE}" ]; then
+            # Curated, public-safe notes committed in the release PR.
+            echo "using curated notes from ${NOTES_FILE}"
+            gh release create "${TAG}" --title "Arcis ${TAG}" --notes-file "${NOTES_FILE}"
+            echo "created GitHub Release at ${REPO_URL}"
           else
-            gh release create "${TAG}" \
-              --title "Arcis ${TAG}" \
-              --generate-notes
-            echo "created GitHub Release at https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+            # Fallback: auto-generate from PR titles. Noisy; prefer a
+            # committed release-notes/${TAG}.md per the README in that dir.
+            echo "no ${NOTES_FILE}; falling back to auto-generated notes"
+            gh release create "${TAG}" --title "Arcis ${TAG}" --generate-notes
+            echo "created GitHub Release at ${REPO_URL}"
           fi

@@ -1,5 +1,5 @@
 > [!NOTE]
-> **New in v1.6: Interactive REPL (`arcis` with no args), V32-V34 vectors (toolcall injection, deserialization markers, GraphQL alias bomb), and the first stateful primitive (`CorrelationWindow`). `arcis sca` ships with 100 curated supply chain advisories embedded (59 npm + 41 PyPI, including axios 2026 + litellm 2026 + colourama + event-stream + ua-parser-js + @solana/web3.js) plus a live OSV layer via `--osv`. [See the CLI section →](#arcis-cli)**
+> **New in v1.6: Interactive REPL (`arcis` with no args), V32-V34 vectors (toolcall injection, deserialization markers, GraphQL alias bomb), and the first stateful primitive (`CorrelationWindow`). `arcis sca` ships with 104 curated supply chain advisories embedded (63 npm + 41 PyPI, including axios 2026 + litellm 2026 + colourama + event-stream + ua-parser-js + @solana/web3.js) plus a live OSV layer via `--osv`. [See the CLI section →](#arcis-cli)**
 
 <div align="center">
 
@@ -88,10 +88,10 @@ At the checkpoint, Arcis:
 
 ## Features
 
-- **One-line setup**: `app.use(arcis())` activates sanitization, rate limiting, and security headers. CSRF, CORS, cookies, bot detection, prompt-injection guard, token-budget guard, and error handling are opt-in middleware.
+- **One-line setup**: `app.use(arcis())` activates the sanitizer pipeline, rate limiting, security headers, bot detection, scanner and per-IP correlation tracking, GraphQL abuse limits, mass-assignment and SSRF body checks, and prompt-injection screening. CSRF, CORS, cookie hardening, token-budget guard, and error scrubbing are opt-in middleware.
 - **20+ attack types**: XSS, SQL/NoSQL injection, command injection, path traversal, SSTI, XXE, SSRF, CSRF, HPP, prototype pollution, header injection, open redirect, LDAP injection.
 - **AI-era protections**: `detectPromptInjection` + `sanitizePromptInjection` cover ~28 jailbreak signatures (DAN/STAN/DUDE, system-prompt extraction, fake `<system>` tags, base64 smuggling). `tokenBudget` middleware caps per-key LLM token spend over a sliding window.
-- **695-pattern bot corpus**: 635 patterns sourced from the standalone [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots) MIT corpus plus 15 Arcis-specific supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes). 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown) with allow/deny lists and behavioral signal detection.
+- **695-pattern bot corpus**: 635 patterns sourced from the standalone [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots) MIT corpus plus 15 Arcis-specific supplementary entries (Selenium, Puppeteer, Playwright, Cypress, WebDriver, headless browser fakes). 8 categories (search engines, social, monitoring, AI crawlers, scrapers, security scanners, automated tools, unknown) with allow/deny lists and behavioral signal detection.
 - **Lean dependencies**: Node + Python SDKs ship with zero runtime dependencies. Go SDK has a stdlib-only core; framework adapters (Gin, Echo, chi, Fiber) are imported on demand.
 - **Three-language parity**: Same API, same behavior, same test results across Node.js, Python, and Go. Enforced by shared test vectors.
 - **Framework adapters (Node)**: ten subpath imports keep each framework SDK as a type-only dependency, so non-users pay nothing. Adapter surface varies by framework:
@@ -101,7 +101,7 @@ At the checkpoint, Arcis:
 - **Framework adapters (Go)**: Gin, Echo, chi, Fiber, plus a stdlib `net/http` helper (full pipeline on every adapter when `Block: true` is set).
 - **Context-aware output encoding**: `encodeForHtml()`, `encodeForJs()`, `encodeForUrl()`, `encodeForCss()`, `encodeForAttribute()` for safe rendering in every output context.
 - **Supply chain scanner**: `arcis sca` checks lockfiles, `node_modules`, and Python environments against a database of known compromised packages.
-- **Static analysis CLI**: `arcis scan` and `arcis audit` flag unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, weak crypto) across 24 rules.
+- **Static analysis CLI**: `arcis scan` and `arcis audit` flag unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, weak crypto) across 23 rules.
 - **Interactive REPL (v1.6)**: `arcis` with no args drops into a full-screen TUI ("Arcis Console") with a persistent welcome banner, scrollback, slash commands (`/help`, `/clear`, `/cwd`, `/export`, `/exit`), command history at `~/.arcis/history`, and F2 / Shift-F2 jump-to-finding navigation. Opt out with `ARCIS_NO_REPL=1` or in CI / piped contexts (auto-disabled).
 - **Tier 1 detection hardening (v1.6)**: NFKC Unicode normalization + multi-decode chain close the fullwidth and encoding-stack bypass classes across every detector. Mutation tester runs 142 case/encoding/Unicode variants against the corpus on every PR. Go SDK now loads `patterns.json` at runtime via `//go:embed` for cross-SDK parity.
 - **New v1.6 vectors**: V32 toolcall-injection patterns in `detectPromptInjection`. V33 modern deserialization markers (`detectDeserialization` — Python pickle, Java FastJSON `@type`, PHP `unserialize`, Ruby Marshal, .NET BinaryFormatter). V34 GraphQL alias bomb + fragment cycle (`max_aliases` + `block_fragment_cycles` options in `graphqlGuard`).
@@ -125,7 +125,7 @@ At the checkpoint, Arcis:
 | **Open Redirect** | Absolute URLs, `javascript:`, protocol-relative, backslash/control char bypass |
 | **CSRF** | Double-submit cookie, token generation and validation |
 | **Rate Limiting** | Per-IP, sliding window, token bucket, in-memory or Redis, `X-RateLimit-*` headers |
-| **Bot Detection** | 695 patterns (635 from the [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots) MIT corpus + 15 Arcis additions for Selenium / Puppeteer / Playwright / Cypress / WebDriver / headless browser fakes). 7 categories (search engines, social, monitoring, AI crawlers, scrapers, automated tools, unknown), behavioral signals on missing browser headers. |
+| **Bot Detection** | 695 patterns (635 from the [`getarcis/well-known-bots`](https://github.com/getarcis/well-known-bots) MIT corpus + 15 Arcis additions for Selenium / Puppeteer / Playwright / Cypress / WebDriver / headless browser fakes). 8 categories (search engines, social, monitoring, AI crawlers, scrapers, security scanners, automated tools, unknown), behavioral signals on missing browser headers. |
 | **MCP server (`@arcis/mcp`)** | Model Context Protocol server exposing `arcis_audit`, `arcis_sca`, `arcis_scan`, and `arcis_detect_prompt_injection` as tools that Cursor and any MCP-aware AI agent can call. |
 | **Prompt Injection** | 28 signatures across HIGH/MEDIUM/LOW tiers: jailbreak frameworks, system-prompt extraction, fake `<system>` tags, conversation-replay forgeries, base64/ROT13 smuggling hints, plus 5 v1.6 agent toolcall patterns (`"tool_call"` / `"function_call"` markers, ANSI escapes, tool-name spoofing) |
 | **Modern Deserialization (v1.6)** | `detectDeserialization()` flags request bodies that look like Python pickle (`\x80\x04`), Java FastJSON (`"@type":`), PHP `unserialize` (`O:N:"Class":`), Ruby Marshal (`\x04\x08`), or .NET BinaryFormatter (`\x00\x01\x00\x00\x00`). Detection-only: caller refuses the request. |
@@ -362,7 +362,7 @@ ANSI color from subprocesses is preserved in the scrollback. Disable the auto-la
 # Audit a project for unsafe code patterns
 arcis audit /path/to/project --language python --severity high
 
-# 24 rules covering eval/exec/pickle/yaml.load/innerHTML/document.write/
+# 23 rules covering eval/exec/pickle/yaml.load/innerHTML/document.write/
 # bypassSecurityTrust*/JWT-without-alg/SQL-string-concat/SSRF-sinks/weak-crypto.
 arcis audit . --verbose
 arcis audit . --fail-on high                     # exit 1 on any HIGH+ finding
@@ -514,10 +514,10 @@ All SDKs are tested against a shared set of test vectors (`TEST_VECTORS.json`) t
 
 | SDK | Tests | Framework | Status |
 |-----|-------|-----------|--------|
-| Node.js | 2,116+ | vitest | All passing |
-| Python | 1,688+ | pytest | All passing |
-| Go | 483+ | go test -race | All passing |
-| **Total** | **4,287+** | | |
+| Node.js | 2,280+ | vitest | All passing |
+| Python | 1,854+ | pytest | All passing |
+| Go | 789+ | go test -race | All passing |
+| **Total** | **4,900+** | | |
 
 ---
 
@@ -595,7 +595,7 @@ The script is stripped. The rest of the comment is saved normally.
 - Composite helpers: `protectLogin`, `protectSignup`, `protectApi`, `signup_protection`
 - Guards API for non-HTTP contexts (queues, agent tool handlers, gRPC)
 - `@arcis/mcp` server exposing audit/sca/scan/detect_prompt_injection as MCP tools
-- ~4,287+ tests across 3 SDKs, published on npm + PyPI
+- ~4,900+ tests across 3 SDKs, published on npm + PyPI
 
 ### Planned
 

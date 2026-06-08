@@ -18,6 +18,80 @@ export interface ArcisOptions {
   rateLimit?: boolean | RateLimitOptions;
   /** Enable/configure security headers. Default: true */
   headers?: boolean | HeaderOptions;
+  /**
+   * Enable/configure bot User-Agent classification. Default: true.
+   * Default deny list when enabled: ['AUTOMATED', 'SCRAPER'] (more aggressive
+   * than the standalone `botProtection` factory which only denies AUTOMATED).
+   * Pass `false` to disable. Pass a `BotProtectionOptions` object to override.
+   */
+  bot?: boolean | import('../middleware/bot-detection').BotProtectionOptions;
+  /**
+   * Enable/configure sensitive-path probe blocking (v1.7 W2). Default: true.
+   * Blocks well-known scanner probe paths like `/.env`, `/.git/`, `/wp-admin`,
+   * `/phpmyadmin`, etc. Pass `false` to disable. Pass an options object to
+   * customize the matcher list or status code. See `SENSITIVE_PATH_PATTERNS`
+   * for the default list. Apps with a legitimate `/admin` panel or running
+   * actual WordPress should override `patterns` to a narrower set.
+   */
+  scannerPaths?: boolean | import('../middleware/sensitive-paths').ScannerPathsOptions;
+  /**
+   * Enable/configure GraphQL inspection (v1.7 W3). Default: true.
+   * When a request body contains a `query` field that looks like a
+   * GraphQL document, inspect it for depth-bomb, alias-bomb, fragment
+   * cycle, and introspection abuse. Blocks on threshold breach.
+   *
+   * Default thresholds are tighter than the standalone
+   * `inspectGraphqlQuery` defaults: maxDepth=10, maxAliases=10 (vs 50),
+   * blockIntrospection=true, blockFragmentCycles=true. Real apps using
+   * Apollo Studio in dev should pass `{ blockIntrospection: false }`
+   * in their dev profile. Pass `false` to disable entirely.
+   */
+  graphql?: boolean | import('../sanitizers/graphql').GraphqlGuardOptions;
+  /**
+   * Enable/configure mass-assignment field detection (v1.7 W4). Default: true.
+   * Scans JSON request bodies (recursively) for privilege-escalation field
+   * names like `isAdmin`, `role`, `permissions` and blocks when one is
+   * present. Detection-only (does not strip). Pass `false` to disable, or
+   * an options object to customize the sensitive-field list / recursion
+   * depth. Admin APIs that legitimately accept `role`/`permissions` should
+   * disable this and use the allowlist filter (`applyMassAssignFilter`)
+   * on those routes instead.
+   */
+  massAssign?: boolean | import('../sanitizers/mass-assignment').MassAssignDetectOptions;
+  /**
+   * Enable/configure SSRF body-URL validation (v1.7 W5). Default: true.
+   * Walks JSON request bodies for URL-shaped string values and validates
+   * each with the SSRF checker. Blocks URLs targeting private/loopback/
+   * link-local/metadata addresses or disallowed schemes (`file:`,
+   * `gopher:`, ...). Public URLs pass unchanged. Pass `false` to disable,
+   * or a `ValidateUrlOptions` object (e.g. `{ allowedHosts: [...] }`) to
+   * customize. Apps that legitimately accept internal URLs should scope
+   * this off or pass `allowPrivate: true`.
+   */
+  ssrf?: boolean | import('../validation/url').ValidateUrlOptions;
+  /**
+   * Enable/configure prompt-injection detection on body strings (v1.7 W6).
+   * Default: true. Scans string values in the JSON body for prompt-
+   * injection / jailbreak / tool-call-forgery signatures and blocks when
+   * a match at or above `minSeverity` is found. Default `minSeverity` is
+   * `'medium'`. Pass `false` to disable, or `{ minSeverity: 'high' }` to
+   * only block the highest-confidence overrides. Apps that legitimately
+   * accept text discussing prompt injection (docs, support tickets)
+   * should raise the threshold or disable this.
+   */
+  promptInjection?: boolean | { minSeverity?: 'low' | 'medium' | 'high' };
+  /**
+   * Enable/configure forwarded-header inspection (v1.7 W7). Default: true.
+   * Flags a LOOPBACK address (127.x, ::1, localhost) in a forwarded /
+   * client-IP header (X-Forwarded-For, X-Forwarded-Host, X-Real-IP,
+   * Forwarded, Client-IP, True-Client-IP) — a client claiming to be
+   * localhost is spoofing to bypass IP allowlists. Private ranges are NOT
+   * flagged (internal load balancers legitimately add them). Pass an
+   * options object with `trustedHosts: [...]` to also reject Host /
+   * X-Forwarded-Host values not in the allowlist (host-header poisoning);
+   * without it, host validation is off. Pass `false` to disable entirely.
+   */
+  forwardedHeaders?: boolean | { trustedHosts?: string[] };
   /** Enable/configure safe logging. Default: true */
   logging?: boolean | LogOptions;
   /**
@@ -67,7 +141,8 @@ export interface SanitizeEvent {
     | 'xxe'
     | 'ldap'
     | 'xpath'
-    | 'header';
+    | 'header'
+    | 'deserialization';
   /** Where the hit was found, e.g. `body.name`, `query.q`, `params.id`, `path`. */
   field: string;
   /** First 80 chars of the offending value (truncated to keep logs sane). */

@@ -18,6 +18,28 @@ import type { SanitizeResult, ThreatInfo } from '../core/types';
 const HEADER_INJECTION_PATTERN = /\r\n|\r|\n|\0/g;
 
 /**
+ * Request-boundary header-injection shape: a newline (CRLF or bare CR/LF)
+ * followed by a header-name token and a colon (`\r\nSet-Cookie:`,
+ * `\nX-Injected:`). This is the response-splitting / header-smuggling
+ * signal. Unlike HEADER_INJECTION_PATTERN it does NOT flag a bare newline,
+ * so multi-line request bodies (markdown, textareas, code) pass cleanly.
+ * Mirrors Python's email-header-bare-newline rule. v1.7 parity 2026-06-08.
+ */
+const HEADER_INJECTION_STRICT_PATTERN =
+  /(?:\r\n|\r|\n)\s*[a-zA-Z][a-zA-Z0-9-]{0,40}\s*:/;
+
+/**
+ * Narrow header-injection check for request-boundary scanning. Returns
+ * true only on a CRLF-then-header-name-then-colon shape, never on a bare
+ * newline. Use this in `scanThreats`; use `detectHeaderInjection` (broad)
+ * when sanitizing a value destined for a response header.
+ */
+export function detectHeaderInjectionStrict(input: string): boolean {
+  if (typeof input !== 'string') return false;
+  return HEADER_INJECTION_STRICT_PATTERN.test(input);
+}
+
+/**
  * Sanitizes a header value by stripping CRLF sequences, bare CR/LF, and null bytes.
  *
  * @param input - The header value to sanitize

@@ -56,6 +56,14 @@ DeserializeRuntime = Literal[
 # Python 3.8). Match at string start to avoid false positives.
 _PICKLE_HEAD = re.compile(r"^\x80[\x02-\x05]")
 
+# Base64-encoded pickle. Attackers ship pickle over JSON/text as base64,
+# so the raw head-byte check never sees \x80. A string that is valid
+# base64 and decodes to a pickle head byte is the signal. The base64 of
+# \x80\x02..\x05 always begins "gA" + one of a known set of chars, so we
+# pre-filter cheaply before decoding. Benchmark deser-python-pickle-marker.
+_PICKLE_B64_PREFIX = re.compile(r"^gA[I-Z]")
+_B64_SHAPE = re.compile(r"^[A-Za-z0-9+/]{12,}={0,2}$")
+
 # Ruby Marshal magic: \x04\x08 at start (Ruby 1.9+).
 _RUBY_MARSHAL_HEAD = re.compile(r"^\x04\x08")
 
@@ -95,6 +103,16 @@ def detect_deserialization(payload: str) -> Optional[DeserializeRuntime]:
         return None
     if _PICKLE_HEAD.search(payload):
         return "python_pickle"
+    # Base64-encoded pickle: cheap prefix pre-filter, then validate by
+    # decoding and re-checking the pickle head byte (\x80 + proto 2-5).
+    if _PICKLE_B64_PREFIX.search(payload) and _B64_SHAPE.match(payload):
+        try:
+            import base64
+            decoded = base64.b64decode(payload, validate=True)
+            if decoded[:1] == b"\x80" and decoded[1:2] in (b"\x02", b"\x03", b"\x04", b"\x05"):
+                return "python_pickle"
+        except Exception:
+            pass
     if _RUBY_MARSHAL_HEAD.search(payload):
         return "ruby_marshal"
     if _DOTNET_BINFMT_HEAD.search(payload):
