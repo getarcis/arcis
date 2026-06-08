@@ -144,8 +144,7 @@ fn extract_url(line: &str) -> Option<String> {
         if let Some(start) = line.find(marker) {
             let rest = &line[start..];
             let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
-            let url = rest[..end]
-                .trim_end_matches(|c| matches!(c, '.' | ',' | ')' | ']' | '>' | '"' | '\''));
+            let url = rest[..end].trim_end_matches(['.', ',', ')', ']', '>', '"', '\'']);
             if url.len() > marker.len() {
                 return Some(url.to_string());
             }
@@ -567,7 +566,7 @@ impl ReplState {
         let min = self.min_severity;
         self.finding_rows()
             .into_iter()
-            .filter(|(_, sev)| min.map_or(true, |m| *sev >= m))
+            .filter(|(_, sev)| min.is_none_or(|m| *sev >= m))
             .map(|(i, _)| i)
             .collect()
     }
@@ -581,7 +580,7 @@ impl ReplState {
         let rows: Vec<usize> = self
             .finding_rows()
             .into_iter()
-            .filter(|(_, sev)| min.map_or(true, |m| *sev >= m))
+            .filter(|(_, sev)| min.is_none_or(|m| *sev >= m))
             .map(|(i, _)| i)
             .collect();
         let idx = *rows.get(n.checked_sub(1)?)?;
@@ -877,7 +876,7 @@ impl ReplState {
                 let display: Vec<String> = self
                     .finding_rows()
                     .into_iter()
-                    .filter(|(_, sev)| min.map_or(true, |m| *sev >= m))
+                    .filter(|(_, sev)| min.is_none_or(|m| *sev >= m))
                     .enumerate()
                     .map(|(n, (idx, _))| format!("  [{}] {}", n + 1, self.lines[idx].text.trim()))
                     .collect();
