@@ -8,6 +8,7 @@ import time
 import json
 import asyncio
 import logging
+import re as _re
 from typing import Callable, Optional, Dict, Any, List, Protocol
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -52,7 +53,6 @@ _FORWARDED_HEADERS = (
     "x-forwarded-for", "x-forwarded-host", "x-real-ip",
     "forwarded", "client-ip", "true-client-ip",
 )
-import re as _re
 _LOOPBACK_HEADER = _re.compile(
     r"(?:^|[\s,@=])(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1|0\.0\.0\.0|localhost)(?::\d+)?(?:$|[\s,;])",
     _re.IGNORECASE,
@@ -459,9 +459,11 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         rate_limit_window_ms: int = DEFAULT_WINDOW_MS,
         use_async_rate_limiter: bool = True,  # NEW: default to async
         # Bot UA classification options (v1.7 W1). Default-on. Deny list
-        # defaults to ['AUTOMATED', 'SCRAPER'] to catch curl / python-requests
-        # / sqlmap / nikto / nuclei out of the box. Pass bot=False to disable
-        # entirely, or override bot_deny / bot_allow for custom policy.
+        # defaults to ['AUTOMATED'] (headless browser automation). SCRAPER is
+        # not default-denied because it also covers curl / wget /
+        # python-requests / monitoring and other legitimate non-browser
+        # clients. Pass bot=False to disable entirely, or set
+        # bot_deny=['AUTOMATED', 'SCRAPER'] to also block scrapers.
         bot: bool = True,
         bot_deny: Optional[List[str]] = None,
         bot_allow: Optional[List[str]] = None,
@@ -581,7 +583,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         if bot:
             self.bot_guard = BotProtection(
                 allow=bot_allow,
-                deny=bot_deny if bot_deny is not None else ["AUTOMATED", "SCRAPER"],
+                deny=bot_deny if bot_deny is not None else ["AUTOMATED"],
                 message=bot_message,
             )
         else:

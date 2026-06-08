@@ -77,7 +77,13 @@ const SUBCOMMANDS: &[&str] = &["audit", "sca", "scan", "update"];
 
 /// Flag candidates offered when the word under the cursor starts with `-`.
 const COMMON_FLAGS: &[&str] = &[
-    "--help", "--version", "--list", "--language", "--severity", "--json", "--sarif",
+    "--help",
+    "--version",
+    "--list",
+    "--language",
+    "--severity",
+    "--json",
+    "--sarif",
 ];
 
 /// Finding severity, ordered Info < Low < Medium < High < Critical so a
@@ -170,7 +176,10 @@ fn open_in_browser(url: &str) -> io::Result<()> {
         c.arg(url);
         c
     };
-    cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ())
+    cmd.stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
 }
 
 /// Whether the current terminal can host the full-screen TUI. False for
@@ -341,7 +350,9 @@ pub fn run() -> ExitCode {
     // the user at the one-shot commands instead of garbling their shell.
     if !is_tui_capable() {
         eprintln!("arcis: the interactive console needs an interactive terminal.");
-        eprintln!("Run a command directly, e.g. `arcis audit .`, `arcis sca .`, or `arcis --help`.");
+        eprintln!(
+            "Run a command directly, e.g. `arcis audit .`, `arcis sca .`, or `arcis --help`."
+        );
         return ExitCode::from(2);
     }
 
@@ -1778,7 +1789,10 @@ mod tests {
     fn complete_slash_unique() {
         match compute_completion("/he") {
             Completion::Replace(s) => assert_eq!(s, "/help "),
-            other => panic!("expected unique replace, got {:?}", matches!(other, Completion::None)),
+            other => panic!(
+                "expected unique replace, got {:?}",
+                matches!(other, Completion::None)
+            ),
         }
     }
 
@@ -1853,9 +1867,15 @@ mod tests {
         std::fs::create_dir_all(dir.join("subdir")).unwrap();
         std::fs::write(dir.join("readme.txt"), "x").unwrap();
         let c = path_candidates_in(&dir, "");
-        assert!(c.contains(&"subdir/".to_string()), "dir gets trailing slash: {c:?}");
+        assert!(
+            c.contains(&"subdir/".to_string()),
+            "dir gets trailing slash: {c:?}"
+        );
         assert!(c.contains(&"readme.txt".to_string()));
-        assert_eq!(path_candidates_in(&dir, "rea"), vec!["readme.txt".to_string()]);
+        assert_eq!(
+            path_candidates_in(&dir, "rea"),
+            vec!["readme.txt".to_string()]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1887,7 +1907,10 @@ mod tests {
             Some("https://a.b/c")
         );
         assert_eq!(extract_url("no url here"), None);
-        assert_eq!(extract_url("http://host/p").as_deref(), Some("http://host/p"));
+        assert_eq!(
+            extract_url("http://host/p").as_deref(),
+            Some("http://host/p")
+        );
     }
 
     #[test]

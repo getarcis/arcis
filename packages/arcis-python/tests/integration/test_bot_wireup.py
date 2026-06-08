@@ -1,11 +1,14 @@
 """v1.7 W1 bot UA wire-up integration tests for ArcisMiddleware (FastAPI).
 
-ArcisMiddleware by default classifies the request User-Agent and denies
-the AUTOMATED + SCRAPER categories with 403. Opt-out via bot=False.
+ArcisMiddleware by default classifies the request User-Agent and denies the
+AUTOMATED category (headless browser automation: Selenium, Puppeteer,
+Playwright, PhantomJS, WebDriver, Headless Chrome) with 403. Opt-out via
+bot=False.
 
-The five "bench bot" UAs (curl, python-requests, sqlmap, nikto, nuclei)
-MUST be denied by default. These are the same payloads the local
-benchmark fires against the mealie target.
+SCRAPER (curl, wget, python-requests, sqlmap, nikto, nuclei) is NOT denied by
+default: that category also covers legitimate non-browser clients such as
+health checks, monitoring, and server-to-server calls. Blocking scrapers is
+opt-in via bot_deny=["AUTOMATED", "SCRAPER"].
 """
 
 import pytest
@@ -36,8 +39,8 @@ def _make_app(**middleware_kwargs):
     return TestClient(app)
 
 
-# Real browser baseline headers — match every behavioral signal a real
-# browser would set so detection falls all the way through.
+# Real browser baseline headers so behavioral detection falls all the way
+# through for the browser cases.
 _BROWSER_HEADERS = {
     "accept": "text/html,application/xhtml+xml",
     "accept-language": "en-US,en;q=0.9",
@@ -46,43 +49,54 @@ _BROWSER_HEADERS = {
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Default-on blocks the 5 bench bot UAs
+# Default-on denies AUTOMATED browser-automation UAs
 # ──────────────────────────────────────────────────────────────────────────
 
-BENCH_BOTS = [
-    "curl/7.68.0",
-    "python-requests/2.28.0",
-    "sqlmap/1.7.2#stable (https://sqlmap.org)",
-    "Mozilla/5.00 (Nikto/2.5.0) (Evasions:None) (Test:000001)",
-    "Nuclei - Open-source project (github.com/projectdiscovery/nuclei)",
+AUTOMATED_BOTS = [
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Unknown; Linux x86_64) AppleWebKit/534.34 (KHTML, like Gecko) PhantomJS/2.1.1 Safari/534.34",
+    "Mozilla/5.0 (compatible; Selenium/4.16.0)",
 ]
 
 
-@pytest.mark.parametrize("ua", BENCH_BOTS)
-def test_default_denies_bench_bots(ua):
+@pytest.mark.parametrize("ua", AUTOMATED_BOTS)
+def test_default_denies_automated_bots(ua):
     client = _make_app()
     r = client.get("/echo", headers={"user-agent": ua})
     assert r.status_code == 403
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Default-on allows real browsers + search engines
+# Default-on allows browsers, search engines, and non-browser clients
 # ──────────────────────────────────────────────────────────────────────────
 
-REAL_CLIENTS = [
+BROWSERS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-    "Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)",
 ]
 
 
-@pytest.mark.parametrize("ua", REAL_CLIENTS)
-def test_default_allows_real_clients(ua):
+@pytest.mark.parametrize("ua", BROWSERS)
+def test_default_allows_browsers(ua):
     client = _make_app()
     r = client.get("/echo", headers={"user-agent": ua, **_BROWSER_HEADERS})
+    assert r.status_code == 200
+
+
+# SCRAPER-category clients are not default-denied. Bare UA, no Accept headers,
+# mirrors a curl health check or an uptime monitor.
+NON_BROWSER_CLIENTS = [
+    "curl/7.68.0",
+    "python-requests/2.28.0",
+    "Wget/1.21.3",
+]
+
+
+@pytest.mark.parametrize("ua", NON_BROWSER_CLIENTS)
+def test_default_allows_non_browser_clients(ua):
+    client = _make_app()
+    r = client.get("/echo", headers={"user-agent": ua})
     assert r.status_code == 200
 
 
@@ -91,29 +105,31 @@ def test_default_allows_real_clients(ua):
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def test_bot_false_lets_curl_through():
+def test_bot_false_lets_automated_through():
     client = _make_app(bot=False)
-    r = client.get("/echo", headers={"user-agent": "curl/7.68.0"})
-    assert r.status_code == 200
-
-
-def test_bot_false_lets_sqlmap_through():
-    client = _make_app(bot=False)
-    r = client.get("/echo", headers={"user-agent": "sqlmap/1.7"})
+    r = client.get(
+        "/echo", headers={"user-agent": "Mozilla/5.0 HeadlessChrome/120.0.0.0"}
+    )
     assert r.status_code == 200
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Custom deny list via bot_deny
+# Opt-in scraper blocking via bot_deny
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def test_custom_deny_only_automated_lets_scraper_through():
-    # Default lumps SCRAPER + AUTOMATED. Narrowing to AUTOMATED only must
-    # let curl (SCRAPER) through.
-    client = _make_app(bot_deny=["AUTOMATED"])
+def test_opt_in_scraper_deny_blocks_curl():
+    client = _make_app(bot_deny=["AUTOMATED", "SCRAPER"])
     r = client.get("/echo", headers={"user-agent": "curl/7.68.0"})
-    assert r.status_code == 200
+    assert r.status_code == 403
+
+
+def test_opt_in_scraper_deny_blocks_sqlmap():
+    client = _make_app(bot_deny=["AUTOMATED", "SCRAPER"])
+    r = client.get(
+        "/echo", headers={"user-agent": "sqlmap/1.7.2#stable (https://sqlmap.org)"}
+    )
+    assert r.status_code == 403
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -121,16 +137,17 @@ def test_custom_deny_only_automated_lets_scraper_through():
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def test_dry_run_does_not_block_bots():
+def test_dry_run_does_not_block_automated():
     client = _make_app(dry_run=True)
-    r = client.get("/echo", headers={"user-agent": "sqlmap/1.7"})
+    r = client.get(
+        "/echo", headers={"user-agent": "Mozilla/5.0 HeadlessChrome/120.0.0.0"}
+    )
     assert r.status_code == 200
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # Corpus categorization regression — catches future drift where patterns
-# silently fall through enum validation. v1.7 W1 prep round remapped
-# 28 GENERIC + 6 SEO entries.
+# silently fall through enum validation.
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -151,3 +168,17 @@ def test_bench_bots_classify_as_scraper():
     assert detect_bot(_StubReq("sqlmap/1.7")).category == "SCRAPER"
     assert detect_bot(_StubReq("Nikto/2.5")).category == "SCRAPER"
     assert detect_bot(_StubReq("Nuclei/2.9")).category == "SCRAPER"
+
+
+def test_automated_bots_classify_as_automated():
+    from arcis.middleware.bot_detection import detect_bot
+
+    class _StubReq:
+        def __init__(self, ua):
+            self.headers = {"user-agent": ua}
+
+    assert (
+        detect_bot(_StubReq("Mozilla/5.0 HeadlessChrome/120.0.0.0")).category
+        == "AUTOMATED"
+    )
+    assert detect_bot(_StubReq("PhantomJS/2.1.1")).category == "AUTOMATED"
