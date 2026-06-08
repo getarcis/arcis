@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "arcis"
 version = "1.6.6"
-description = "Inside-the-app security middleware for Python. FastAPI, Django, Litestar run the full sanitizer pipeline (XSS, SQL, NoSQL, path, command, SSTI, XXE, LDAP, XPath, email-header, prototype). Flask is sanitize-only. Opt-in helpers: 695-bot corpus, CSRF, HPP, SSRF URL validation, prompt-injection signatures (V32 toolcall, V33 deserialization, V34 GraphQL), per-IP correlation window, LLM token-budget. Same API as the Node and Go SDKs. CLI ships at npm install -g @arcis/cli."
+description = "Inside-the-app security middleware for Python. FastAPI, Django, Litestar run the full sanitizer pipeline (XSS, SQL, NoSQL, path, command, SSTI, XXE, LDAP, XPath, email-header, prototype). Flask is sanitize-only. Default-on in the framework middleware: 695-pattern bot screening, scanner-path + per-IP correlation, SSRF body checks, mass-assignment detection, GraphQL guard, and prompt-injection (V32 toolcall) + deserialization (V33) signatures. Opt-in: CSRF, HPP, LLM token-budget. Same API as the Node and Go SDKs. CLI ships at npm install -g @arcis/cli."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
