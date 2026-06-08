@@ -175,6 +175,22 @@ from .guards import Guards, GuardsDecision
 from .middleware.hpp import HppProtection, create_hpp
 from .middleware.csrf import CsrfProtection, create_csrf, generate_csrf_token, validate_csrf_token
 from .middleware.signup_protection import SignupProtection, SignupCheckResult, check_signup
+from .middleware.protect_login import check_login, LoginCheckResult
+from .middleware.protect_api import check_api, ApiCheckResult
+# Shared per-framework protect-factory glue (improvements.md §1.4). The
+# framework-specific factories (protect_login / protect_signup /
+# protect_api returning a dependency or decorator) live on each adapter
+# module (arcis.fastapi, arcis.litestar, arcis.django); only the
+# framework-agnostic helpers are exported from the package root.
+from .middleware.protect_factories import (
+    block_status_code,
+    client_ip_from_xff_then,
+    record_signup_correlation,
+    signup_check_with_correlation,
+    DEFAULT_LOGIN_RATE_LIMIT,
+    DEFAULT_SIGNUP_RATE_LIMIT,
+    DEFAULT_API_RATE_LIMIT,
+)
 
 from .utils import (
     parse_duration,
@@ -280,6 +296,18 @@ __all__ = [
     "SignupProtection",
     "SignupCheckResult",
     "check_signup",
+    # Composite login / api checks + protect-factory glue (§1.4)
+    "check_login",
+    "LoginCheckResult",
+    "check_api",
+    "ApiCheckResult",
+    "block_status_code",
+    "client_ip_from_xff_then",
+    "record_signup_correlation",
+    "signup_check_with_correlation",
+    "DEFAULT_LOGIN_RATE_LIMIT",
+    "DEFAULT_SIGNUP_RATE_LIMIT",
+    "DEFAULT_API_RATE_LIMIT",
     # PII detection and redaction
     "scan_pii",
     "detect_pii",

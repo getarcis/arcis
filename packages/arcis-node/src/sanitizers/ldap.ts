@@ -23,8 +23,10 @@ const LDAP_DN_CHARS = /[,+<>;"=\/\\\x00*()\x00]/g;
 const LDAP_WILDCARD_VALUE_PATTERN = /=\s*\*/;
 
 // NUL byte detection — used for LDAP query truncation attacks.
-// Bare `\x00` is suspicious in any field that flows to an LDAP query.
-const LDAP_NUL_PATTERN = /\x00/;
+// Matches both a real NUL (`\x00`) and the literal escape sequence
+// `\00` (backslash-zero-zero), which is how it arrives over JSON/form
+// text before any decode. Benchmark ldap-null-byte-truncate.
+const LDAP_NUL_PATTERN = /\x00|\\00/;
 
 // Detection pattern for OR/AND bypass and wildcard abuse.
 // Real shapes: `*)(uid=*` (break the filter, inject a new clause).

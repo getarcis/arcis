@@ -73,6 +73,14 @@ _PROTO_KEYS = {
     k.lower() for k in PATTERNS.get("patterns", {}).get("prototype_pollution", {}).get("dangerous_keys", [])
 } or {"__proto__", "constructor", "prototype", "__definegetter__", "__definesetter__", "__lookupgetter__", "__lookupsetter__"}
 
+# Identity/auth fields that must hold a scalar. A list/dict value here is a
+# NoSQL type-juggling operator-injection shape. (v1.7 nosql-type-juggle.)
+_AUTH_FIELDS = {
+    "username", "user", "userid", "user_id", "login", "email",
+    "password", "pass", "passwd", "pwd", "token", "apikey", "api_key",
+    "secret", "otp", "pin",
+}
+
 
 def _first_match(value: str, patterns: List[re.Pattern]) -> Optional[str]:
     for p in patterns:
@@ -203,6 +211,7 @@ def scan_threats(data: Any) -> Optional[Tuple[str, str, str]]:
     # which is loaded by this module's top.
     from .ssti import detect_ssti
     from .xxe import detect_xxe
+    from .deserialization import detect_deserialization
 
     # Key-based vectors first (apply at any nesting level)
     if isinstance(data, dict):
@@ -213,6 +222,16 @@ def scan_threats(data: Any) -> Optional[Tuple[str, str, str]]:
                     return ("prototype", "prototype/match", k)
                 if kl in _NOSQL_KEYS:
                     return ("nosql", "nosql/match", k)
+                # NoSQL type-juggling: an auth/identity field whose value is
+                # an ARRAY instead of a scalar (e.g.
+                # {"username":["admin"],"password":["x"]}). MongoDB turns the
+                # array into an $in-style operator, bypassing string equality.
+                # Only arrays are flagged here: operator-objects ({"$ne":...})
+                # are already caught by _NOSQL_KEYS, and a plain nested object
+                # under an auth field is legitimate. Benchmark
+                # nosql-mongo-type-juggle.
+                if kl in _AUTH_FIELDS and isinstance(v, list):
+                    return ("nosql", "nosql/type-juggle", k)
             inner = scan_threats(v)
             if inner is not None:
                 return inner
@@ -226,6 +245,29 @@ def scan_threats(data: Any) -> Optional[Tuple[str, str, str]]:
     if not isinstance(data, str):
         return None
 
+    # Keep the raw (pre-decode) string for the path detector, whose
+    # patterns deliberately match the ENCODED forms (%C0%AE overlong UTF-8,
+    # %2e%2e) that multi-decode would otherwise strip away.
+    raw_data = data
+
+    # SECURITY: normalize the SAME way sanitize_string does before any
+    # detector runs, so block-mode detection honors the NFKC + multi-decode
+    # bypass protection shipped in v1.6. Without this, block mode missed
+    # fullwidth `<script>` (U+FF1C), percent-encoded `%3Cscript%3E`, and
+    # HTML-entity-encoded payloads that sanitize-mode already caught.
+    # (v1.7 parity fix 2026-06-08.)
+    data = unicodedata.normalize('NFKC', _multi_decode(data))
+
+    # __proto__ as a STRING VALUE (e.g. ["__proto__","isAdmin"] path array
+    # used by gadget-chain pollution). The key-based check above only sees
+    # dict keys; a dunder-proto token appearing as a value is the array-form
+    # signal. Only the dunder forms (never legitimate prose) are flagged, so
+    # the words "constructor"/"prototype" in normal text don't trip it.
+    # Benchmark proto-pollution-array-index.
+    if data in ("__proto__", "__defineGetter__", "__defineSetter__",
+                "__lookupGetter__", "__lookupSetter__") or "__proto__" in data:
+        return ("prototype", "prototype/match", data[:80])
+
     # String vectors — order: most specific → least specific so a payload
     # carrying multiple signals classifies under the highest-severity bucket.
     m = _first_match(data, _XSS_DETECT)
@@ -235,6 +277,11 @@ def scan_threats(data: Any) -> Optional[Tuple[str, str, str]]:
         return ("ssti", "ssti/match", data[:80])
     if detect_xxe(data):
         return ("xxe", "xxe/match", data[:80])
+    # Deserialization markers (pickle incl. base64, Ruby Marshal, .NET,
+    # FastJSON, PHP). Wired into block mode in v1.7 (was detection-only).
+    deser = detect_deserialization(data)
+    if deser is not None:
+        return ("deserialization", f"deserialization/{deser}", data[:80])
     # Email-header CRLF + SMTP keyword. Very specific shape (CRLF + a
     # known SMTP header keyword) so it fires early.
     m = _first_match(data, _EMAIL_HEADER_DETECT)
@@ -258,8 +305,11 @@ def scan_threats(data: Any) -> Optional[Tuple[str, str, str]]:
     m = _first_match(data, _XPATH_STRICT_DETECT)
     if m:
         return ("xpath", "xpath/match", m)
-    normalized = unicodedata.normalize('NFKC', data)
-    m = _first_match(normalized, _PATH_DETECT)
+    # Path detection runs on BOTH the raw string (so the encoded-form
+    # patterns %C0%AE / %2e%2e / %252f still fire before multi-decode
+    # strips them) and the normalized string (so fullwidth-slash and
+    # other NFKC-folded traversal is caught). Either match blocks.
+    m = _first_match(raw_data, _PATH_DETECT) or _first_match(data, _PATH_DETECT)
     if m:
         return ("path", "path/match", m)
     m = _first_match(data, _COMMAND_DETECT)

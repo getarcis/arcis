@@ -7,21 +7,23 @@
 //! run inline; output streams into the scrollback as the subprocess
 //! produces it.
 //!
-//! ## MVP scope (v1.6.0)
+//! ## Capabilities
 //!
-//! Out of scope for this first cut, see `improvements.md` §1.5 for the
-//! full M1..M5 plan:
+//! Commands invoke `<self-exe> <subcommand>` as a child subprocess; its
+//! stdout/stderr stream into the scrollback line by line through an MPSC
+//! channel as the subprocess produces them (M2 live progress). On top of
+//! that:
 //!
-//! * No event-channel refactor of audit/sca/scan. Commands invoke
-//!   `<self-exe> <subcommand>` as a child subprocess. Costs one process
-//!   spawn per command (~5-20ms on a modern box, negligible vs scan
-//!   time). The refactor pays for itself later when M2 lands.
-//! * No findings-navigation overlay. Output is scrollback-only.
-//! * No tab completion, no command history persistence — current line
-//!   only.
-//! * Subprocess writes plain text into scrollback (NO_COLOR=1 forces
-//!   the binary off ANSI). Future polish: parse ANSI codes back into
-//!   ratatui spans.
+//! * Findings navigation: F2 / Shift-F2 jump between finding rows;
+//!   `/filter <sev>` scopes navigation and `/findings` to a severity;
+//!   `/open <n>` launches the advisory URL for a finding (M3).
+//! * Tab completion for slash commands, subcommands, flags, and paths;
+//!   command history persisted to `~/.arcis/history` (M4).
+//! * Subprocess ANSI SGR colour is parsed back into ratatui spans
+//!   (`CLICOLOR_FORCE=1` keeps colour-aware children emitting it).
+//! * Degrades gracefully on a non-interactive terminal (piped stdout,
+//!   `TERM=dumb`, or `ARCIS_NO_TUI`): prints a pointer to the one-shot
+//!   commands instead of entering the alt-screen.
 
 use std::io::{self, BufRead, BufReader, Stdout, Write};
 use std::path::PathBuf;
@@ -65,11 +67,294 @@ const POLL_INTERVAL_MS: u64 = 50;
 /// Max history entries persisted to disk. Same bound used in-memory.
 const HISTORY_MAX: usize = 200;
 
+/// Slash commands offered by Tab completion (without the leading `/`).
+const SLASH_COMMANDS: &[&str] = &[
+    "help", "clear", "cwd", "export", "filter", "findings", "open", "exit",
+];
+
+/// First-word subcommand candidates for Tab completion.
+const SUBCOMMANDS: &[&str] = &["audit", "sca", "scan", "update"];
+
+/// Flag candidates offered when the word under the cursor starts with `-`.
+const COMMON_FLAGS: &[&str] = &[
+    "--help",
+    "--version",
+    "--list",
+    "--language",
+    "--severity",
+    "--json",
+    "--sarif",
+];
+
+/// Finding severity, ordered Info < Low < Medium < High < Critical so a
+/// `>=` filter is a single comparison. Parsed from the leading severity
+/// token that `arcis audit / sca / scan` print in plain-text mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Severity {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+impl Severity {
+    fn label(self) -> &'static str {
+        match self {
+            Severity::Info => "info",
+            Severity::Low => "low",
+            Severity::Medium => "medium",
+            Severity::High => "high",
+            Severity::Critical => "critical",
+        }
+    }
+}
+
+/// Map the leading token of a scrollback line to a severity. Mirrors the
+/// tokens `finding_indices` recognises. WARN folds into Medium.
+fn severity_from_token(tok: &str) -> Option<Severity> {
+    match tok {
+        "CRITICAL" | "CRIT" => Some(Severity::Critical),
+        "HIGH" => Some(Severity::High),
+        "MEDIUM" | "WARN" => Some(Severity::Medium),
+        "LOW" => Some(Severity::Low),
+        "INFO" => Some(Severity::Info),
+        _ => None,
+    }
+}
+
+/// Parse a user-supplied `/filter <sev>` argument. Accepts the full word
+/// or a one-letter shorthand. Returns None for unrecognised input.
+fn severity_from_filter(s: &str) -> Option<Severity> {
+    match s.to_ascii_lowercase().as_str() {
+        "critical" | "crit" | "c" => Some(Severity::Critical),
+        "high" | "h" => Some(Severity::High),
+        "medium" | "med" | "m" => Some(Severity::Medium),
+        "low" | "l" => Some(Severity::Low),
+        "info" | "i" => Some(Severity::Info),
+        _ => None,
+    }
+}
+
+/// Extract the first http(s) URL from a line. Stops at the first
+/// whitespace and trims trailing punctuation, so `(see https://x/y).`
+/// yields `https://x/y`. Returns None when no URL is present.
+fn extract_url(line: &str) -> Option<String> {
+    for marker in ["https://", "http://"] {
+        if let Some(start) = line.find(marker) {
+            let rest = &line[start..];
+            let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+            let url = rest[..end].trim_end_matches(['.', ',', ')', ']', '>', '"', '\'']);
+            if url.len() > marker.len() {
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Best-effort launch of the OS default browser/opener for a URL. Spawns
+/// detached; never blocks the REPL. Errors (no opener on PATH) surface
+/// to the caller for a friendly scrollback message.
+fn open_in_browser(url: &str) -> io::Result<()> {
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", "start", "", url]);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = Command::new("open");
+        c.arg(url);
+        c
+    };
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let mut cmd = {
+        let mut c = Command::new("xdg-open");
+        c.arg(url);
+        c
+    };
+    cmd.stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+}
+
+/// Whether the current terminal can host the full-screen TUI. False for
+/// piped/redirected stdout, `TERM=dumb` (legacy / CI shells), or an
+/// explicit `ARCIS_NO_TUI` opt-out. Lets the console degrade to a clear
+/// message on terminals like a bare cmd.exe pipe instead of garbling.
+fn is_tui_capable() -> bool {
+    use std::io::IsTerminal;
+    if std::env::var_os("ARCIS_NO_TUI").is_some() {
+        return false;
+    }
+    if std::env::var("TERM").map(|t| t == "dumb").unwrap_or(false) {
+        return false;
+    }
+    std::io::stdout().is_terminal()
+}
+
+/// Result of a Tab completion request against the current input line.
+enum Completion {
+    /// No candidate matched; leave the input unchanged.
+    None,
+    /// Replace the whole input line (unique match, or a common prefix
+    /// that fully resolves the word).
+    Replace(String),
+    /// Several candidates. The input is extended to the longest common
+    /// prefix; `candidates` is listed for the user to disambiguate.
+    Suggest {
+        input: String,
+        candidates: Vec<String>,
+    },
+}
+
+/// Split an input line into (head-including-trailing-space, last word).
+/// When the line ends in whitespace the word is empty (a fresh token is
+/// being started).
+fn split_last_word(input: &str) -> (&str, &str) {
+    if input.is_empty() {
+        return ("", "");
+    }
+    if input.ends_with(char::is_whitespace) {
+        return (input, "");
+    }
+    match input.rfind(char::is_whitespace) {
+        Some(i) => {
+            let ws_len = input[i..].chars().next().map(char::len_utf8).unwrap_or(1);
+            let split = i + ws_len;
+            (&input[..split], &input[split..])
+        }
+        None => ("", input),
+    }
+}
+
+/// Longest common prefix (byte-safe) across candidate strings.
+fn longest_common_prefix(items: &[String]) -> String {
+    let Some(first) = items.first() else {
+        return String::new();
+    };
+    let mut end = first.len();
+    for it in &items[1..] {
+        let common_chars = first
+            .chars()
+            .zip(it.chars())
+            .take_while(|(a, b)| a == b)
+            .count();
+        let bytes = first
+            .char_indices()
+            .nth(common_chars)
+            .map(|(b, _)| b)
+            .unwrap_or(first.len());
+        end = end.min(bytes);
+    }
+    first[..end].to_string()
+}
+
+/// Filesystem path candidates for `word`, relative to `base`. Splits a
+/// `dir/partial` word so completion descends into subdirectories.
+/// Directories come back with a trailing `/`. Pure given `base`, so the
+/// tests can point it at a temp dir.
+fn path_candidates_in(base: &std::path::Path, word: &str) -> Vec<String> {
+    let (dir_part, file_prefix) = match word.rfind('/') {
+        Some(i) => (&word[..=i], &word[i + 1..]),
+        None => ("", word),
+    };
+    let read_dir = if dir_part.is_empty() {
+        base.to_path_buf()
+    } else {
+        base.join(dir_part)
+    };
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&read_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with(file_prefix) {
+                continue;
+            }
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let suffix = if is_dir { "/" } else { "" };
+            out.push(format!("{dir_part}{name}{suffix}"));
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Compute Tab completion for an input line. Command/flag completion is
+/// pure; the path branch reads the current working directory.
+fn compute_completion(input: &str) -> Completion {
+    let (head, word) = split_last_word(input);
+    let completing_first = head.split_whitespace().next().is_none();
+
+    let candidates: Vec<String> = if completing_first {
+        if let Some(stripped) = word.strip_prefix('/') {
+            SLASH_COMMANDS
+                .iter()
+                .filter(|c| c.starts_with(stripped))
+                .map(|c| format!("/{c}"))
+                .collect()
+        } else {
+            SUBCOMMANDS
+                .iter()
+                .filter(|c| c.starts_with(word))
+                .map(|c| c.to_string())
+                .collect()
+        }
+    } else if word.starts_with('-') {
+        COMMON_FLAGS
+            .iter()
+            .filter(|c| c.starts_with(word))
+            .map(|c| c.to_string())
+            .collect()
+    } else {
+        let base = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        path_candidates_in(&base, word)
+    };
+
+    match candidates.len() {
+        0 => Completion::None,
+        1 => {
+            // Unique. Append a trailing space for commands/flags so the
+            // user keeps typing; directories already end in `/`.
+            let only = &candidates[0];
+            let trailer = if only.ends_with('/') { "" } else { " " };
+            Completion::Replace(format!("{head}{only}{trailer}"))
+        }
+        _ => {
+            let lcp = longest_common_prefix(&candidates);
+            let new_input = if lcp.len() > word.len() {
+                format!("{head}{lcp}")
+            } else {
+                input.to_string()
+            };
+            Completion::Suggest {
+                input: new_input,
+                candidates,
+            }
+        }
+    }
+}
+
 /// Entry point. Called from `main()` when bare `arcis` is invoked in a
 /// TTY context. Sets up the terminal, runs the event loop, and
 /// guarantees terminal restoration on every exit path (panic-safe via
 /// the [`TerminalGuard`] drop impl).
 pub fn run() -> ExitCode {
+    // Graceful degradation: on a terminal that cannot host the TUI
+    // (piped stdout, TERM=dumb, a bare cmd.exe pipe, or an explicit
+    // ARCIS_NO_TUI opt-out) we refuse to enter the alt-screen and point
+    // the user at the one-shot commands instead of garbling their shell.
+    if !is_tui_capable() {
+        eprintln!("arcis: the interactive console needs an interactive terminal.");
+        eprintln!(
+            "Run a command directly, e.g. `arcis audit .`, `arcis sca .`, or `arcis --help`."
+        );
+        return ExitCode::from(2);
+    }
+
     let mut guard = match TerminalGuard::enter() {
         Ok(g) => g,
         Err(e) => {
@@ -165,6 +450,11 @@ struct ReplState {
     /// new command submit so the next command's output is visible
     /// without an extra keystroke.
     scroll_offset: usize,
+    /// Active finding-severity filter, or None for "show all". When set,
+    /// F2 / Shift-F2 navigation and `/findings` only consider findings at
+    /// or above this severity. Does not hide scrollback lines (context
+    /// and summaries stay readable); it scopes the finding view.
+    min_severity: Option<Severity>,
 }
 
 /// One scrollback row. Output lines from subprocesses carry [`Origin::Output`];
@@ -239,6 +529,7 @@ impl ReplState {
             self_exe,
             cwd,
             scroll_offset: 0,
+            min_severity: None,
         }
     }
 
@@ -250,28 +541,58 @@ impl ReplState {
     /// Finding shape: leading whitespace + uppercase severity token
     /// (CRITICAL/HIGH/MEDIUM/LOW/CRIT/WARN/INFO) followed by a space.
     /// Mirrors what `arcis audit / sca / scan` print in plain-text mode.
-    fn finding_indices(&self) -> Vec<usize> {
-        let severities = [
-            "CRITICAL ",
-            "HIGH ",
-            "MEDIUM ",
-            "LOW ",
-            "CRIT ",
-            "WARN ",
-            "INFO ",
-        ];
+    /// Returns (scrollback index, parsed severity) for every finding row.
+    fn finding_rows(&self) -> Vec<(usize, Severity)> {
         self.lines
             .iter()
             .enumerate()
             .filter_map(|(i, l)| {
                 let t = l.text.trim_start();
-                if severities.iter().any(|s| t.starts_with(s)) {
-                    Some(i)
+                let tok = t.split_whitespace().next().unwrap_or("");
+                // Require a space after the token so a bare "HIGH" word
+                // mid-sentence does not register as a finding row.
+                if t.len() > tok.len() {
+                    severity_from_token(tok).map(|sev| (i, sev))
                 } else {
                     None
                 }
             })
             .collect()
+    }
+
+    /// Finding indices, scoped by the active `min_severity` filter. Used
+    /// by F2 / Shift-F2 so navigation respects `/filter`.
+    fn finding_indices(&self) -> Vec<usize> {
+        let min = self.min_severity;
+        self.finding_rows()
+            .into_iter()
+            .filter(|(_, sev)| min.is_none_or(|m| *sev >= m))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Resolve the advisory URL for the `n`-th finding (1-based) in the
+    /// current filtered view. Scans the finding line and the rows beneath
+    /// it (up to the next finding, capped at +6 lines) for the first
+    /// http(s) URL. None when the finding or a URL is absent.
+    fn find_finding_url(&self, n: usize) -> Option<String> {
+        let min = self.min_severity;
+        let rows: Vec<usize> = self
+            .finding_rows()
+            .into_iter()
+            .filter(|(_, sev)| min.is_none_or(|m| *sev >= m))
+            .map(|(i, _)| i)
+            .collect();
+        let idx = *rows.get(n.checked_sub(1)?)?;
+        let next = rows
+            .iter()
+            .copied()
+            .find(|&i| i > idx)
+            .unwrap_or(self.lines.len());
+        let upper = (idx + 6).min(next).min(self.lines.len());
+        self.lines[idx..upper]
+            .iter()
+            .find_map(|l| extract_url(&l.text))
     }
 
     /// Scroll the view to a specific scrollback row, pinning it near the
@@ -391,10 +712,14 @@ impl ReplState {
         self.push_sys("  /help              show this banner again");
         self.push_sys("  /clear             wipe scrollback");
         self.push_sys("  /cwd <path>        change working directory");
+        self.push_sys("  /filter <sev>      scope findings to a severity (critical..info, clear)");
+        self.push_sys("  /findings          list findings in scrollback (numbered)");
+        self.push_sys("  /open <n>          open the advisory URL for finding n");
         self.push_sys("  /export [file]     save this session to a markdown file");
         self.push_sys("  /exit              leave the console (Ctrl-D works too)");
         self.push_sys("");
         self.push_sys("  Ctrl-C cancels a running command. Banner scrolls as you work.");
+        self.push_sys("  Tab completes commands, flags, and paths.");
         self.push_sys("  PgUp/PgDn scrolls findings; F2 jumps to next finding; Shift-F2 prev.");
         self.push_sys("");
     }
@@ -522,7 +847,91 @@ impl ReplState {
                     Err(e) => self.push_sys(format!("  /export: {e}")),
                 }
             }
+            "filter" => {
+                let arg = iter.next().unwrap_or("");
+                if arg.is_empty()
+                    || arg.eq_ignore_ascii_case("clear")
+                    || arg.eq_ignore_ascii_case("none")
+                    || arg.eq_ignore_ascii_case("off")
+                {
+                    self.min_severity = None;
+                    self.push_sys("  finding filter cleared (showing all severities)");
+                } else if let Some(sev) = severity_from_filter(arg) {
+                    self.min_severity = Some(sev);
+                    let n = self.finding_indices().len();
+                    self.push_sys(format!(
+                        "  finding filter: {} and above ({n} matching). F2 jumps; /findings lists.",
+                        sev.label()
+                    ));
+                } else {
+                    self.push_sys(format!(
+                        "  /filter: unknown severity '{arg}' (use critical|high|medium|low|info, or clear)"
+                    ));
+                }
+            }
+            "findings" => {
+                let min = self.min_severity;
+                // Snapshot index+text before pushing, so the immutable
+                // borrow of self.lines does not overlap push_sys.
+                let display: Vec<String> = self
+                    .finding_rows()
+                    .into_iter()
+                    .filter(|(_, sev)| min.is_none_or(|m| *sev >= m))
+                    .enumerate()
+                    .map(|(n, (idx, _))| format!("  [{}] {}", n + 1, self.lines[idx].text.trim()))
+                    .collect();
+                if display.is_empty() {
+                    self.push_sys("  no findings in scrollback (run audit / sca / scan first)");
+                } else {
+                    let filt = min
+                        .map(|m| format!(" (>= {})", m.label()))
+                        .unwrap_or_default();
+                    self.push_sys(format!("  {} finding(s){filt}:", display.len()));
+                    for d in display {
+                        self.push_sys(d);
+                    }
+                    self.push_sys("  /open <n> opens the advisory URL for finding n, if present.");
+                }
+            }
+            "open" => {
+                let arg = iter.next().unwrap_or("");
+                match arg.parse::<usize>() {
+                    Ok(n) if n >= 1 => match self.find_finding_url(n) {
+                        Some(url) => {
+                            self.push_sys(format!("  opening {url}"));
+                            if let Err(e) = open_in_browser(&url) {
+                                self.push_sys(format!("  /open: could not launch a browser: {e}"));
+                            }
+                        }
+                        None => {
+                            self.push_sys(format!("  /open: no advisory URL found for finding {n}"))
+                        }
+                    },
+                    _ => self.push_sys("  /open <n>  (n is a finding number from /findings)"),
+                }
+            }
             other => self.push_sys(format!("  unknown slash command: /{other}")),
+        }
+    }
+
+    /// Tab completion. Mutates the input buffer in place and, when the
+    /// match is ambiguous, lists candidates in the scrollback. No-op when
+    /// nothing matches.
+    fn complete(&mut self) {
+        match compute_completion(&self.input) {
+            Completion::None => {}
+            Completion::Replace(s) => {
+                self.input = s;
+                self.cursor = self.input.chars().count();
+                self.history_cursor = None;
+            }
+            Completion::Suggest { input, candidates } => {
+                self.input = input;
+                self.cursor = self.input.chars().count();
+                self.history_cursor = None;
+                self.follow_tail();
+                self.push_sys(format!("  {}", candidates.join("   ")));
+            }
         }
     }
 
@@ -839,6 +1248,7 @@ fn event_loop(
                         state.jump_prev_finding(view_rows);
                     }
                     KeyCode::F(2) => state.jump_next_finding(view_rows),
+                    KeyCode::Tab => state.complete(),
                     KeyCode::Enter => {
                         let cmd = std::mem::take(&mut state.input);
                         state.cursor = 0;
@@ -1370,6 +1780,181 @@ mod tests {
         assert_eq!(char_pos_to_byte("aéb", 1), 1); // before é
         assert_eq!(char_pos_to_byte("aéb", 2), 3); // after é
         assert_eq!(char_pos_to_byte("aéb", 3), 4); // past end
+    }
+
+    // ----- M4 Tab completion -----
+
+    #[test]
+    fn complete_slash_unique() {
+        match compute_completion("/he") {
+            Completion::Replace(s) => assert_eq!(s, "/help "),
+            other => panic!(
+                "expected unique replace, got {:?}",
+                matches!(other, Completion::None)
+            ),
+        }
+    }
+
+    #[test]
+    fn complete_slash_common_prefix_lists() {
+        match compute_completion("/f") {
+            Completion::Suggest { input, candidates } => {
+                assert_eq!(input, "/fi");
+                assert!(candidates.contains(&"/filter".to_string()));
+                assert!(candidates.contains(&"/findings".to_string()));
+            }
+            _ => panic!("expected suggestions for /f"),
+        }
+    }
+
+    #[test]
+    fn complete_subcommand_common_prefix() {
+        match compute_completion("s") {
+            Completion::Suggest { input, candidates } => {
+                assert_eq!(input, "sca");
+                assert_eq!(candidates, vec!["sca".to_string(), "scan".to_string()]);
+            }
+            _ => panic!("expected suggestions for s"),
+        }
+    }
+
+    #[test]
+    fn complete_subcommand_unique() {
+        match compute_completion("au") {
+            Completion::Replace(s) => assert_eq!(s, "audit "),
+            _ => panic!("expected unique audit"),
+        }
+    }
+
+    #[test]
+    fn complete_flag() {
+        match compute_completion("audit . --la") {
+            Completion::Replace(s) => assert_eq!(s, "audit . --language "),
+            _ => panic!("expected flag replace"),
+        }
+    }
+
+    #[test]
+    fn complete_none_for_unknown() {
+        assert!(matches!(compute_completion("zzqzz"), Completion::None));
+    }
+
+    #[test]
+    fn split_last_word_cases() {
+        assert_eq!(split_last_word("audit"), ("", "audit"));
+        assert_eq!(split_last_word("audit "), ("audit ", ""));
+        assert_eq!(split_last_word("audit src/ma"), ("audit ", "src/ma"));
+        assert_eq!(split_last_word(""), ("", ""));
+    }
+
+    #[test]
+    fn longest_common_prefix_basic() {
+        assert_eq!(
+            longest_common_prefix(&["scan".to_string(), "sca".to_string()]),
+            "sca"
+        );
+        assert_eq!(
+            longest_common_prefix(&["audit".to_string(), "scan".to_string()]),
+            ""
+        );
+    }
+
+    #[test]
+    fn path_candidates_lists_dir_with_slash() {
+        let dir = std::env::temp_dir().join(format!("arcis_complete_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("subdir")).unwrap();
+        std::fs::write(dir.join("readme.txt"), "x").unwrap();
+        let c = path_candidates_in(&dir, "");
+        assert!(
+            c.contains(&"subdir/".to_string()),
+            "dir gets trailing slash: {c:?}"
+        );
+        assert!(c.contains(&"readme.txt".to_string()));
+        assert_eq!(
+            path_candidates_in(&dir, "rea"),
+            vec!["readme.txt".to_string()]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ----- M3 severity filter + advisory URLs -----
+
+    #[test]
+    fn severity_ordering_and_parse() {
+        assert!(Severity::Critical > Severity::High);
+        assert!(Severity::High > Severity::Medium);
+        assert!(Severity::Medium > Severity::Low);
+        assert!(Severity::Low > Severity::Info);
+        assert_eq!(severity_from_token("CRITICAL"), Some(Severity::Critical));
+        assert_eq!(severity_from_token("CRIT"), Some(Severity::Critical));
+        assert_eq!(severity_from_token("WARN"), Some(Severity::Medium));
+        assert_eq!(severity_from_token("nope"), None);
+        assert_eq!(severity_from_filter("h"), Some(Severity::High));
+        assert_eq!(severity_from_filter("Critical"), Some(Severity::Critical));
+        assert_eq!(severity_from_filter("bogus"), None);
+    }
+
+    #[test]
+    fn extract_url_cases() {
+        assert_eq!(
+            extract_url("see https://example.com/x for more").as_deref(),
+            Some("https://example.com/x")
+        );
+        assert_eq!(
+            extract_url("(ref: https://a.b/c).").as_deref(),
+            Some("https://a.b/c")
+        );
+        assert_eq!(extract_url("no url here"), None);
+        assert_eq!(
+            extract_url("http://host/p").as_deref(),
+            Some("http://host/p")
+        );
+    }
+
+    #[test]
+    fn finding_rows_and_filter() {
+        let mut s = ReplState::new();
+        s.push_output("CRITICAL sql injection in foo".to_string());
+        s.push_output("  some context line".to_string());
+        s.push_output("LOW informational note here".to_string());
+        s.push_output("MEDIUM weak hash usage".to_string());
+        assert_eq!(s.finding_rows().len(), 3);
+        assert_eq!(s.finding_indices().len(), 3);
+        s.min_severity = Some(Severity::High);
+        assert_eq!(s.finding_indices().len(), 1);
+        s.min_severity = Some(Severity::Medium);
+        assert_eq!(s.finding_indices().len(), 2);
+    }
+
+    #[test]
+    fn find_finding_url_picks_nth() {
+        let mut s = ReplState::new();
+        s.push_output("HIGH outdated dependency".to_string());
+        s.push_output("  advisory: https://osv.dev/GHSA-xxxx".to_string());
+        s.push_output("CRITICAL rce in bar".to_string());
+        s.push_output("  see https://nvd.nist.gov/vuln/CVE-2026-1".to_string());
+        assert_eq!(
+            s.find_finding_url(1).as_deref(),
+            Some("https://osv.dev/GHSA-xxxx")
+        );
+        assert_eq!(
+            s.find_finding_url(2).as_deref(),
+            Some("https://nvd.nist.gov/vuln/CVE-2026-1")
+        );
+        assert_eq!(s.find_finding_url(3), None);
+    }
+
+    #[test]
+    fn slash_filter_sets_and_clears() {
+        let mut s = ReplState::new();
+        s.push_output("CRITICAL x y".to_string());
+        s.dispatch_slash("filter high");
+        assert_eq!(s.min_severity, Some(Severity::High));
+        s.dispatch_slash("filter clear");
+        assert_eq!(s.min_severity, None);
+        s.dispatch_slash("filter bogus");
+        assert_eq!(s.min_severity, None);
     }
 
     #[test]
