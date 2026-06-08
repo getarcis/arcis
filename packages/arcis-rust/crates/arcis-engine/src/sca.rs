@@ -1261,11 +1261,15 @@ mod tests {
 
     #[test]
     fn does_not_flag_patched_rollup() {
+        // 4.59.0 is patched for both rollup advisories in the DB: the older
+        // DOM-clobbering CVE (fixed < 4.22.4) and CVE-2026-27606 path
+        // traversal (fixed in 4.59.0). Earlier "patched" versions like 4.22.4
+        // are still vulnerable to the path-traversal advisory.
         let dir = tempdir();
         let body = r#"{
             "lockfileVersion": 3,
             "packages": {
-                "node_modules/rollup": {"version": "4.22.4"}
+                "node_modules/rollup": {"version": "4.59.0"}
             }
         }"#;
         fs::write(dir.path().join("package-lock.json"), body).unwrap();
@@ -1273,7 +1277,7 @@ mod tests {
         let findings = scan_project(dir.path(), false, &threats);
         assert!(
             !findings.iter().any(|f| f.package == "rollup"),
-            "patched rollup should not be flagged"
+            "fully patched rollup should not be flagged"
         );
     }
 
