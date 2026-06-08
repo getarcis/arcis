@@ -3,9 +3,16 @@ Derive a slim runtime-friendly bot-patterns.json from the canonical
 well-known-bots.json (sourced from arcjet/well-known-bots, MIT licensed).
 
 Mapping notes:
-  - We collapse Arcjet's 22-tag taxonomy into our 6-category enum
-    (SEARCH_ENGINE, SOCIAL, MONITORING, AI_CRAWLER, SCRAPER, AUTOMATED).
+  - We collapse Arcjet's 22-tag taxonomy into our 7-category enum
+    (SEARCH_ENGINE, SOCIAL, MONITORING, AI_CRAWLER, SCRAPER,
+    SECURITY_SCANNER, AUTOMATED).
   - Known headless / browser-automation IDs override category to AUTOMATED.
+  - Known offensive scanner IDs override category to SECURITY_SCANNER.
+  - NOTE: the shipped corpus also carries hand-curated `ext-*` / `arcis-*`
+    entries (offensive scanners, fresh AI crawlers) that are NOT reproduced
+    from the upstream source. The SECURITY_SCANNER scanners below are mirrored
+    into SUPPLEMENTARY so a regen keeps them; other ext-* entries are
+    maintained directly in bot-patterns.json. Reconcile before re-running.
   - Entries without a pattern.accepted are skipped.
   - Forbidden patterns are kept to avoid false positives (e.g., Googlebot
     forbidden from matching Google's mobile-friendly tool variant).
@@ -48,6 +55,19 @@ SUPPLEMENTARY = [
     {"id": "php-ua",            "category": "SCRAPER",   "name": "PHP",               "patterns": ["^PHP\\/"],              "forbidden": []},
     {"id": "insomnia",          "category": "SCRAPER",   "name": "Insomnia",          "patterns": ["^[iI]nsomnia"],         "forbidden": []},
     {"id": "httpie",            "category": "SCRAPER",   "name": "HTTPie",            "patterns": ["^HTTPie\\/"],           "forbidden": []},
+    # Offensive security scanners. Default-denied (alongside AUTOMATED) so
+    # pentest / recon tooling is blocked out of the box, while generic SCRAPER
+    # clients (curl / wget / python-requests) stay allowed.
+    {"id": "ext-sqlmap",     "category": "SECURITY_SCANNER", "name": "sqlmap",    "patterns": ["sqlmap"],          "forbidden": []},
+    {"id": "ext-nikto",      "category": "SECURITY_SCANNER", "name": "nikto",     "patterns": ["Nikto"],           "forbidden": []},
+    {"id": "arcis-nuclei",   "category": "SECURITY_SCANNER", "name": "nuclei",    "patterns": ["Nuclei"],          "forbidden": []},
+    {"id": "ext-masscan",    "category": "SECURITY_SCANNER", "name": "masscan",   "patterns": ["masscan"],         "forbidden": []},
+    {"id": "ext-wpscan",     "category": "SECURITY_SCANNER", "name": "wpscan",    "patterns": ["WPScan"],          "forbidden": []},
+    {"id": "ext-aacunetix",  "category": "SECURITY_SCANNER", "name": "acunetix",  "patterns": ["[aA]cunetix"],     "forbidden": []},
+    {"id": "ext-nessus",     "category": "SECURITY_SCANNER", "name": "nessus",    "patterns": ["Nessus"],          "forbidden": []},
+    {"id": "ext-ddirbbuster","category": "SECURITY_SCANNER", "name": "dirbuster", "patterns": ["[dD]ir[Bb]uster"], "forbidden": []},
+    {"id": "ext-zmeu",       "category": "SECURITY_SCANNER", "name": "zmeu",      "patterns": ["ZmEu"],            "forbidden": []},
+    {"id": "ext-l9scan",     "category": "SECURITY_SCANNER", "name": "l9scan",    "patterns": ["l9scan"],          "forbidden": []},
     # AI crawler UAs Arcjet's `anthropic-crawler` (which matches Claude*) does
     # not catch — these match the literal token strings used by Anthropic and
     # Meta's external scrapers in the wild.
@@ -72,6 +92,14 @@ AUTOMATED_IDS = {
     "selenium",
     "cypress",
     "webdriver",
+}
+
+# IDs we explicitly treat as SECURITY_SCANNER (offensive recon / pentest tools
+# that arrive via the upstream `tool` tag but should be blocked by default,
+# not lumped in with generic SCRAPER clients like curl / wget).
+SECURITY_SCANNER_IDS = {
+    "nmap",
+    "zgrab",
 }
 
 # Tag → our category. First match wins. SOCIAL / SEARCH / MONITOR / SCRAPER
@@ -155,6 +183,8 @@ NAME_OVERRIDES = {
 def map_category(entry: dict) -> str:
     if entry["id"] in AUTOMATED_IDS:
         return "AUTOMATED"
+    if entry["id"] in SECURITY_SCANNER_IDS:
+        return "SECURITY_SCANNER"
     if entry["id"] in ID_CATEGORY_OVERRIDES:
         return ID_CATEGORY_OVERRIDES[entry["id"]]
     cats = set(entry.get("categories", []))

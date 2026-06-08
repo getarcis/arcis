@@ -287,14 +287,15 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
       ? options.bot
       : {};
     const botOpts: BotProtectionOptions = {
-      // Default deny is the conservative set. AUTOMATED covers headless
-      // browser automation (Selenium / Puppeteer / Playwright / PhantomJS /
-      // WebDriver / Headless Chrome). SCRAPER is deliberately NOT default
-      // denied: it also covers curl / wget / python-requests / monitoring and
-      // other legitimate non-browser clients, so blocking it by default would
-      // break health checks and server-to-server traffic. Opt into blocking
-      // scrapers with arcis({ bot: { deny: ['AUTOMATED', 'SCRAPER'] } }).
-      deny: userBotOpts.deny ?? ['AUTOMATED'],
+      // Default deny: AUTOMATED (headless browser automation: Selenium /
+      // Puppeteer / Playwright / PhantomJS / WebDriver / Headless Chrome) and
+      // SECURITY_SCANNER (offensive scanners: sqlmap / nikto / nuclei / nmap /
+      // masscan / wpscan / Acunetix / Nessus / dirbuster). SCRAPER is NOT
+      // default-denied: it also covers curl / wget / python-requests /
+      // monitoring and other legitimate non-browser clients, so blocking it by
+      // default would break health checks and server-to-server traffic. Add it
+      // explicitly with arcis({ bot: { deny: ['AUTOMATED', 'SCRAPER'] } }).
+      deny: userBotOpts.deny ?? ['AUTOMATED', 'SECURITY_SCANNER'],
       allow: userBotOpts.allow,
       defaultAction: userBotOpts.defaultAction,
       statusCode: userBotOpts.statusCode,

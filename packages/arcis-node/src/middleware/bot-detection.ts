@@ -26,6 +26,7 @@ export type BotCategory =
   | 'MONITORING'
   | 'AI_CRAWLER'
   | 'SCRAPER'
+  | 'SECURITY_SCANNER'
   | 'AUTOMATED'
   | 'UNKNOWN'
   | 'HUMAN';

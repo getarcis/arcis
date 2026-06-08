@@ -459,8 +459,9 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         rate_limit_window_ms: int = DEFAULT_WINDOW_MS,
         use_async_rate_limiter: bool = True,  # NEW: default to async
         # Bot UA classification options (v1.7 W1). Default-on. Deny list
-        # defaults to ['AUTOMATED'] (headless browser automation). SCRAPER is
-        # not default-denied because it also covers curl / wget /
+        # defaults to ['AUTOMATED', 'SECURITY_SCANNER'] (headless browser
+        # automation + offensive scanners: sqlmap / nikto / nuclei / nmap).
+        # SCRAPER is not default-denied because it also covers curl / wget /
         # python-requests / monitoring and other legitimate non-browser
         # clients. Pass bot=False to disable entirely, or set
         # bot_deny=['AUTOMATED', 'SCRAPER'] to also block scrapers.
@@ -583,7 +584,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         if bot:
             self.bot_guard = BotProtection(
                 allow=bot_allow,
-                deny=bot_deny if bot_deny is not None else ["AUTOMATED"],
+                deny=bot_deny if bot_deny is not None else ["AUTOMATED", "SECURITY_SCANNER"],
                 message=bot_message,
             )
         else:

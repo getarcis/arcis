@@ -1243,7 +1243,7 @@
   },
   {
     "id": "nmap",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "name": "nmap",
     "patterns": [
       "Nmap Scripting Engine"
@@ -1540,7 +1540,7 @@
   },
   {
     "id": "zgrab",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "name": "zgrab",
     "patterns": [
       "zgrab"
@@ -6052,7 +6052,7 @@
   {
     "id": "ext-nikto",
     "name": "nikto",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "Nikto"
     ],
@@ -6061,7 +6061,7 @@
   {
     "id": "ext-sqlmap",
     "name": "sqlmap",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "sqlmap"
     ],
@@ -6070,7 +6070,7 @@
   {
     "id": "ext-zmeu",
     "name": "zmeu",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "ZmEu"
     ],
@@ -6079,7 +6079,7 @@
   {
     "id": "ext-masscan",
     "name": "masscan",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "masscan"
     ],
@@ -6088,7 +6088,7 @@
   {
     "id": "ext-wpscan",
     "name": "wpscan",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "WPScan"
     ],
@@ -6097,7 +6097,7 @@
   {
     "id": "ext-aacunetix",
     "name": "aacunetix",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "[aA]cunetix"
     ],
@@ -6106,7 +6106,7 @@
   {
     "id": "ext-nessus",
     "name": "nessus",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "Nessus"
     ],
@@ -6115,7 +6115,7 @@
   {
     "id": "ext-ddirbbuster",
     "name": "ddirbbuster",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "[dD]ir[Bb]uster"
     ],
@@ -6169,7 +6169,7 @@
   {
     "id": "ext-l9scan",
     "name": "l9scan",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "patterns": [
       "l9scan"
     ],
@@ -6267,7 +6267,7 @@
   },
   {
     "id": "arcis-nuclei",
-    "category": "SCRAPER",
+    "category": "SECURITY_SCANNER",
     "name": "nuclei",
     "patterns": [
       "Nuclei"
