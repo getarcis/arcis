@@ -141,6 +141,8 @@ export {
   detectPromptInjection,
   sanitizePromptInjection,
 } from './sanitizers/prompt-injection';
+export { detectDeserialization, isSerializedPayload } from './sanitizers/deserialization';
+export type { DeserializeRuntime } from './sanitizers/deserialization';
 export type {
   DetectPromptInjectionResult,
   PromptInjectionMatch,

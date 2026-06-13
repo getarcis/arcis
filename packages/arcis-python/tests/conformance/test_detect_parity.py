@@ -33,6 +33,8 @@ from arcis.sanitizers import (
     detect_xxe,
     detect_nosql,
 )
+from arcis.sanitizers.prompt_injection import detect_prompt_injection
+from arcis.sanitizers.deserialization import detect_deserialization
 
 
 def _spec_path() -> Path:
@@ -69,6 +71,16 @@ _DETECTOR_MAP = {
     "ssti": (detect_ssti, "ssti_positive", "ssti_negative"),
     "xxe": (detect_xxe, "xxe_positive", "xxe_negative"),
     "nosql": (detect_nosql, "nosql_positive", "nosql_negative"),
+    "prompt_injection": (
+        lambda s: detect_prompt_injection(s).detected,
+        "prompt_injection_positive",
+        "prompt_injection_negative",
+    ),
+    "deserialization": (
+        lambda s: detect_deserialization(s) is not None,
+        "deserialization_positive",
+        "deserialization_negative",
+    ),
 }
 
 
