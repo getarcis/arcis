@@ -696,24 +696,38 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                     self._owns_intel_client = True
                     self._intel_block_threshold = opts.block_threshold
                     self._intel_ip_rep = "ip-rep" in decisions
+                    self._intel_bot_corpus_refresh_secs = opts.bot_corpus_refresh_secs
                     if "bot-corpus" in decisions:
                         self._start_bot_corpus_refresh()
 
     def _start_bot_corpus_refresh(self) -> None:
-        """Fetch the bot corpus once on startup (background thread) and merge it
-        on top of the bundled corpus. Fail-open: fetch returns [] on error, so
-        the bundled corpus is never disturbed."""
+        """Fetch the bot corpus on startup and periodically thereafter (default
+        weekly), merging on top of the bundled corpus. Fail-open: fetch returns
+        [] on error, so the bundled corpus is never disturbed. Mirrors the Node
+        SDK's weekly setInterval refresh; set bot_corpus_refresh_secs=0 for a
+        startup-only fetch."""
         import threading
 
         from .middleware.bot_detection import merge_bot_patterns
 
+        interval = getattr(self, "_intel_bot_corpus_refresh_secs", 7 * 24 * 60 * 60)
+        stop = threading.Event()
+        self._bot_corpus_stop = stop
+
         def _run() -> None:
-            try:
-                entries = self._intel_client.fetch_bot_corpus()
-                if entries:
-                    merge_bot_patterns(entries)
-            except Exception:
-                pass
+            while True:
+                try:
+                    entries = self._intel_client.fetch_bot_corpus()
+                    if entries:
+                        merge_bot_patterns(entries)
+                except Exception:
+                    pass
+                if interval <= 0:
+                    return
+                # wait() returns True the moment close() sets the event, so the
+                # thread exits promptly on shutdown instead of sleeping a week.
+                if stop.wait(interval):
+                    return
 
         threading.Thread(target=_run, name="arcis-bot-corpus", daemon=True).start()
 
@@ -729,6 +743,9 @@ class ArcisMiddleware(BaseHTTPMiddleware):
             except Exception:
                 # fail-open on shutdown
                 pass
+        stop = getattr(self, "_bot_corpus_stop", None)
+        if stop is not None:
+            stop.set()
         if self._intel_client is not None and self._owns_intel_client:
             try:
                 self._intel_client.close()

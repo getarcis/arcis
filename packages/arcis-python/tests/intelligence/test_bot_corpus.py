@@ -119,3 +119,44 @@ class TestBotCorpusWireup:
                 break
             time.sleep(0.02)
         assert denied, "novel scanner UA should be denied once the corpus refresh lands"
+
+
+class TestBotCorpusPeriodicRefresh:
+    def teardown_method(self):
+        _reset_bot_patterns_for_test()
+
+    def test_default_interval_is_weekly(self):
+        assert IntelligenceOptions(endpoint="https://x").bot_corpus_refresh_secs == 7 * 24 * 60 * 60
+
+    def test_refresh_repeats_then_stops_on_close(self, monkeypatch):
+        # Periodic refresh: with a 1s interval the corpus is re-fetched on a
+        # schedule (Node parity), and close() stops the thread promptly.
+        calls = {"n": 0}
+
+        def fake(url, headers, timeout_s):
+            calls["n"] += 1
+            return {"entries": []}
+
+        monkeypatch.setattr(client_mod, "_request_json", fake)
+
+        async def dummy_app(scope, receive, send):  # minimal ASGI app
+            return None
+
+        mw = ArcisMiddleware(
+            dummy_app,
+            rate_limit=False,
+            intelligence={
+                "endpoint": "https://intel.test",
+                "cloud_decisions": ["bot-corpus"],
+                "bot_corpus_refresh_secs": 1,
+            },
+        )
+        try:
+            deadline = time.time() + 5
+            while time.time() < deadline and calls["n"] < 2:
+                time.sleep(0.05)
+            assert calls["n"] >= 2, f"expected periodic re-fetch (>=2), got {calls['n']}"
+        finally:
+            stop = getattr(mw, "_bot_corpus_stop", None)
+            if stop is not None:
+                stop.set()

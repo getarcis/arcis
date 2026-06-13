@@ -56,6 +56,10 @@ class IntelligenceOptions:
     cache_ttl_ms: int = 3_600_000
     # Per-lookup network timeout in milliseconds. Default 2000.
     timeout_ms: int = 2000
+    # Periodic bot-corpus refresh interval in seconds. Default weekly, matching
+    # the Node SDK's setInterval refresh. 0 disables periodic refresh (the
+    # startup fetch still runs).
+    bot_corpus_refresh_secs: int = 7 * 24 * 60 * 60
     # Error hook for network/HTTP failures. None = swallowed silently
     # (fail-open: an unreachable service never affects requests).
     on_error: Optional[Callable[[Exception], None]] = None
