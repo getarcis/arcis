@@ -35,6 +35,7 @@ from arcis.sanitizers import (
 )
 from arcis.sanitizers.prompt_injection import detect_prompt_injection
 from arcis.sanitizers.deserialization import detect_deserialization
+from arcis.sanitizers.graphql import detect_graphql_abuse
 
 
 def _spec_path() -> Path:
@@ -81,6 +82,7 @@ _DETECTOR_MAP = {
         "deserialization_positive",
         "deserialization_negative",
     ),
+    "graphql": (detect_graphql_abuse, "graphql_positive", "graphql_negative"),
 }
 
 

@@ -31,6 +31,7 @@ import {
   detectNoSqlString,
   detectPromptInjection,
   detectDeserialization,
+  detectGraphqlAbuse,
 } from '../src/index';
 
 interface ParityCase {
@@ -57,6 +58,8 @@ interface ParityBlock {
   prompt_injection_negative?: ParityCase[];
   deserialization_positive?: ParityCase[];
   deserialization_negative?: ParityCase[];
+  graphql_positive?: ParityCase[];
+  graphql_negative?: ParityCase[];
 }
 
 function loadParity(): ParityBlock {
@@ -108,6 +111,7 @@ const DETECTORS: Array<{
     pos: 'deserialization_positive',
     neg: 'deserialization_negative',
   },
+  { name: 'graphql', fn: (s: string) => detectGraphqlAbuse(s), pos: 'graphql_positive', neg: 'graphql_negative' },
 ];
 
 describe('Cross-SDK detect parity (TEST_VECTORS.json detect_parity block)', () => {

@@ -1120,6 +1120,14 @@
     "deserialization_negative": [
       { "input": "hello world", "expected": false },
       { "input": "{\"name\": \"alice\", \"age\": 30}", "expected": false }
+    ],
+    "graphql_positive": [
+      { "input": "{ a0: name a1: name a2: name a3: name a4: name a5: name a6: name a7: name a8: name a9: name a10: name a11: name a12: name a13: name a14: name a15: name a16: name a17: name a18: name a19: name a20: name a21: name a22: name a23: name a24: name a25: name a26: name a27: name a28: name a29: name a30: name a31: name a32: name a33: name a34: name a35: name a36: name a37: name a38: name a39: name a40: name a41: name a42: name a43: name a44: name a45: name a46: name a47: name a48: name a49: name a50: name a51: name a52: name a53: name a54: name a55: name a56: name a57: name a58: name a59: name }", "expected": true },
+      { "input": "query { ...A } fragment A on Query { ...B } fragment B on Query { ...A }", "expected": true }
+    ],
+    "graphql_negative": [
+      { "input": "{ user { id name email } }", "expected": false },
+      { "input": "query Q { a: field b: field c: field }", "expected": false }
     ]
   }
 }
