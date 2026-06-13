@@ -931,6 +931,22 @@
       {
         "input": "1 AND BENCHMARK(1000000,MD5(1))",
         "expected": true
+      },
+      {
+        "input": "1' OR '1'='1",
+        "expected": true
+      },
+      {
+        "input": "' OR '1'='1",
+        "expected": true
+      },
+      {
+        "input": "admin' OR '1'='1",
+        "expected": true
+      },
+      {
+        "input": "x' AND '1'='1",
+        "expected": true
       }
     ],
     "sql_negative": [
@@ -945,11 +961,23 @@
       {
         "input": "id=1234",
         "expected": false
+      },
+      {
+        "input": "O'Brien",
+        "expected": false
+      },
+      {
+        "input": "author = 'John'",
+        "expected": false
       }
     ],
     "path_positive": [
       {
         "input": "../../etc/passwd",
+        "expected": true
+      },
+      {
+        "input": "..%c0%af..%c0%afetc/passwd",
         "expected": true
       },
       {
@@ -1058,6 +1086,21 @@
         "input": "<note><body>Hello</body></note>",
         "expected": false
       }
+    ],
+    "nosql_positive": [
+      { "input": "$where: '1==1'", "expected": true },
+      { "input": "[$ne]=1", "expected": true },
+      { "input": "{\"$gt\": \"\"}", "expected": true },
+      { "input": "user[$gt]=admin", "expected": true },
+      { "input": "$regex:.*", "expected": true },
+      { "input": "$where: function() { return true; }", "expected": true }
+    ],
+    "nosql_negative": [
+      { "input": "$invoice total", "expected": false },
+      { "input": "$order summary", "expected": false },
+      { "input": "price is $5.00", "expected": false },
+      { "input": "$index of array", "expected": false },
+      { "input": "regular user comment", "expected": false }
     ]
   }
 }

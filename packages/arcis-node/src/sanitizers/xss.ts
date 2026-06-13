@@ -97,7 +97,7 @@ export function detectXss(input: string): boolean {
   if (/\s+on\w+\s*=/i.test(input)) return true;
   
   // Check for dangerous protocols
-  if (/javascript\s*:/i.test(input)) return true;
+  if (/javascript\s*:[^\s]/i.test(input)) return true;
   if (/vbscript\s*:/i.test(input)) return true;
   if (/data\s*:\s*text\/html/i.test(input)) return true;
   

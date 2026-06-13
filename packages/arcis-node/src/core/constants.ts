@@ -70,8 +70,11 @@ export const HEADERS = {
 export const XSS_PATTERNS = [
   /** Script tags (ReDoS-safe version) */
   /<script[^>]*>[\s\S]*?<\/script>/gi,
-  /** javascript: protocol (allow optional spaces before colon) */
-  /javascript\s*:/gi,
+  /** javascript: protocol. Optional spaces before the colon; requires a
+   *  non-space char after it so prose like "JavaScript: Basics" is not flagged
+   *  while javascript:alert(1) still is. Mirrors xss-javascript-protocol in
+   *  packages/core/patterns.json. */
+  /javascript\s*:[^\s]/gi,
   /** vbscript: protocol */
   /vbscript\s*:/gi,
   /** Event handlers (onclick, onerror, etc.) — any separator before attribute */
@@ -188,19 +191,25 @@ export const SQL_PATTERNS = [
   /**
    * SQL comments. ANSI `--` requires a trailing space / dash / end-of-string
    * so it matches a real trailing comment (`1=1--`, `-- -`) but not CLI
-   * flags like `--max-retries`. C-style block comments kept. MySQL `#`
-   * excluded (see the quote-anchored rule below). FPR pass 2026-06-08.
+   * flags like `--max-retries`. The `--` must also not be immediately preceded
+   * by `!`, so HTML comments (`<!-- ... -->`) are not flagged as SQL. C-style
+   * block comments kept. MySQL `#` excluded (see the quote-anchored rule below).
+   * Mirrors `sqli-comments` in packages/core/patterns.json. FPR pass 2026-06-08.
    */
-  /(--(?:[\s-]|$)|\/\*|\*\/)/g,
+  /((?:^|[^!])--(?:[\s-]|$)|\/\*|\*\/)/g,
   /** Boolean injection: OR 1=1 */
   /\bOR\s+\d+\s*=\s*\d+/gi,
-  /** Boolean injection: OR 'a'='a' or OR "a"="a" (including mixed quotes) */
-  /\bOR\s+(['"])[^'"]*\1\s*=\s*(['"])[^'"]*\2/gi,
+  /** Boolean injection: OR 'a'='a' or OR "a"="a" (including mixed quotes).
+   * Trailing close-quote is optional (`\2?`): the classic tautology
+   * `1' OR '1'='1` arrives with the final quote unterminated (the app's own
+   * closing quote completes it), so this catches `'1'='1` and `'1'='1'`. */
+  /\bOR\s+(['"])[^'"]*\1\s*=\s*(['"])[^'"]*\2?/gi,
   /\bOR\s+('[^']*'|"[^"]*")\s*=\s*('[^']*'|"[^"]*")/gi,
   /** Boolean injection: AND 1=1 */
   /\bAND\s+\d+\s*=\s*\d+/gi,
-  /** Boolean injection: AND 'a'='a' or AND "a"="a" (including mixed quotes) */
-  /\bAND\s+(['"])[^'"]*\1\s*=\s*(['"])[^'"]*\2/gi,
+  /** Boolean injection: AND 'a'='a' or AND "a"="a" (including mixed quotes).
+   * Trailing close-quote optional, same as the OR case above. */
+  /\bAND\s+(['"])[^'"]*\1\s*=\s*(['"])[^'"]*\2?/gi,
   /\bAND\s+('[^']*'|"[^"]*")\s*=\s*('[^']*'|"[^"]*")/gi,
   /** Time-based blind: SLEEP() */
   /\bSLEEP\s*\(\s*\d+\s*\)/gi,
@@ -275,6 +284,13 @@ export const PATH_PATTERNS = [
    */
   /%[Cc]0%[Aa][Ee]/g,
   /**
+   * Overlong UTF-8 encoding of `/` (`%C0%AF`). Same IIS/Apache decoder
+   * bypass class as the overlong dot above. Legitimate `/` is always
+   * `%2F`; the overlong form (`..%c0%af..%c0%af`) only appears in
+   * evasion. Mirrors `path-overlong-utf8-slash` in patterns.json.
+   */
+  /%[Cc]0%[Aa][Ff]/g,
+  /**
    * Windows UNC paths (`\\server\share`) in user input. Legitimate
    * web-app inputs never contain UNC references; attacker UNC
    * payloads leak SMB auth or pull remote payloads. Benchmark B6.
@@ -332,6 +348,17 @@ export const COMMAND_PATTERNS = [
    * `cmdi-newline-command` in patterns.json. Benchmark cmd-newline-injection.
    */
   /[\n\r]\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\b/gi,
+  /**
+   * JNDI lookup used by Log4Shell, e.g. `${jndi:ldap://attacker/a}`.
+   * Mirrors `cmdi-jndi-lookup` in packages/core/patterns.json.
+   */
+  /\$\{jndi:/gi,
+  /**
+   * Server-side include (SSI) directive, e.g. `<!--#exec cmd="id"-->`. The
+   * directive keyword after `#` keeps benign comments like `<!-- #note -->`
+   * from matching. Mirrors `cmdi-ssi-directive` in packages/core/patterns.json.
+   */
+  /<!--\s*#\s*(?:exec|include|echo|config|fsize|flastmod|printenv)\b/gi,
 ] as const;
 
 // =============================================================================
@@ -375,6 +402,26 @@ export const NOSQL_DANGEROUS_KEYS = new Set([
   '$lookup', '$match', '$project', '$group', '$sort', '$limit', '$skip',
   '$unwind', '$addFields', '$replaceRoot',
 ]);
+
+/**
+ * String-form NoSQL operator detection (block-mode scanThreats).
+ *
+ * NOSQL_DANGEROUS_KEYS catches operators that arrive as OBJECT KEYS
+ * (`{"$gt": ""}`). But MongoDB operators also bypass as STRING VALUES —
+ * query params like `?username[$ne]=1` arrive as the literal string
+ * `$ne` before the body parser ever builds an object, and mongo-shell
+ * payloads (`$where: '1==1'`) are plain strings. Node previously had no
+ * string-level NoSQL check, so GoTestWAF scored NoSQL at 0% while Python
+ * (which loads the shared `nosql-operators` rule) caught these. This
+ * closes that Pattern-7 parity gap.
+ *
+ * Mirrors `nosql-operators` in packages/core/patterns.json. The trailing
+ * `\b` is the word boundary that keeps `$invoice`/`$order`/`$index` from
+ * matching `$in`/`$or` (a false-positive class the un-bounded rule had).
+ * Keep in sync until Node migrates to patterns.json-at-runtime.
+ */
+export const NOSQL_STRING_PATTERN =
+  /\$(?:gt|gte|lt|lte|ne|eq|in|nin|and|or|not|nor|exists|type|regex|where|expr|mod|text|jsonSchema|function|accumulator|elemMatch|all|size|lookup|match|project|group|sort|limit|skip|unwind|addFields|replaceRoot)\b/i;
 
 /**
  * Identity/auth field names that must hold a scalar value. A field here

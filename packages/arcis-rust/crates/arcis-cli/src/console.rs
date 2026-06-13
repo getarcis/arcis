@@ -33,7 +33,7 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -343,10 +343,9 @@ fn compute_completion(input: &str) -> Completion {
 /// guarantees terminal restoration on every exit path (panic-safe via
 /// the [`TerminalGuard`] drop impl).
 pub fn run() -> ExitCode {
-    // Graceful degradation: on a terminal that cannot host the TUI
-    // (piped stdout, TERM=dumb, a bare cmd.exe pipe, or an explicit
-    // ARCIS_NO_TUI opt-out) we refuse to enter the alt-screen and point
-    // the user at the one-shot commands instead of garbling their shell.
+    // Graceful degradation: on a non-interactive terminal (piped stdout,
+    // TERM=dumb, a bare cmd.exe pipe) point the user at the one-shot commands
+    // instead of garbling their shell.
     if !is_tui_capable() {
         eprintln!("arcis: the interactive console needs an interactive terminal.");
         eprintln!(
@@ -355,6 +354,138 @@ pub fn run() -> ExitCode {
         return ExitCode::from(2);
     }
 
+    // DEFAULT: the inline cooked-mode console. It runs like a normal terminal
+    // program — banner + command output flow through the terminal's own
+    // scrollback, the terminal handles input echo and line editing natively
+    // (so no double-typing), and Ctrl-C / Ctrl-D behave as the shell expects.
+    // The full-screen TUI (alt-screen, in-place render, findings navigation) is
+    // opt-in via ARCIS_TUI=1 for users who want it.
+    if std::env::var("ARCIS_TUI").as_deref() != Ok("1") {
+        return run_inline();
+    }
+    run_tui()
+}
+
+/// Inline cooked-mode console (the default). See `run()` for why this is the
+/// default over the TUI. Subcommands run with inherited stdio so their output
+/// appears directly in the terminal, the way Claude Code runs a tool.
+fn run_inline() -> ExitCode {
+    use crossterm::style::{Color as CtColor, Print, ResetColor, SetForegroundColor};
+    let emerald = CtColor::Rgb { r: 0, g: 153, b: 109 };
+    let self_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arcis"));
+    let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    let print_banner = |cwd: &std::path::Path| {
+        let mut out = io::stdout();
+        let _ = execute!(out, SetForegroundColor(emerald));
+        for row in mascot_lines() {
+            let _ = writeln!(out, "{row}");
+        }
+        let _ = execute!(out, ResetColor);
+        let _ = writeln!(out);
+        let _ = writeln!(out, "  Inside-the-app security CLI    v{TOOL_VERSION} (Rust)");
+        let _ = writeln!(out, "  {}", truncate_cwd(&cwd.display().to_string(), 60));
+        let _ = writeln!(out);
+        let header = |out: &mut io::Stdout, s: &str| {
+            let _ = execute!(out, SetForegroundColor(emerald), Print(s), ResetColor, Print("\n"));
+        };
+        header(&mut out, "Quick start");
+        let _ = writeln!(out, "  audit .            scan source for unsafe patterns");
+        let _ = writeln!(out, "  sca .              match deps against the threat database");
+        let _ = writeln!(out, "  scan <url>         probe a live endpoint");
+        let _ = writeln!(out);
+        header(&mut out, "More commands");
+        let _ = writeln!(out, "  arcis --help       per-command help and full flag reference");
+        let _ = writeln!(out, "  arcis --version    print installed CLI version");
+        let _ = writeln!(out, "  arcis --list       verbose catalog with examples per command");
+        let _ = writeln!(out);
+        header(&mut out, "Console commands");
+        let _ = writeln!(out, "  /help              show this banner again");
+        let _ = writeln!(out, "  /clear             clear the screen");
+        let _ = writeln!(out, "  /cwd <path>        change working directory");
+        let _ = writeln!(out, "  /exit              leave the console (Ctrl-D works too)");
+        let _ = writeln!(out);
+        let _ = writeln!(out, "  Output streams straight to your terminal; scroll as usual.");
+        let _ = writeln!(out, "  Ctrl-C exits. `arcis --help` lists every command + flag.");
+    };
+
+    print_banner(&cwd);
+
+    let stdin = io::stdin();
+    loop {
+        {
+            let mut out = io::stdout();
+            let _ = execute!(out, SetForegroundColor(emerald), Print("\n\u{25b6} "), ResetColor);
+            let _ = out.flush();
+        }
+        let mut line = String::new();
+        match stdin.lock().read_line(&mut line) {
+            Ok(0) => {
+                // EOF (Ctrl-D / Ctrl-Z): leave cleanly.
+                println!();
+                return ExitCode::from(0);
+            }
+            Ok(_) => {}
+            Err(_) => return ExitCode::from(0),
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(slash) = trimmed.strip_prefix('/') {
+            let mut parts = slash.split_whitespace();
+            let head = parts.next().unwrap_or("");
+            match head {
+                "" | "help" => print_banner(&cwd),
+                "exit" | "quit" => return ExitCode::from(0),
+                "clear" => {
+                    let mut out = io::stdout();
+                    let _ = execute!(
+                        out,
+                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+                        crossterm::cursor::MoveTo(0, 0)
+                    );
+                    print_banner(&cwd);
+                }
+                "cwd" => {
+                    let target = parts.next().unwrap_or("");
+                    if target.is_empty() {
+                        println!("  cwd: {}", cwd.display());
+                    } else {
+                        let p = std::path::Path::new(target);
+                        let newp = if p.is_absolute() { p.to_path_buf() } else { cwd.join(p) };
+                        match std::env::set_current_dir(&newp) {
+                            Ok(()) => {
+                                cwd = std::env::current_dir().unwrap_or(newp);
+                                println!("  cwd -> {}", cwd.display());
+                            }
+                            Err(e) => println!("  cwd: {e}"),
+                        }
+                    }
+                }
+                "version" => println!("  arcis {TOOL_VERSION}"),
+                other => println!("  unknown console command: /{other} (try /help)"),
+            }
+            continue;
+        }
+        // Subcommand: run the arcis binary with inherited stdio so its output
+        // flows straight to the terminal (real scrollback, like Claude Code).
+        let args = shell_split(trimmed);
+        if args.is_empty() {
+            continue;
+        }
+        let status = Command::new(&self_exe)
+            .args(&args)
+            .env("ARCIS_NO_REPL", "1")
+            .current_dir(&cwd)
+            .status();
+        if let Err(e) = status {
+            eprintln!("  failed to run arcis: {e}");
+        }
+    }
+}
+
+fn run_tui() -> ExitCode {
     let mut guard = match TerminalGuard::enter() {
         Ok(g) => g,
         Err(e) => {
@@ -1192,7 +1323,10 @@ fn event_loop(
             continue;
         }
         match event::read()? {
-            Event::Key(key) => {
+            // Press-only: crossterm on Windows emits BOTH a Press and a Release
+            // event per keystroke. Without this filter every character is
+            // handled twice (the "double-typing" bug).
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
                 let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
                 match key.code {
                     KeyCode::Char('c') if ctrl => {
@@ -1454,28 +1588,15 @@ fn _ensure_write_in_scope<W: Write>(_w: &mut W) {}
 /// regenerate from the source PNG at the same resolution so this row
 /// count stays stable.
 fn mascot_lines() -> &'static [&'static str] {
+    // Clean ARCIS wordmark. The prior braille "sunburst" read as an abstract
+    // blob, not the brand — this is an unambiguous block-letter logo.
     &[
-        "          ⡠⡠           ",
-        "        ⡊⡆⢎⢪⢀          ",
-        "       ⡘⡌⡊⡆⢕⠄          ",
-        "      ⢌⢆⢕⠱⡘⢔⡑⠄         ",
-        "     ⡊⢆⢪⢘⢌⠲⡘⠤          ",
-        "    ⠜⡌⢆⢣⢑⢅⠇⡍⡂          ",
-        "    ⢱⢘⢌⠆⡕⡢⠣⡱⡠          ",
-        "    ⢐⠱⡰⡑⡱⢨⢊⠆⡎  ⡀⡄⡢⡊⢆⢕",
-        "  ⢪⢘⢔⢑⢅⠕⢔⠠⡀  ⢐⢱⠨⡢⠣⡱⡘⡌⡪⠂  ⢀⠠⡢⡑⢕⠌⡆⢕⠱⡨",
-        "  ⠑⢌⢆⢣⠡⡃⡇⢕⠜⢌⢢⢀  ⢑⢌⢆⢣⠪⡂⡇⢕⢅  ⢀⢠⢊⢆⠪⡢⡑⡅⢇⢪⠠⡀",
-        "    ⠁⢆⢣⢑⢕⠸⡐⢕⢅⠣⡢⡃⡢⢀  ⠐⢔⠱⡰⡑⡱⡘⢔⢅  ⢀⢐⢔⠱⡨⠢⡣⡊⢆⢕⠱⡨⠢⠃",
-        "      ⠑⢌⢆⢣⠱⡑⡌⢎⢢⠱⡘⡔⢅⠄  ⢊⠪⡢⢱⠨⡊⢆⠕  ⠰⡐⢕⠌⡎⢜⢌⢒⠜⡌⢆⢣⠑⠁",
-        "        ⠑⡌⡪⢢⢑⠕⡌⡪⢌⠪⡂⢇⢕⢀  ⢕⠜⢔⡑⡅⡣⡑  ⡐⢌⢪⠸⡰⡑⢜⠔⡅⢕⠱⡘⠌",
-        "          ⠑⠱⡨⢪⠨⡊⢆⢣⠱⡑⡌⢆⢕  ⡣⡱⢨⢊⢢⠁  ⡔⢜⠌⡆⡣⢪⢘⢔⠱⡘⡌⠊",
-        "             ⠈⠢⢣⢑⠥⡑⡅⡕⢜⠌⢆⠣⢄⠐⢅⠣⡊⡆  ⢀⠜⢌⢆⢣⠱⡘⢔⢱⠨⠊⠈",
-        "                ⠈⠪⠨⡢⡑⡅⡣⡱⡑⢕⠀  ⠑⠑   ⢐⠕⡱⡐⡅⡣⡑⠅⠁",
-        "                   ⠁⠊⠢⠪⠨⠊      ⠑⠈⠂⠁",
-        "                          ⡀⡀⡀⡄⢄⢄⠄⡄⢄⠄",
-        "                       ⡂⡢⡑⢕⠌⡆⢕⢜⠰⡡⡱⡘⡔⡱⠡⡣⠱⡘⢔",
-        "                      ⢆⠕⡌⡪⠪⡘⡌⡪⡂⢇⠪⡢⡑⠥⡱⢨⢢",
-        "                     ⡅⡕⢜⠰⡑⡱⡘⢜⠌⡆⢕⠜⢌⢪⠢⡱",
+        "  █████╗ ██████╗  ██████╗██╗███████╗",
+        " ██╔══██╗██╔══██╗██╔════╝██║██╔════╝",
+        " ███████║██████╔╝██║     ██║███████╗",
+        " ██╔══██║██╔══██╗██║     ██║╚════██║",
+        " ██║  ██║██║  ██║╚██████╗██║███████║",
+        " ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝╚══════╝",
     ]
 }
 
@@ -2186,14 +2307,9 @@ mod tests {
 
     #[test]
     fn mascot_lines_has_stable_row_count() {
-        // Locking the row count so accidental whitespace edits don't
-        // shift the layout column-math in append_banner.
+        // ARCIS wordmark is a fixed 6-row block-letter logo.
         let lines = mascot_lines();
-        assert!(
-            lines.len() >= 15 && lines.len() <= 25,
-            "mascot expected to be 15-25 rows, got {}",
-            lines.len()
-        );
+        assert_eq!(lines.len(), 6, "ARCIS wordmark expected to be 6 rows");
     }
 
     #[test]

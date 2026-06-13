@@ -36,6 +36,8 @@ from .telemetry.client import AsyncTelemetryClient
 from .telemetry.types import TelemetryOptions
 from .middleware.telemetry import telemetry_options_from_env as _telemetry_options_from_env
 from .utils.ip import detect_client_ip
+from .intelligence.client import IntelligenceClient, reputation_severity_tier
+from .intelligence.types import IntelligenceOptions
 
 logger = logging.getLogger(__name__)
 
@@ -530,6 +532,12 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # Telemetry: dict, TelemetryOptions, or pre-built AsyncTelemetryClient.
         # When None, telemetry is fully disabled (zero overhead).
         telemetry: Optional[Any] = None,
+        # Opt-in cloud intelligence (IP reputation): dict, IntelligenceOptions,
+        # or pre-built IntelligenceClient. Active only when an endpoint is set
+        # and cloud_decisions includes "ip-rep". Lookups are cache-first and
+        # never block the request path; an unreachable service fails open.
+        # When None, no network work happens (fully local).
+        intelligence: Optional[Any] = None,
     ):
         super().__init__(app)
 
@@ -655,6 +663,60 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                     "TelemetryOptions, dict, or None"
                 )
 
+        # ── Intelligence wiring (opt-in cloud intelligence) ─────────────────
+        # Accept IntelligenceClient (caller-managed), IntelligenceOptions, or a
+        # dict. One client serves both capabilities: per-request IP reputation
+        # ("ip-rep") and bot-corpus cloud refresh ("bot-corpus"). The dispatch
+        # ip-rep check is gated on _intel_ip_rep so a bot-corpus-only config
+        # adds no per-request work.
+        self._intel_client: Optional[IntelligenceClient] = None
+        self._owns_intel_client: bool = False
+        self._intel_block_threshold: Optional[int] = None
+        self._intel_ip_rep: bool = False
+        if intelligence is not None:
+            if isinstance(intelligence, IntelligenceClient):
+                self._intel_client = intelligence
+                self._intel_ip_rep = True  # caller-managed: assume ip-rep usage
+            else:
+                opts = (
+                    intelligence
+                    if isinstance(intelligence, IntelligenceOptions)
+                    else IntelligenceOptions(**intelligence)
+                    if isinstance(intelligence, dict)
+                    else None
+                )
+                if opts is None:
+                    raise TypeError(
+                        "ArcisMiddleware.intelligence must be IntelligenceClient, "
+                        "IntelligenceOptions, dict, or None"
+                    )
+                decisions = opts.cloud_decisions or []
+                if opts.endpoint and decisions:
+                    self._intel_client = IntelligenceClient(opts)
+                    self._owns_intel_client = True
+                    self._intel_block_threshold = opts.block_threshold
+                    self._intel_ip_rep = "ip-rep" in decisions
+                    if "bot-corpus" in decisions:
+                        self._start_bot_corpus_refresh()
+
+    def _start_bot_corpus_refresh(self) -> None:
+        """Fetch the bot corpus once on startup (background thread) and merge it
+        on top of the bundled corpus. Fail-open: fetch returns [] on error, so
+        the bundled corpus is never disturbed."""
+        import threading
+
+        from .middleware.bot_detection import merge_bot_patterns
+
+        def _run() -> None:
+            try:
+                entries = self._intel_client.fetch_bot_corpus()
+                if entries:
+                    merge_bot_patterns(entries)
+            except Exception:
+                pass
+
+        threading.Thread(target=_run, name="arcis-bot-corpus", daemon=True).start()
+
     async def close(self) -> None:
         """Drain telemetry queue and stop the background flush task.
 
@@ -666,6 +728,11 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 await self._telemetry_client.close()
             except Exception:
                 # fail-open on shutdown
+                pass
+        if self._intel_client is not None and self._owns_intel_client:
+            try:
+                self._intel_client.close()
+            except Exception:
                 pass
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -715,6 +782,46 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                             )
                             self._maybe_record(request, response, telemetry_start)
                             return response
+
+        # Cloud IP reputation (opt-in). Runs after forwarded-header inspection
+        # and before scanner/bot/rate-limit so a known-bad IP is blocked before
+        # consuming quota. Cache-first and non-blocking: a miss never adds
+        # latency, and an unreachable service fails open. Active only when
+        # configured with cloud_decisions including "ip-rep".
+        if self._intel_client is not None and self._intel_ip_rep:
+            rep = self._intel_client.check(detect_client_ip(request))
+            request.state.arcis_ip_reputation = rep
+            should_block = (
+                not self.dry_run
+                and rep.found
+                and self._intel_block_threshold is not None
+                and (rep.severity or 0) >= self._intel_block_threshold
+            )
+            if should_block:
+                if self._telemetry_client is not None:
+                    marker = getattr(request.state, ARCIS_MARKER_ATTR, None)
+                    if marker is None:
+                        marker = ArcisTelemetryMarker()
+                        setattr(request.state, ARCIS_MARKER_ATTR, marker)
+                    marker.vector = "ip-reputation"
+                    marker.rule = "ip-reputation/known-bad"
+                    marker.severity = reputation_severity_tier(rep.severity)
+                    marker.reason = (
+                        f"IP reputation severity {rep.severity} "
+                        f">= {self._intel_block_threshold}"
+                    )
+                    marker.decision = "deny"
+                response = JSONResponse(
+                    content={
+                        "error": "Request blocked for security reasons",
+                        "code": "SECURITY_THREAT",
+                        "vector": "ip-reputation",
+                        "rule": "ip-reputation/known-bad",
+                    },
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
 
         # Scanner-path probe blocking (v1.7 W2). Runs BEFORE bot detection
         # because some scanner UAs forge a browser UA but still hit dotfile /

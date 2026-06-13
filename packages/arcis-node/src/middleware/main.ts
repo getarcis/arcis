@@ -17,7 +17,7 @@ import { createHeaders } from './headers';
 import { createRateLimiter } from './rate-limit';
 import { createErrorHandler } from './error-handler';
 import { createTelemetryEmitter, tapSanitizerThreats } from './telemetry';
-import { botProtection, type BotProtectionOptions } from './bot-detection';
+import { botProtection, mergeBotPatterns, type BotProtectionOptions } from './bot-detection';
 import { scannerPathProtection, type ScannerPathsOptions } from './sensitive-paths';
 import { inspectGraphqlQuery, type GraphqlGuardOptions } from '../sanitizers/graphql';
 import { detectMassAssignment, type MassAssignDetectOptions } from '../sanitizers/mass-assignment';
@@ -28,6 +28,16 @@ import { validate } from '../validation';
 import { createSafeLogger } from '../logging';
 import { TelemetryClient } from '../telemetry/client';
 import type { TelemetryOptions } from '../telemetry/types';
+import { IntelligenceClient, reputationSeverityTier } from '../intelligence/client';
+import { detectClientIp } from '../utils/ip';
+import type { IpReputation } from '../intelligence/types';
+
+declare module 'express-serve-static-core' {
+  interface Request {
+    /** IP reputation verdict attached by the intelligence middleware, when enabled. */
+    arcisIpReputation?: IpReputation;
+  }
+}
 
 /**
  * Build TelemetryOptions from `ARCIS_*` environment variables when the user
@@ -275,6 +285,73 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
       }
       next();
     });
+  }
+
+  // Cloud intelligence (opt-in). One client serves both capabilities; created
+  // when an endpoint is set and cloudDecisions names at least one.
+  const intelDecisions = options.intelligence?.endpoint
+    ? options.intelligence.cloudDecisions ?? []
+    : [];
+  if (intelDecisions.length > 0 && options.intelligence) {
+    const intel = options.intelligence;
+    const intelClient = new IntelligenceClient(intel);
+    cleanupFns.push(() => intelClient.close());
+
+    // Bot-corpus cloud refresh: fetch on startup + on an interval, merging the
+    // curated additions on top of the bundled corpus so new scanners / AI
+    // crawlers are classified without an SDK release. Fail-open: fetchBotCorpus
+    // returns [] on any error, so the bundled corpus is never disturbed.
+    if (intelDecisions.includes('bot-corpus')) {
+      const refresh = (): void => {
+        void intelClient.fetchBotCorpus().then((entries) => {
+          if (entries.length > 0) mergeBotPatterns(entries);
+        });
+      };
+      refresh();
+      const refreshMs = Math.max(
+        60_000,
+        intel.botCorpusRefreshMs ?? 7 * 24 * 60 * 60 * 1000,
+      );
+      const timer = setInterval(refresh, refreshMs);
+      (timer as { unref?: () => void }).unref?.();
+      cleanupFns.push(() => clearInterval(timer));
+    }
+
+    // Cloud IP reputation per-request lookup. Runs early (IP-level, no body
+    // needed), after forwarded-header inspection and before bot/rate-limit so a
+    // known-bad IP is blocked before consuming quota. Cache-first and
+    // non-blocking: a miss never adds latency, and an unreachable service fails
+    // open.
+    if (intelDecisions.includes('ip-rep')) {
+      const blockThreshold = intel.blockThreshold;
+      middlewares.push((req, res, next): void => {
+        const ip = detectClientIp(req);
+        const rep = intelClient.check(ip);
+        req.arcisIpReputation = rep;
+        const shouldBlock =
+          !dryRun &&
+          rep.found &&
+          typeof blockThreshold === 'number' &&
+          (rep.severity ?? 0) >= blockThreshold;
+        if (shouldBlock) {
+          req.__arcis = {
+            vector: 'ip-reputation',
+            rule: 'ip-reputation/known-bad',
+            severity: reputationSeverityTier(rep.severity),
+            reason: `IP reputation severity ${rep.severity} >= ${blockThreshold}`,
+            decision: 'deny',
+          };
+          res.status(403).json({
+            error: 'Request blocked for security reasons',
+            code: 'SECURITY_THREAT',
+            vector: 'ip-reputation',
+            rule: 'ip-reputation/known-bad',
+          });
+          return;
+        }
+        next();
+      });
+    }
   }
 
   // Bot UA classification — runs BEFORE rate-limit so bots don't consume

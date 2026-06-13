@@ -28,6 +28,7 @@ import {
   detectCommandInjection,
   detectSsti,
   detectXxe,
+  detectNoSqlString,
 } from '../src/index';
 
 interface ParityCase {
@@ -48,6 +49,8 @@ interface ParityBlock {
   ssti_negative?: ParityCase[];
   xxe_positive?: ParityCase[];
   xxe_negative?: ParityCase[];
+  nosql_positive?: ParityCase[];
+  nosql_negative?: ParityCase[];
 }
 
 function loadParity(): ParityBlock {
@@ -86,6 +89,7 @@ const DETECTORS: Array<{
   { name: 'command', fn: detectCommandInjection, pos: 'command_positive', neg: 'command_negative' },
   { name: 'ssti', fn: detectSsti, pos: 'ssti_positive', neg: 'ssti_negative' },
   { name: 'xxe', fn: detectXxe, pos: 'xxe_positive', neg: 'xxe_negative' },
+  { name: 'nosql', fn: detectNoSqlString, pos: 'nosql_positive', neg: 'nosql_negative' },
 ];
 
 describe('Cross-SDK detect parity (TEST_VECTORS.json detect_parity block)', () => {

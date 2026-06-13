@@ -146,7 +146,7 @@ export type {
   PromptInjectionMatch,
   PromptInjectionSeverity,
 } from './sanitizers/prompt-injection';
-export { isDangerousNoSqlKey, detectNoSqlInjection } from './sanitizers/nosql';
+export { isDangerousNoSqlKey, detectNoSqlInjection, detectNoSqlString } from './sanitizers/nosql';
 export { isDangerousProtoKey, detectPrototypePollution } from './sanitizers/prototype';
 export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './sanitizers/headers';
 export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from './sanitizers/pii';
@@ -183,6 +183,16 @@ export type {
   TelemetryDecision,
   TelemetrySeverity,
 } from './telemetry/types';
+
+// =============================================================================
+// INTELLIGENCE (opt-in cloud IP reputation)
+// =============================================================================
+export { IntelligenceClient, reputationSeverityTier } from './intelligence/client';
+export type {
+  IntelligenceOptions,
+  IpReputation,
+  CloudDecision,
+} from './intelligence/types';
 
 // =============================================================================
 // STORES

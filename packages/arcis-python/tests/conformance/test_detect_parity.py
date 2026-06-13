@@ -31,6 +31,7 @@ from arcis.sanitizers import (
     detect_command_injection,
     detect_ssti,
     detect_xxe,
+    detect_nosql,
 )
 
 
@@ -67,6 +68,7 @@ _DETECTOR_MAP = {
     "command": (detect_command_injection, "command_positive", "command_negative"),
     "ssti": (detect_ssti, "ssti_positive", "ssti_negative"),
     "xxe": (detect_xxe, "xxe_positive", "xxe_negative"),
+    "nosql": (detect_nosql, "nosql_positive", "nosql_negative"),
 }
 
 

@@ -6273,5 +6273,113 @@
       "Nuclei"
     ],
     "forbidden": []
+  },
+  {
+    "id": "ext-openvas",
+    "category": "SECURITY_SCANNER",
+    "name": "openvas",
+    "patterns": [
+      "OpenVAS"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-ffuf",
+    "category": "SECURITY_SCANNER",
+    "name": "ffuf",
+    "patterns": [
+      "Fuzz Faster U Fool"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-nasl",
+    "category": "SECURITY_SCANNER",
+    "name": "nasl",
+    "patterns": [
+      ".nasl"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-feroxbuster",
+    "category": "SECURITY_SCANNER",
+    "name": "feroxbuster",
+    "patterns": [
+      "feroxbuster"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-gobuster",
+    "category": "SECURITY_SCANNER",
+    "name": "gobuster",
+    "patterns": [
+      "gobuster"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-arachni",
+    "category": "SECURITY_SCANNER",
+    "name": "arachni",
+    "patterns": [
+      "Arachni"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-w3af",
+    "category": "SECURITY_SCANNER",
+    "name": "w3af",
+    "patterns": [
+      "w3af"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-skipfish",
+    "category": "SECURITY_SCANNER",
+    "name": "skipfish",
+    "patterns": [
+      "skipfish"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-netsparker",
+    "category": "SECURITY_SCANNER",
+    "name": "netsparker",
+    "patterns": [
+      "Netsparker"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-whatweb",
+    "category": "SECURITY_SCANNER",
+    "name": "whatweb",
+    "patterns": [
+      "WhatWeb"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-wfuzz",
+    "category": "SECURITY_SCANNER",
+    "name": "wfuzz",
+    "patterns": [
+      "Wfuzz"
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "ext-qualys",
+    "category": "SECURITY_SCANNER",
+    "name": "qualys",
+    "patterns": [
+      "Qualys"
+    ],
+    "forbidden": []
   }
 ]

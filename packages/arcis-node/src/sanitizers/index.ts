@@ -14,7 +14,7 @@ export { sanitizePath, detectPathTraversal } from './path';
 export { sanitizeCommand, detectCommandInjection } from './command';
 
 // NoSQL protection
-export { isDangerousNoSqlKey, detectNoSqlInjection, getDangerousOperators } from './nosql';
+export { isDangerousNoSqlKey, detectNoSqlInjection, detectNoSqlString, getDangerousOperators } from './nosql';
 
 // Prototype pollution protection
 export { isDangerousProtoKey, detectPrototypePollution, getDangerousProtoKeys } from './prototype';

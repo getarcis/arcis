@@ -168,10 +168,14 @@ class TestXpathScanThreatsWire:
     classifies as vector='xpath' rather than falling through.
     """
 
-    def test_boolean_injection_classifies_as_xpath(self):
+    def test_boolean_tautology_classifies_as_sql(self):
+        # The textbook `' or '1'='1` is the canonical SQL tautology and is now
+        # caught by the quoted-boolean SQL rule (trailing quote optional), so it
+        # classifies as `sql`. XPath wiring is covered by the function-arity /
+        # blind-extraction tests below (XPath-distinct shapes SQL doesn't match).
         r = scan_threats({"q": "' or '1'='1"})
         assert r is not None
-        assert r[0] == "xpath"
+        assert r[0] == "sql"
 
     def test_function_arity_tampering_classifies_as_xpath(self):
         # ') or (' pattern is a known XPath function-tampering shape.
