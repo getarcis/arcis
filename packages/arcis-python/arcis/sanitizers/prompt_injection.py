@@ -139,6 +139,23 @@ _SIGNATURES = [
         "Roleplay-based jailbreak prefix",
     ),
     (
+        # The "grandma exploit": emotional/nostalgic framing used to coax the
+        # model into reciting secret material. Requires BOTH the family-elder
+        # reciting framing AND a key/credential/password token, so wholesome
+        # "grandma read me bedtime stories" / "grandma's cookie recipe" never
+        # match -- only the credential-soliciting variant does.
+        "emotional-jailbreak-secrets",
+        re.compile(
+            r"\bgrand(?:m(?:a|other)|pa|father)\b[^.?!]{0,60}"
+            r"\b(?:read|tell|recite|sing|sang|whisper|list|share)\b[^.?!]{0,80}"
+            r"\b(?:(?:activation|product|license|serial|registration|api|ssh|secret|private|encryption)[\s-]*keys?"
+            r"|passwords?|credentials?|serial\s*numbers?)\b",
+            re.IGNORECASE,
+        ),
+        "high",
+        "Emotional-framing jailbreak soliciting keys/credentials (grandma exploit)",
+    ),
+    (
         "no-restrictions",
         re.compile(
             r"\b(?:without\s+(?:any\s+)?(?:restrictions?|limits?|filters?|safety|guidelines?|moral|ethic\w*)"
