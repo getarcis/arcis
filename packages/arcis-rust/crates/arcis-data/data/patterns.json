@@ -334,9 +334,9 @@
       "rules": [
         {
           "id": "cmdi-shell-chars",
-          "pattern": "[;&|]\\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\\b",
+          "pattern": "[;&|]\\s*(?:(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd)\\b|base64(?:\\s|$))",
           "flags": "g",
-          "description": "Shell command chained after a metacharacter (; cat, | nc, & curl). Replaces the bare [;&|`] rule, which flagged every semicolon / ampersand in code, URLs and prose. FPR pass 2026-06-08.",
+          "description": "Shell command chained after a metacharacter (; cat, | nc, & curl). Replaces the bare [;&|`] rule, which flagged every semicolon / ampersand in code, URLs and prose. FPR pass 2026-06-08. base64 requires a trailing space or end-of-input so `;base64 -d` is caught but the data-URI `;base64,` MIME parameter is not (FP on inline images).",
           "redos_safe": true
         },
         {

@@ -78,11 +78,13 @@ describe('detection false-positive guard (benign corpus stays unflagged)', () =>
     'price: $5.00',
     'union of two sets',
     'I would like to create a function',
-    // NOTE: a benign data:image/png;base64 URI is intentionally NOT in this
-    // list. It is correctly clean for XSS (the migration fixed that broad-`data:`
-    // false positive), but `image/png;base64` trips the command-injection
-    // `;base64` chained-command rule. That is a pre-existing cross-SDK FP
-    // (the `base64` command token predates this migration), tracked separately.
+    // Benign inline-image data URI: clean for XSS (the broad-`data:` FP was
+    // fixed in the patterns migration) AND for command injection (the
+    // cmdi-shell-chars `base64` token now requires a trailing space / EOL, so
+    // the `;base64,` MIME parameter no longer matches while `;base64 -d` does).
+    // NB: data:image/svg+xml is intentionally excluded — SVG data URIs can
+    // carry inline scripts and are correctly flagged as XSS.
+    'src="data:image/png;base64,iVBORw0KGgo="',
   ];
 
   for (const input of benign) {

