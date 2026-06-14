@@ -52,7 +52,7 @@ Available as opt-in helpers (not auto-wired into `arcis()`): bot detection (695-
 
 ## What was new in v1.5.0
 
-- **10 first-party framework adapters** — Express + Fastify (`@arcis/node/fastify`) + Koa (`@arcis/node/koa`) + Hono (`@arcis/node/hono`) + Next.js (`@arcis/node/nextjs`) + NestJS + SvelteKit + Astro + Nuxt + Bun. Each subpath import keeps the framework SDK as a type-only dependency.
+- **10 first-party framework adapters**: Express + Fastify (`@arcis/node/fastify`) + Koa (`@arcis/node/koa`) + Hono (`@arcis/node/hono`) + Next.js (`@arcis/node/nextjs`) + NestJS + SvelteKit + Astro + Nuxt + Bun. Each subpath import keeps the framework SDK as a type-only dependency.
 - **9 new attack vectors**: GraphQL depth-bombs (`graphqlGuard`), LDAP / XPath / email-header injection wired into block-mode, mass assignment (`massAssign`), HTTP method tampering (`methodAllowlist`), response splitting (`responseSplittingGuard`), event-loop overload (`eventLoopProtection`), SSRF DNS TOCTOU (`validateUrlAsync` + `pinnedDnsLookup` + `safeFollowRedirect`).
 - **AI-era protections**: 28-signature prompt-injection library (`detectPromptInjection`), per-key `tokenBudget` middleware, 695-pattern bot corpus.
 - **Composite helpers**: `protectLogin`, `protectSignup`, `protectApi`.
@@ -61,8 +61,8 @@ Available as opt-in helpers (not auto-wired into `arcis()`): bot detection (695-
 
 ## What was new in v1.4.4
 
-- **Detect-and-block middleware** — opt in with `arcis({ block: true })`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
-- **Telemetry queue cap** — sustained dashboard outage no longer OOMs the worker. Drop-oldest semantics, optional `onQueueOverflow` callback.
+- **Detect-and-block middleware**: opt in with `arcis({ block: true })`. Returns 403 + tags telemetry on attack-pattern match instead of silently sanitizing.
+- **Telemetry queue cap**: sustained dashboard outage no longer OOMs the worker. Drop-oldest semantics, optional `onQueueOverflow` callback.
 - See the full release history at [arcis-website.pages.dev/changelog.html](https://arcis-website.pages.dev/changelog.html).
 
 ## Installation
@@ -73,11 +73,11 @@ npm install @arcis/node dotenv
 
 > **Install in your backend project, not the frontend.** Arcis is server-side middleware. For separated stacks (Next.js + Express, React + FastAPI, etc.), this package goes in the server folder. A frontend bundle would leak the API key into client JS and the middleware never runs there anyway.
 >
-> **`.env` lives next to your server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_` — those expose values to the browser. Add `.env` to `.gitignore`.
+> **`.env` lives next to your server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_`. Those expose values to the browser. Add `.env` to `.gitignore`.
 
 ### CLI (audit / scan / sca) ships separately as a native binary
 
-The Arcis SDK ships in this Node package. The Arcis **CLI** scanners — `arcis audit`, `arcis scan`, `arcis sca` — ship as a single static binary distributed on npm:
+The Arcis SDK ships in this Node package. The Arcis **CLI** scanners (`arcis audit`, `arcis scan`, `arcis sca`) ship as a single static binary distributed on npm:
 
 ```bash
 npm install -g @arcis/cli
@@ -121,7 +121,7 @@ import {
   createRedactor,
 } from '@arcis/node';
 
-// Sanitize user input — works anywhere
+// Sanitize user input: works anywhere
 const clean = sanitizeString(userInput);
 const cleanBody = sanitizeObject(requestBody);
 
@@ -129,7 +129,7 @@ const cleanBody = sanitizeObject(requestBody);
 if (detectXss(value)) { /* reject */ }
 if (detectSql(value)) { /* reject */ }
 
-// Safe logging — no framework needed
+// Safe logging: no framework needed
 const logger = createSafeLogger();
 logger.info('User login', { email, password: 'will-be-redacted' });
 ```
@@ -201,17 +201,17 @@ Arcis separates **core security logic** from **framework adapters**:
 ```
 @arcis/node
 ├── Core (framework-agnostic)
-│   ├── sanitizeString / sanitizeObject   — clean any input
-│   ├── detectXss / detectSql / ...       — threat detection
-│   ├── createSafeLogger / createRedactor — safe logging
-│   ├── MemoryStore / RedisStore          — rate limit backends
+│   ├── sanitizeString / sanitizeObject   - clean any input
+│   ├── detectXss / detectSql / ...       - threat detection
+│   ├── createSafeLogger / createRedactor - safe logging
+│   ├── MemoryStore / RedisStore          - rate limit backends
 │   └── Error classes and constants
 │
 └── Adapters (framework-specific)
     └── Express middleware (arcis(), arcis.sanitize(), arcis.rateLimit(), ...)
 ```
 
-The core functions are pure — no `req`, `res`, or `next`. They take values in and return values out. This means they work with Express, Fastify, Koa, Hono, Nest, raw `http.createServer`, Bun, Deno, serverless functions, or anything else.
+The core functions are pure: no `req`, `res`, or `next`. They take values in and return values out. This means they work with Express, Fastify, Koa, Hono, Nest, raw `http.createServer`, Bun, Deno, serverless functions, or anything else.
 
 Subpath imports are available for tree-shaking:
 
@@ -228,7 +228,7 @@ Detailed configuration, API reference, Redis setup, and architecture docs are in
 ## Contributing
 
 1. Fork the repo and create your branch from `nwl` (the active development branch)
-2. All PRs target `nwl` — `main` is release-only
+2. All PRs target `nwl`; `main` is release-only
 3. All changes must pass existing tests
 4. New features require test cases aligned with `spec/TEST_VECTORS.json`
 
