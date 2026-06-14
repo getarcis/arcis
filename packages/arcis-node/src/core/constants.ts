@@ -141,7 +141,11 @@ export const NOSQL_DANGEROUS_KEYS = new Set(dangerousKeysFor('nosql_injection'))
  * `\b` word boundary keeps `$invoice`/`$order`/`$index` from matching
  * `$in`/`$or` (a false-positive class the un-bounded rule had).
  */
-export const NOSQL_STRING_PATTERN = compileRule('nosql_injection', 'nosql-operators')!;
+const nosqlStringRule = compileRule('nosql_injection', 'nosql-operators');
+if (!nosqlStringRule) {
+  throw new Error('arcis: nosql-operators rule missing from patterns.json');
+}
+export const NOSQL_STRING_PATTERN = nosqlStringRule;
 
 /**
  * Identity/auth field names that must hold a scalar value. A field here

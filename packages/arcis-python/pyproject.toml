@@ -90,7 +90,10 @@ target-version = "py39"
 "**/__init__.py" = ["F401"]
 "arcis/sanitizer.py" = ["F401"]
 "arcis/django.py" = ["F401"]
-"arcis/fastapi.py" = ["F401"]
+# fastapi.py re-exports async_rate_limit + fastapi_protect after the module's
+# own helpers (the v1.7 split), so its re-export imports sit below top-of-file
+# (E402) and re-export names it does not itself use (F401).
+"arcis/fastapi.py" = ["E402", "F401"]
 # Test files commonly use lambdas as throwaway hooks, leave a captured
 # response object for a planned later assertion, and conditionally import
 # inside a try/except guard — those forms aren't worth rewriting.

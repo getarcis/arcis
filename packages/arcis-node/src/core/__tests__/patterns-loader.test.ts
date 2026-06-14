@@ -30,8 +30,9 @@ describe('patterns.json loader', () => {
   it('resolves the nosql-operators string rule', () => {
     const rule = compileRule('nosql_injection', 'nosql-operators');
     expect(rule).toBeInstanceOf(RegExp);
-    expect(rule!.test('$ne')).toBe(true);
-    expect(rule!.test('$invoice')).toBe(false); // word-boundary guard
+    const re = rule as RegExp;
+    expect(re.test('$ne')).toBe(true);
+    expect(re.test('$invoice')).toBe(false); // word-boundary guard
   });
 
   it('exposes dangerous-key lists', () => {

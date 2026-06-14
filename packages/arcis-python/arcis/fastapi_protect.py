@@ -7,13 +7,11 @@ per-route rate-limit / login-protection dependency factories and the
 imported lazily inside each helper (it stays an optional dependency).
 """
 
-import json
 from typing import Any, Callable, Dict, List, Optional
 
 from starlette.requests import Request
 
 from .async_rate_limit import AsyncRateLimiter, AsyncRateLimitStore, AsyncRateLimitExceeded
-from .middleware.rate_limit import RateLimiter
 from .core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS
 
 

@@ -76,7 +76,7 @@ export function detectTaintedSink(
 
 /** Recursively collect string values from a request part into the taint set. */
 function collectTainted(value: unknown, out: Set<string>, depth = 0): void {
-  if (depth > 6 || value == null) return;
+  if (depth > 6 || value === null || value === undefined) return;
   if (typeof value === 'string') {
     if (value.length >= 3) out.add(value);
     return;

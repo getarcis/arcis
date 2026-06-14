@@ -33,7 +33,9 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -371,7 +373,11 @@ pub fn run() -> ExitCode {
 /// appears directly in the terminal, the way Claude Code runs a tool.
 fn run_inline() -> ExitCode {
     use crossterm::style::{Color as CtColor, Print, ResetColor, SetForegroundColor};
-    let emerald = CtColor::Rgb { r: 0, g: 153, b: 109 };
+    let emerald = CtColor::Rgb {
+        r: 0,
+        g: 153,
+        b: 109,
+    };
     let self_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arcis"));
     let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
@@ -383,30 +389,57 @@ fn run_inline() -> ExitCode {
         }
         let _ = execute!(out, ResetColor);
         let _ = writeln!(out);
-        let _ = writeln!(out, "  Inside-the-app security CLI    v{TOOL_VERSION} (Rust)");
+        let _ = writeln!(
+            out,
+            "  Inside-the-app security CLI    v{TOOL_VERSION} (Rust)"
+        );
         let _ = writeln!(out, "  {}", truncate_cwd(&cwd.display().to_string(), 60));
         let _ = writeln!(out);
         let header = |out: &mut io::Stdout, s: &str| {
-            let _ = execute!(out, SetForegroundColor(emerald), Print(s), ResetColor, Print("\n"));
+            let _ = execute!(
+                out,
+                SetForegroundColor(emerald),
+                Print(s),
+                ResetColor,
+                Print("\n")
+            );
         };
         header(&mut out, "Quick start");
         let _ = writeln!(out, "  audit .            scan source for unsafe patterns");
-        let _ = writeln!(out, "  sca .              match deps against the threat database");
+        let _ = writeln!(
+            out,
+            "  sca .              match deps against the threat database"
+        );
         let _ = writeln!(out, "  scan <url>         probe a live endpoint");
         let _ = writeln!(out);
         header(&mut out, "More commands");
-        let _ = writeln!(out, "  arcis --help       per-command help and full flag reference");
+        let _ = writeln!(
+            out,
+            "  arcis --help       per-command help and full flag reference"
+        );
         let _ = writeln!(out, "  arcis --version    print installed CLI version");
-        let _ = writeln!(out, "  arcis --list       verbose catalog with examples per command");
+        let _ = writeln!(
+            out,
+            "  arcis --list       verbose catalog with examples per command"
+        );
         let _ = writeln!(out);
         header(&mut out, "Console commands");
         let _ = writeln!(out, "  /help              show this banner again");
         let _ = writeln!(out, "  /clear             clear the screen");
         let _ = writeln!(out, "  /cwd <path>        change working directory");
-        let _ = writeln!(out, "  /exit              leave the console (Ctrl-D works too)");
+        let _ = writeln!(
+            out,
+            "  /exit              leave the console (Ctrl-D works too)"
+        );
         let _ = writeln!(out);
-        let _ = writeln!(out, "  Output streams straight to your terminal; scroll as usual.");
-        let _ = writeln!(out, "  Ctrl-C exits. `arcis --help` lists every command + flag.");
+        let _ = writeln!(
+            out,
+            "  Output streams straight to your terminal; scroll as usual."
+        );
+        let _ = writeln!(
+            out,
+            "  Ctrl-C exits. `arcis --help` lists every command + flag."
+        );
     };
 
     print_banner(&cwd);
@@ -415,7 +448,12 @@ fn run_inline() -> ExitCode {
     loop {
         {
             let mut out = io::stdout();
-            let _ = execute!(out, SetForegroundColor(emerald), Print("\n\u{25b6} "), ResetColor);
+            let _ = execute!(
+                out,
+                SetForegroundColor(emerald),
+                Print("\n\u{25b6} "),
+                ResetColor
+            );
             let _ = out.flush();
         }
         let mut line = String::new();
@@ -453,7 +491,11 @@ fn run_inline() -> ExitCode {
                         println!("  cwd: {}", cwd.display());
                     } else {
                         let p = std::path::Path::new(target);
-                        let newp = if p.is_absolute() { p.to_path_buf() } else { cwd.join(p) };
+                        let newp = if p.is_absolute() {
+                            p.to_path_buf()
+                        } else {
+                            cwd.join(p)
+                        };
                         match std::env::set_current_dir(&newp) {
                             Ok(()) => {
                                 cwd = std::env::current_dir().unwrap_or(newp);

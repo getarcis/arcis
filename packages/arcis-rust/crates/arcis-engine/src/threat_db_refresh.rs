@@ -53,7 +53,9 @@ impl RefreshOptions {
             .ok_or(RefreshError::NoEndpoint)?;
         Ok(Self {
             endpoint,
-            api_key: std::env::var("ARCIS_INTEL_KEY").ok().filter(|s| !s.is_empty()),
+            api_key: std::env::var("ARCIS_INTEL_KEY")
+                .ok()
+                .filter(|s| !s.is_empty()),
             cache_path: default_cache_path(),
             use_cache: true,
             timeout: Duration::from_secs(5),
@@ -124,7 +126,10 @@ pub fn refresh_threats(opts: &RefreshOptions) -> Result<Vec<Threat>, RefreshErro
     let threats = runtime.block_on(fetch_snapshot(opts))?;
 
     if let Some(path) = &opts.cache_path {
-        let cache = ThreatDbCache { fetched_at: now_secs(), threats: threats.clone() };
+        let cache = ThreatDbCache {
+            fetched_at: now_secs(),
+            threats: threats.clone(),
+        };
         let _ = cache.save(path); // cache write failures are non-fatal
     }
     Ok(threats)
@@ -186,7 +191,10 @@ mod tests {
 
     #[test]
     fn merge_dedupes_and_fetched_wins() {
-        let embedded = vec![threat("npm", "lodash", "CVE-1", "medium"), threat("npm", "axios", "CVE-2", "high")];
+        let embedded = vec![
+            threat("npm", "lodash", "CVE-1", "medium"),
+            threat("npm", "axios", "CVE-2", "high"),
+        ];
         let fetched = vec![
             threat("npm", "lodash", "CVE-1", "critical"), // same key -> overrides
             threat("pypi", "flask", "CVE-3", "high"),     // new
@@ -194,12 +202,18 @@ mod tests {
         let merged = merge_threats(embedded, fetched);
         assert_eq!(merged.len(), 3);
         let lodash = merged.iter().find(|t| t.name == "lodash").unwrap();
-        assert_eq!(lodash.severity, "critical", "fetched entry should win on conflict");
+        assert_eq!(
+            lodash.severity, "critical",
+            "fetched entry should win on conflict"
+        );
     }
 
     #[test]
     fn cache_freshness() {
-        let mut c = ThreatDbCache { fetched_at: now_secs(), threats: vec![threat("npm", "x", "CVE-9", "low")] };
+        let mut c = ThreatDbCache {
+            fetched_at: now_secs(),
+            threats: vec![threat("npm", "x", "CVE-9", "low")],
+        };
         assert!(c.is_fresh(CACHE_TTL_SECS));
         c.fetched_at = now_secs().saturating_sub(CACHE_TTL_SECS + 10);
         assert!(!c.is_fresh(CACHE_TTL_SECS));
@@ -209,7 +223,10 @@ mod tests {
     fn cache_roundtrip() {
         let dir = std::env::temp_dir().join(format!("arcis-tdb-{}", now_secs()));
         let path = dir.join("threat-db-cache.json");
-        let c = ThreatDbCache { fetched_at: now_secs(), threats: vec![threat("npm", "y", "CVE-7", "high")] };
+        let c = ThreatDbCache {
+            fetched_at: now_secs(),
+            threats: vec![threat("npm", "y", "CVE-7", "high")],
+        };
         c.save(&path).unwrap();
         let loaded = ThreatDbCache::load(&path).unwrap();
         assert_eq!(loaded.threats.len(), 1);
@@ -221,6 +238,9 @@ mod tests {
     fn from_env_requires_endpoint() {
         // Unset -> NoEndpoint (other tests/CI must not set this var).
         std::env::remove_var("ARCIS_INTEL_ENDPOINT");
-        assert!(matches!(RefreshOptions::from_env(), Err(RefreshError::NoEndpoint)));
+        assert!(matches!(
+            RefreshOptions::from_env(),
+            Err(RefreshError::NoEndpoint)
+        ));
     }
 }
