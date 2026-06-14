@@ -92,22 +92,17 @@ export function sanitizeXss(input: string, collectThreats = false, htmlEncode = 
  */
 export function detectXss(input: string): boolean {
   if (typeof input !== 'string') return false;
-  
-  // Check for event handlers
-  if (/\s+on\w+\s*=/i.test(input)) return true;
-  
-  // Check for dangerous protocols
-  if (/javascript\s*:[^\s]/i.test(input)) return true;
-  if (/vbscript\s*:/i.test(input)) return true;
-  if (/data\s*:\s*text\/html/i.test(input)) return true;
-  
-  // Check for patterns from constants
+
+  // All XSS detection now flows through the shared patterns.json `xss` rules
+  // (event handlers, javascript:/vbscript:/data: protocols, tags). The former
+  // inline fast-path checks were a strict subset of these rules, so they were
+  // removed when the patterns moved to patterns.json (single source).
   for (const pattern of XSS_PATTERNS) {
     pattern.lastIndex = 0;
     if (pattern.test(input)) {
       return true;
     }
   }
-  
+
   return false;
 }

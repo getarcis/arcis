@@ -1,12 +1,14 @@
 name: Data sync check
 
-# Verifies the shared JSON data files stay in sync across the three
-# copies the monorepo keeps:
+# Verifies the shared JSON data files stay in sync across the copies the
+# monorepo keeps:
 #
 #   1. packages/core/patterns.json            <- canonical, human-edited
 #   2. packages/arcis-python/arcis/data/      <- bundled copy the Python
 #                                                 package loads at runtime
-#   3. packages/arcis-rust/crates/arcis-data/data/ <- vendored copy the
+#   3. packages/arcis-node/src/data/          <- bundled copy the Node
+#                                                 package loads at runtime
+#   4. packages/arcis-rust/crates/arcis-data/data/ <- vendored copy the
 #                                                 Rust CLI build needs
 #
 # WHY (core check): patterns.json is edited in packages/core/ but the
@@ -31,6 +33,7 @@ on:
     paths:
       - "packages/core/patterns.json"
       - "packages/core/bot-patterns.json"
+      - "packages/arcis-node/src/data/patterns.json"
       - "packages/arcis-node/src/data/bot-patterns.json"
       - "packages/arcis-python/arcis/data/threat-db.json"
       - "packages/arcis-python/arcis/data/patterns.json"
@@ -41,6 +44,7 @@ on:
     paths:
       - "packages/core/patterns.json"
       - "packages/core/bot-patterns.json"
+      - "packages/arcis-node/src/data/patterns.json"
       - "packages/arcis-node/src/data/bot-patterns.json"
       - "packages/arcis-python/arcis/data/threat-db.json"
       - "packages/arcis-python/arcis/data/patterns.json"
@@ -65,31 +69,36 @@ jobs:
 
           sha() { sha256sum "$1" | awk '{print $1}'; }
 
-          # 1. Canonical patterns.json (packages/core) must match the
-          #    bundled Python copy. This is the check that was missing
-          #    when v1.6.5 shipped a stale wheel.
+          # 1. Canonical patterns.json (packages/core) must match every
+          #    bundled copy that an SDK loads at runtime: Python and (since
+          #    the Node runtime-patterns migration) Node. This is the check
+          #    that was missing when v1.6.5 shipped a stale wheel.
           core="packages/core/patterns.json"
-          py_patterns="packages/arcis-python/arcis/data/patterns.json"
           if [ ! -f "$core" ]; then
             echo "::error file=$core::canonical file missing"
             fail=1
-          elif [ ! -f "$py_patterns" ]; then
-            echo "::error file=$py_patterns::bundled file missing"
-            fail=1
           else
             core_hash=$(sha "$core")
-            py_hash=$(sha "$py_patterns")
-            if [ "$core_hash" != "$py_hash" ]; then
-              echo "::error::canonical $core has drifted from bundled $py_patterns"
-              echo "  canonical (core)   sha256: $core_hash"
-              echo "  bundled   (python) sha256: $py_hash"
-              echo "  fix:"
-              echo "    cp $core $py_patterns"
-              echo "    git add $py_patterns && git commit -m 'chore: resync bundled patterns.json'"
-              fail=1
-            else
-              echo "ok: patterns.json core matches python bundled ($core_hash)"
-            fi
+            for bundled in "packages/arcis-python/arcis/data/patterns.json" \
+                           "packages/arcis-node/src/data/patterns.json"; do
+              if [ ! -f "$bundled" ]; then
+                echo "::error file=$bundled::bundled patterns.json missing"
+                fail=1
+                continue
+              fi
+              b_hash=$(sha "$bundled")
+              if [ "$core_hash" != "$b_hash" ]; then
+                echo "::error::canonical $core has drifted from bundled $bundled"
+                echo "  canonical (core) sha256: $core_hash"
+                echo "  bundled          sha256: $b_hash"
+                echo "  fix:"
+                echo "    cp $core $bundled"
+                echo "    git add $bundled && git commit -m 'chore: resync bundled patterns.json'"
+                fail=1
+              else
+                echo "ok: patterns.json core matches $bundled ($core_hash)"
+              fi
+            done
           fi
 
           # 2. Bundled Python copies must match the Rust vendored copies.

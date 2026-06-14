@@ -77,9 +77,9 @@
         },
         {
           "id": "xss-style-tag",
-          "pattern": "<style[^>]*",
+          "pattern": "<style[\\s>][^>]*",
           "flags": "gi",
-          "description": "Detects style tags (partial or unclosed)",
+          "description": "Detects style tags (partial or unclosed). Requires whitespace or > after `style` so `<styled>` / `<StyledButton>` text is not flagged.",
           "redos_safe": true
         },
         {
@@ -112,7 +112,7 @@
         },
         {
           "id": "xss-vbscript",
-          "pattern": "vbscript:",
+          "pattern": "vbscript\\s*:",
           "flags": "gi",
           "description": "Detects vbscript: protocol",
           "redos_safe": true
@@ -204,7 +204,7 @@
         },
         {
           "id": "sqli-boolean-string",
-          "pattern": "\\bOR\\s+['\"][^'\"]+['\"]\\s*=\\s*['\"][^'\"]+['\"]?",
+          "pattern": "\\bOR\\s+['\"][^'\"]*['\"]\\s*=\\s*['\"][^'\"]*['\"]?",
           "flags": "gi",
           "description": "Detects OR 'a'='a' style injection",
           "redos_safe": true
@@ -218,7 +218,7 @@
         },
         {
           "id": "sqli-and-string",
-          "pattern": "\\bAND\\s+['\"][^'\"]+['\"]\\s*=\\s*['\"][^'\"]+['\"]?",
+          "pattern": "\\bAND\\s+['\"][^'\"]*['\"]\\s*=\\s*['\"][^'\"]*['\"]?",
           "flags": "gi",
           "description": "Detects AND 'a'='a' style injection",
           "redos_safe": true
@@ -477,6 +477,20 @@
           "pattern": "\\.\\.%2[fF]",
           "flags": "g",
           "description": "Detects mixed encoding: literal `..` followed by URL-encoded slash (%2F). Benchmark B6 — Python had no coverage; Node had this pattern. 2026-06-07.",
+          "redos_safe": true
+        },
+        {
+          "id": "path-mixed-dot-encoded",
+          "pattern": "%2e\\.[\\\\/]",
+          "flags": "gi",
+          "description": "Detects half-encoded traversal: URL-encoded dot (%2e) followed by a literal dot and a slash (`%2e./`). Node caught this; Python/Go did not. Migration 2026-06-13.",
+          "redos_safe": true
+        },
+        {
+          "id": "path-mixed-dot-encoded-rev",
+          "pattern": "\\.%2e[\\\\/]",
+          "flags": "gi",
+          "description": "Detects half-encoded traversal: literal dot followed by URL-encoded dot (%2e) and a slash (`.%2e/`). Node caught this; Python/Go did not. Migration 2026-06-13.",
           "redos_safe": true
         },
         {
