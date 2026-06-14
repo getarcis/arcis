@@ -1059,6 +1059,10 @@
       {
         "input": "${T(java.lang.Runtime).getRuntime().exec('id')}",
         "expected": true
+      },
+      {
+        "input": "@php($x = system('id')) @endphp",
+        "expected": true
       }
     ],
     "ssti_negative": [
@@ -1068,6 +1072,10 @@
       },
       {
         "input": "Mass: 5 kg",
+        "expected": false
+      },
+      {
+        "input": "ping me @phpdev about the release",
         "expected": false
       }
     ],

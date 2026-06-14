@@ -28,6 +28,10 @@ const SSTI_DETECT_PATTERNS = [
   /\{\{\s*(?:self|request|lipsum|cycler|joiner|namespace|range)\b/gi,
   /** Velocity #set/#foreach + OGNL/Velocity method calls ($rt.exec, .getRuntime). Benchmark ssti-velocity-runtime. */
   /#set\s*\(\s*\$|#foreach\s*\(\s*\$|\$\w+\.(?:exec|getClass|getRuntime|getMethod|invoke)\b/gi,
+  /** Laravel Blade raw-PHP directive: `@php(...)` inline or `@php ... @endphp` block
+   * (the `{{ }}` Blade echo form is already covered above). Requires `@php(` or the
+   * `@endphp` close so it doesn't fire on the bare `@php` social handle. */
+  /@php\s*\(|@endphp\b/gi,
 ] as const;
 
 /**

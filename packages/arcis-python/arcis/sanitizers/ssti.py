@@ -34,6 +34,10 @@ _SSTI_DETECT_PATTERNS = [
         r"|\$\w+\.(?:exec|getClass|getRuntime|getMethod|invoke)\b",
         re.IGNORECASE,
     ),
+    # Laravel Blade raw-PHP directive: @php(...) inline or @php ... @endphp block
+    # (the {{ }} Blade echo form is already covered above). Requires @php( or the
+    # @endphp close so it doesn't fire on the bare "@php" social handle.
+    re.compile(r"@php\s*\(|@endphp\b", re.IGNORECASE),
 ]
 
 # Removal patterns — used by sanitize_ssti()
