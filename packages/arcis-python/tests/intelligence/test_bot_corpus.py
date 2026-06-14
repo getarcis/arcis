@@ -121,6 +121,31 @@ class TestBotCorpusWireup:
         assert denied, "novel scanner UA should be denied once the corpus refresh lands"
 
 
+class TestIntelligenceFromEnv:
+    """ARCIS_INTEL_* env-var config fallback (12-factor, no-code activation)."""
+
+    def test_none_without_endpoint(self, monkeypatch):
+        from arcis.fastapi import _intelligence_from_env
+
+        monkeypatch.delenv("ARCIS_INTEL_ENDPOINT", raising=False)
+        assert _intelligence_from_env() is None
+
+    def test_builds_options_from_env(self, monkeypatch):
+        from arcis.fastapi import _intelligence_from_env
+
+        monkeypatch.setenv("ARCIS_INTEL_ENDPOINT", "https://intel.test")
+        monkeypatch.setenv("ARCIS_INTEL_KEY", "secret")
+        monkeypatch.setenv("ARCIS_INTEL_WORKSPACE", "ws1")
+        monkeypatch.setenv("ARCIS_INTEL_DECISIONS", "ip-rep, bot-corpus, bogus")
+        opts = _intelligence_from_env()
+        assert opts is not None
+        assert opts.endpoint == "https://intel.test"
+        assert opts.api_key == "secret"
+        assert opts.workspace_id == "ws1"
+        # bogus filtered out; only valid decisions kept
+        assert opts.cloud_decisions == ["ip-rep", "bot-corpus"]
+
+
 class TestBotCorpusPeriodicRefresh:
     def teardown_method(self):
         _reset_bot_patterns_for_test()

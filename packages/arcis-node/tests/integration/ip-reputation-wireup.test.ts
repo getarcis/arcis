@@ -112,6 +112,46 @@ describe('Integration: IP reputation wire-up (Phase C)', () => {
     });
   });
 
+  describe('activates via ARCIS_INTEL_* env vars (no in-code config)', () => {
+    let intel: Awaited<ReturnType<typeof createIntelStub>>;
+    let server: TestServer;
+    let stack: ReturnType<typeof arcis>;
+
+    beforeAll(async () => {
+      intel = await createIntelStub({ [PUBLIC_IP]: { severity: 9, categories: ['botnet'] } });
+      process.env.ARCIS_INTEL_ENDPOINT = intel.url;
+      process.env.ARCIS_INTEL_DECISIONS = 'ip-rep';
+      process.env.ARCIS_INTEL_KEY = 'test-key';
+      process.env.ARCIS_INTEL_BLOCK_THRESHOLD = '7';
+      // No `intelligence` option — the env vars must supply it.
+      stack = arcis({ rateLimit: false });
+      server = await createTestServer((app: Express) => {
+        app.set('trust proxy', true);
+        app.use(...stack);
+        app.get('/', (_req: Request, res: Response) => res.json({ ok: true }));
+      });
+    });
+
+    afterAll(async () => {
+      stack.close();
+      await server.close();
+      await intel.close();
+      delete process.env.ARCIS_INTEL_ENDPOINT;
+      delete process.env.ARCIS_INTEL_DECISIONS;
+      delete process.env.ARCIS_INTEL_KEY;
+      delete process.env.ARCIS_INTEL_BLOCK_THRESHOLD;
+    });
+
+    it('picks up env config and blocks the bad IP after warm-up', async () => {
+      const first = await fetch(server.url + '/', {
+        headers: { 'x-forwarded-for': PUBLIC_IP, 'user-agent': 'Mozilla/5.0' },
+      });
+      expect(first.status).toBe(200); // cache miss, non-blocking
+      const blocked = await pollUntilStatus(server.url, 403);
+      expect(blocked).toBe(true);
+    });
+  });
+
   describe('fails open when the intelligence service is unreachable', () => {
     let server: TestServer;
     let stack: ReturnType<typeof arcis>;

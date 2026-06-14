@@ -80,6 +80,45 @@ def _scan_prompt_injection(body: Any, min_severity: str, depth: int = 0) -> bool
     return False
 
 
+def _intelligence_from_env() -> Optional[IntelligenceOptions]:
+    """Build IntelligenceOptions from ARCIS_INTEL_* env vars (12-factor config),
+    or None if ARCIS_INTEL_ENDPOINT is unset. Mirrors the Node env fallback so
+    cloud intelligence can be enabled without code.
+
+        ARCIS_INTEL_ENDPOINT   required to activate the env path
+        ARCIS_INTEL_KEY        optional bearer token
+        ARCIS_INTEL_WORKSPACE        optional workspace id
+        ARCIS_INTEL_DECISIONS        comma list: "ip-rep,bot-corpus"
+        ARCIS_INTEL_BLOCK_THRESHOLD  optional int; reputation severity at/above
+                                     which to block (omit = annotate only)
+    """
+    import os
+
+    endpoint = os.environ.get("ARCIS_INTEL_ENDPOINT")
+    if not endpoint:
+        return None
+    valid = {"ip-rep", "bot-corpus"}
+    decisions = [
+        d.strip()
+        for d in os.environ.get("ARCIS_INTEL_DECISIONS", "").split(",")
+        if d.strip() in valid
+    ]
+    raw_threshold = os.environ.get("ARCIS_INTEL_BLOCK_THRESHOLD")
+    block_threshold = None
+    if raw_threshold:
+        try:
+            block_threshold = int(raw_threshold)
+        except ValueError:
+            block_threshold = None
+    return IntelligenceOptions(
+        endpoint=endpoint,
+        api_key=os.environ.get("ARCIS_INTEL_KEY"),
+        workspace_id=os.environ.get("ARCIS_INTEL_WORKSPACE"),
+        cloud_decisions=decisions,
+        block_threshold=block_threshold,
+    )
+
+
 # ============================================================================
 # ASYNC RATE LIMITER STORE PROTOCOL
 # ============================================================================
@@ -673,6 +712,8 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         self._owns_intel_client: bool = False
         self._intel_block_threshold: Optional[int] = None
         self._intel_ip_rep: bool = False
+        if intelligence is None:
+            intelligence = _intelligence_from_env()
         if intelligence is not None:
             if isinstance(intelligence, IntelligenceClient):
                 self._intel_client = intelligence

@@ -30,7 +30,41 @@ import { TelemetryClient } from '../telemetry/client';
 import type { TelemetryOptions } from '../telemetry/types';
 import { IntelligenceClient, reputationSeverityTier } from '../intelligence/client';
 import { detectClientIp } from '../utils/ip';
-import type { IpReputation } from '../intelligence/types';
+import type { IpReputation, IntelligenceOptions, CloudDecision } from '../intelligence/types';
+
+/**
+ * Resolve cloud-intelligence config from in-code options or `ARCIS_INTEL_*`
+ * env vars. The env fallback lets 12-factor apps turn on cloud intelligence
+ * with no code change (mirrors the telemetry env pickup). In-code options win
+ * when an endpoint is set both ways.
+ *
+ *   ARCIS_INTEL_ENDPOINT   required to activate the env path
+ *   ARCIS_INTEL_KEY        optional bearer token
+ *   ARCIS_INTEL_WORKSPACE        optional workspace id
+ *   ARCIS_INTEL_DECISIONS        comma list: "ip-rep,bot-corpus"
+ *   ARCIS_INTEL_BLOCK_THRESHOLD  optional int; reputation severity at/above
+ *                                which to block (omit = annotate only)
+ */
+function resolveIntelligenceOptions(opt?: IntelligenceOptions): IntelligenceOptions | undefined {
+  if (opt?.endpoint) return opt;
+  const endpoint = process.env.ARCIS_INTEL_ENDPOINT;
+  if (!endpoint) return undefined;
+  const valid: CloudDecision[] = ['ip-rep', 'bot-corpus'];
+  const cloudDecisions = (process.env.ARCIS_INTEL_DECISIONS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is CloudDecision => (valid as string[]).includes(s));
+  const rawThreshold = process.env.ARCIS_INTEL_BLOCK_THRESHOLD;
+  const blockThreshold =
+    rawThreshold && Number.isFinite(Number(rawThreshold)) ? Number(rawThreshold) : undefined;
+  return {
+    endpoint,
+    apiKey: process.env.ARCIS_INTEL_KEY,
+    workspaceId: process.env.ARCIS_INTEL_WORKSPACE,
+    cloudDecisions,
+    blockThreshold,
+  };
+}
 
 declare module 'express-serve-static-core' {
   interface Request {
@@ -289,11 +323,9 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
 
   // Cloud intelligence (opt-in). One client serves both capabilities; created
   // when an endpoint is set and cloudDecisions names at least one.
-  const intelDecisions = options.intelligence?.endpoint
-    ? options.intelligence.cloudDecisions ?? []
-    : [];
-  if (intelDecisions.length > 0 && options.intelligence) {
-    const intel = options.intelligence;
+  const intel = resolveIntelligenceOptions(options.intelligence);
+  const intelDecisions = intel?.endpoint ? intel.cloudDecisions ?? [] : [];
+  if (intelDecisions.length > 0 && intel) {
     const intelClient = new IntelligenceClient(intel);
     cleanupFns.push(() => intelClient.close());
 
