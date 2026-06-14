@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateUrl, isUrlSafe } from '../../src/validation/url';
+import { validateUrl, isUrlSafe, scanForSsrf } from '../../src/validation/url';
 
 describe('validateUrl', () => {
   describe('Safe URLs', () => {
@@ -396,5 +396,22 @@ describe('isUrlSafe', () => {
 
   it('should pass options through', () => {
     expect(isUrlSafe('http://localhost:3000', { allowLocalhost: true })).toBe(true);
+  });
+});
+
+describe('scanForSsrf scheme gate', () => {
+  it('skips typo and custom schemes (not an SSRF vector)', () => {
+    expect(scanForSsrf({ q: 'lhttps://www.instagram.com/p/x' }).detected).toBe(false);
+    expect(scanForSsrf({ q: 'myapp://deeplink/page' }).detected).toBe(false);
+  });
+
+  it('allows public http(s)', () => {
+    expect(scanForSsrf({ url: 'https://www.instagram.com/p/x' }).detected).toBe(false);
+  });
+
+  it('still blocks dangerous URLs', () => {
+    expect(scanForSsrf({ u: 'file:///etc/passwd' }).detected).toBe(true);
+    expect(scanForSsrf({ u: 'http://10.0.0.1/admin' }).detected).toBe(true);
+    expect(scanForSsrf({ u: 'gopher://internal:6379/_INFO' }).detected).toBe(true);
   });
 });

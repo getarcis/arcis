@@ -9,7 +9,7 @@
 //! before any of this code touches the bytes, so a mismatched DB never
 //! reaches `Threat::load_all` in the first place.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::version::matches_any_range;
@@ -22,7 +22,7 @@ pub enum ThreatDbError {
 
 /// One known compromised package entry. Field-for-field with the Python
 /// `CompromisedPackage` dataclass.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Threat {
     pub ecosystem: String,
     pub name: String,

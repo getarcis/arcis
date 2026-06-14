@@ -26,6 +26,7 @@ pub mod sca_render;
 pub mod sca_sbom;
 pub mod scan;
 pub mod threat_db;
+pub mod threat_db_refresh;
 pub mod version;
 
 /// Re-export the data crate so callers don't have to depend on it directly.

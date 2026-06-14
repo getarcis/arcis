@@ -8,7 +8,7 @@ For production use today, pick one of the SDKs that ship full coverage:
 
 - Node.js / TypeScript: [`@arcis/node`](https://www.npmjs.com/package/@arcis/node)
 - Python: [`arcis`](https://pypi.org/project/arcis/)
-- Go: [`github.com/getarcis/arcis`](https://pkg.go.dev/github.com/getarcis/arcis)
+- Go: [`github.com/getarcis/arcis-go`](https://pkg.go.dev/github.com/getarcis/arcis-go)
 
 ## What is here
 

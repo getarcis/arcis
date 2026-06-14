@@ -438,6 +438,72 @@ Latency MUST be measured from the start of the Arcis middleware chain to the emi
 
 ---
 
+## 10. Cloud Intelligence (opt-in)
+
+### Purpose
+
+Let the SDK consume continuously-curated intelligence the local bundle can't
+have: per-request **IP reputation** and a **bot corpus** that refreshes outside
+the SDK release cycle. Served by an Arcis intelligence endpoint (the control
+plane's `/v1/intel/*` routes). **Opt-in** — with no `intelligence` config the
+SDK does zero network work and is fully local.
+
+### Configuration Options
+
+```
+IntelligenceOptions {
+  endpoint: string          // base URL; the SDK appends /v1/intel/...
+  apiKey?: string           // sent as Authorization: Bearer <apiKey>
+  workspaceId?: string      // sent as x-workspace-id
+  cloudDecisions: string[]  // any of: "ip-rep", "bot-corpus"
+  blockThreshold?: number   // ip-rep: block when severity >= this (1-10); omitted = observe-only
+  cacheMax?, cacheTtlMs?, timeoutMs?, botCorpusRefreshMs?
+}
+```
+
+### Endpoints consumed
+
+```
+GET /v1/intel/ip-reputation/:ip        -> { ip, found, severity, categories, sources, ... }
+GET /v1/intel/bot-corpus/snapshot      -> { schema_version, count, entries: [BotCorpusEntry] }
+```
+
+(The control plane also serves `POST /v1/intel/ip-reputation/bulk`,
+`GET /v1/intel/threat-db/{snapshot,deltas}` for the CLI's `sca --refresh-db`,
+and `*/status`. All `/v1/intel/*` routes are auth-gated + per-key rate limited.)
+
+### SDK Behavior
+
+- **ip-rep**: cache-first, non-blocking. On a cache miss the SDK returns
+  "unknown" for the current request and schedules a background refresh (LRU +
+  TTL, default 1000 / 1h); later requests from that IP read the cached verdict.
+  Private/loopback/unresolved IPs are never looked up. Blocking requires an
+  explicit `blockThreshold` — reputation is a signal in a multi-signal decision,
+  not a standalone gate.
+- **bot-corpus**: fetch the snapshot on startup (and every `botCorpusRefreshMs`,
+  default weekly), merge it by id on top of the bundled corpus. New ids append;
+  existing ids are replaced. Idempotent.
+
+### Guarantees
+
+- **Zero-overhead when disabled.** No `intelligence` config = no client, no
+  timer, no network.
+- **Fail-open by design.** Any lookup/refresh error (timeout, non-2xx, network)
+  MUST resolve to "no data" and MUST NOT block or slow the protected request.
+  An unreachable intelligence service never degrades local protection.
+- **Parity across SDKs.** Node, Python, and Go MUST implement the same config,
+  endpoints, cache semantics, and fail-open behavior.
+
+### CLI (`arcis sca --refresh-db`)
+
+The CLI consumes the threat-db feed (not a runtime-SDK concern): fetch
+`GET /v1/intel/threat-db/snapshot`, cache at `~/.arcis/threat-db-cache.json`
+(24h TTL), merge over the embedded DB (dedup `ecosystem:name:cve`, fetched
+wins). Fail-open: any error keeps the embedded DB. Endpoint + key from
+`ARCIS_INTEL_ENDPOINT` / `ARCIS_INTEL_KEY`.
+
+---
+
 ## Language-Specific Conventions
 
 Each implementation should follow its language's conventions:

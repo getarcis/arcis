@@ -193,6 +193,16 @@ export interface SsrfScanResult {
  */
 const SSRF_BODY_SCAN_PROTOCOLS = ['http:', 'https:', 'ftp:', 'ftps:'];
 
+// Schemes the body scan evaluates: the fetchable ones (http/https/ftp/ftps)
+// plus the classic SSRF-amplifying ones (file, gopher, dict, ...). A URL-shaped
+// string with any other scheme is a typo or a custom app scheme (lhttps://,
+// myapp://) that no server-side fetch would act on, so it is skipped rather
+// than flagged as SSRF. Keeps the dangerous schemes here so they stay blocked.
+const SSRF_RELEVANT_SCHEMES = new Set([
+  'http', 'https', 'ftp', 'ftps', 'file', 'gopher', 'dict',
+  'ldap', 'ldaps', 'tftp', 'sftp', 'ssh', 'smb', 'jar', 'netdoc',
+]);
+
 function isLocalhostHostname(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase();
@@ -231,6 +241,12 @@ export function scanForSsrf(
     if (typeof value === 'string') {
       const trimmed = value.trim();
       if (URL_SHAPED.test(trimmed)) {
+        // Skip schemes a server-side fetch would never act on (typos like
+        // lhttps://, custom app schemes). They are not an SSRF vector.
+        const scheme = trimmed.slice(0, trimmed.indexOf(':')).toLowerCase();
+        if (!SSRF_RELEVANT_SCHEMES.has(scheme)) {
+          return null;
+        }
         // The localhost hostname is allowed (dev config); loopback IPs
         // are not (attacker evasion). Both would otherwise be flagged.
         if (isLocalhostHostname(trimmed)) {

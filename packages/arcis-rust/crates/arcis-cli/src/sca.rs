@@ -46,8 +46,12 @@ struct Args {
     /// Augment embedded DB with live OSV.dev lookups.
     osv: bool,
     /// Skip the on-disk cache for OSV results (refetch every package).
-    /// No-op without `--osv`.
+    /// No-op without `--osv`. Also skips the threat-db refresh cache.
     no_cache: bool,
+    /// Refresh the threat-db from the cloud intelligence endpoint
+    /// (ARCIS_INTEL_ENDPOINT) and merge it over the embedded DB. Fail-open:
+    /// any error keeps the embedded DB.
+    refresh_db: bool,
     /// Reserved: matches the Python flag but only suppresses the live
     /// progress, which the Rust port doesn't render yet. Kept so users
     /// can pass `-q` without a parse error.
@@ -164,6 +168,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
     let mut no_color = false;
     let mut osv = false;
     let mut no_cache = false;
+    let mut refresh_db = false;
     let mut quiet = false;
     let mut fail_on = FailOn::default();
     let mut sbom: Option<Sbom> = None;
@@ -181,6 +186,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
             "--no-color" => no_color = true,
             "--osv" => osv = true,
             "--no-cache" => no_cache = true,
+            "--refresh-db" => refresh_db = true,
             "--quiet" | "-q" => quiet = true,
             "--verbose" | "-v" => verbose = true,
             "--json" => json_output = true,
@@ -305,6 +311,7 @@ fn parse_args(argv: &[String]) -> ParseOutcome {
         no_color,
         osv,
         no_cache,
+        refresh_db,
         _quiet: quiet,
         fail_on,
         sbom,
@@ -820,7 +827,7 @@ fn print_threat_list<W: Write>(w: &mut W, threats: &[Threat], no_color: bool) ->
 fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
-        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--fail-on <level>] [--json|--sarif|--sbom <format> [-o <file>]] [--no-color] [-q] [-v]"
+        "usage: arcis sca [path] [--system] [--list] [--osv] [--no-cache] [--refresh-db] [--fail-on <level>] [--json|--sarif|--sbom <format> [-o <file>]] [--no-color] [-q] [-v]"
     )?;
     writeln!(w)?;
     writeln!(
@@ -855,6 +862,10 @@ fn print_help<W: Write>(w: &mut W) -> io::Result<()> {
     writeln!(
         w,
         "  --no-cache          Skip the on-disk OSV cache (~/.arcis/osv-cache.json)"
+    )?;
+    writeln!(
+        w,
+        "  --refresh-db        Refresh the threat-db from the cloud (ARCIS_INTEL_ENDPOINT) and merge it over the embedded DB"
     )?;
     writeln!(
         w,
@@ -942,7 +953,37 @@ pub fn run(argv: &[String]) -> ExitCode {
         }
     };
 
-    let threats = Threat::load_all();
+    let mut threats = Threat::load_all();
+
+    // --refresh-db: pull the curated threat-db from the cloud intelligence
+    // endpoint and merge it over the embedded DB. Fail-open: any error keeps
+    // the embedded DB and warns on stderr (never corrupts --json/--sarif on
+    // stdout).
+    if args.refresh_db {
+        match arcis_engine::threat_db_refresh::RefreshOptions::from_env() {
+            Ok(mut opts) => {
+                opts.use_cache = !args.no_cache;
+                match arcis_engine::threat_db_refresh::refresh_threats(&opts) {
+                    Ok(fetched) => {
+                        let added = fetched.len();
+                        threats = arcis_engine::threat_db_refresh::merge_threats(threats, fetched);
+                        if args.verbose {
+                            eprintln!(
+                                "arcis sca: refreshed threat-db (+{added} cloud entries, {total} total)",
+                                total = threats.len()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("arcis sca: threat-db refresh failed ({e}); using embedded DB");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("arcis sca: --refresh-db: {e}; using embedded DB");
+            }
+        }
+    }
 
     if args.list_threats {
         let _ = print_threat_list(&mut out, &threats, args.no_color);

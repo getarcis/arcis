@@ -355,6 +355,15 @@ class SsrfScanResult:
 # (file/gopher/dict). Mirrors the Node SSRF_BODY_SCAN_PROTOCOLS policy.
 _SSRF_BODY_SCAN_PROTOCOLS = ["http", "https", "ftp", "ftps"]
 
+# Schemes the body scan evaluates: the fetchable ones plus the classic
+# SSRF-amplifying ones (file, gopher, dict, ...). A URL-shaped string with any
+# other scheme is a typo or a custom app scheme (lhttps://, myapp://) that no
+# server-side fetch would act on, so it is skipped rather than flagged.
+_SSRF_RELEVANT_SCHEMES = {
+    "http", "https", "ftp", "ftps", "file", "gopher", "dict",
+    "ldap", "ldaps", "tftp", "sftp", "ssh", "smb", "jar", "netdoc",
+}
+
 
 def _is_localhost_hostname(url: str) -> bool:
     try:
@@ -398,6 +407,11 @@ def scan_for_ssrf(
         if isinstance(value, str):
             stripped = value.strip()
             if _RE_URL_SHAPED.match(stripped):
+                # Skip schemes a server-side fetch would never act on (typos
+                # like lhttps://, custom app schemes). Not an SSRF vector.
+                scheme = stripped.split(":", 1)[0].lower()
+                if scheme not in _SSRF_RELEVANT_SCHEMES:
+                    return None
                 # localhost hostname allowed (dev config); loopback IPs not.
                 if _is_localhost_hostname(stripped):
                     return None

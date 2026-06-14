@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { isDangerousNoSqlKey, detectNoSqlInjection, getDangerousOperators } from '../../src/sanitizers/nosql';
+import { isDangerousNoSqlKey, detectNoSqlInjection, detectNoSqlString, getDangerousOperators } from '../../src/sanitizers/nosql';
 
 describe('isDangerousNoSqlKey', () => {
   describe('Query Operators', () => {
@@ -248,5 +248,47 @@ describe('getDangerousOperators', () => {
     operators.forEach(op => {
       expect(op.startsWith('$')).toBe(true);
     });
+  });
+});
+
+describe('detectNoSqlString', () => {
+  // String-form NoSQL operators (the form that arrives as query params
+  // or mongo-shell payloads, not object keys). Closes the Node-vs-Python
+  // parity gap that left GoTestWAF NoSQL at 0% on Node.
+  describe('true positives', () => {
+    it.each([
+      "$where: '1==1'",
+      '[$ne]=1',
+      '{"$gt": ""}',
+      'user[$gt]=admin',
+      '$regex:.*',
+      '$where: function() { return true; }',
+      'name=admin&age[$gt]=0',
+      '$function: "return 1"',
+    ])('flags %j', (payload) => {
+      expect(detectNoSqlString(payload)).toBe(true);
+    });
+  });
+
+  describe('true negatives (word-boundary keeps $-prefixed words clean)', () => {
+    it.each([
+      '$invoice total',
+      '$order summary',
+      'price is $5.00',
+      '$index of array',
+      '$model name',
+      'regular user comment',
+      'The cost is great today',
+      'email@example.com',
+    ])('does not flag %j', (payload) => {
+      expect(detectNoSqlString(payload)).toBe(false);
+    });
+  });
+
+  it('returns false for non-string input', () => {
+    // @ts-expect-error testing runtime guard
+    expect(detectNoSqlString(null)).toBe(false);
+    // @ts-expect-error testing runtime guard
+    expect(detectNoSqlString({ $gt: 1 })).toBe(false);
   });
 });

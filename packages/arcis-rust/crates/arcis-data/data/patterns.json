@@ -35,7 +35,7 @@
         },
         {
           "id": "xss-javascript-protocol",
-          "pattern": "javascript\\s*:",
+          "pattern": "javascript\\s*:[^\\s]",
           "flags": "gi",
           "description": "Detects javascript: protocol (allows whitespace around colon)",
           "redos_safe": true
@@ -77,9 +77,9 @@
         },
         {
           "id": "xss-style-tag",
-          "pattern": "<style[^>]*",
+          "pattern": "<style[\\s>][^>]*",
           "flags": "gi",
-          "description": "Detects style tags (partial or unclosed)",
+          "description": "Detects style tags (partial or unclosed). Requires whitespace or > after `style` so `<styled>` / `<StyledButton>` text is not flagged.",
           "redos_safe": true
         },
         {
@@ -112,7 +112,7 @@
         },
         {
           "id": "xss-vbscript",
-          "pattern": "vbscript:",
+          "pattern": "vbscript\\s*:",
           "flags": "gi",
           "description": "Detects vbscript: protocol",
           "redos_safe": true
@@ -190,9 +190,9 @@
         },
         {
           "id": "sqli-comments",
-          "pattern": "(--(?:[\\s-]|$)|/\\*|\\*/)",
+          "pattern": "((?:^|[^!])--(?:[\\s-]|$)|/\\*|\\*/)",
           "flags": "g",
-          "description": "SQL comments. ANSI -- requires a following space / dash / end-of-string so it matches a real trailing comment (1=1--, -- -) but not CLI flags (--max-retries). C-style /* */ kept. MySQL # excluded (see sqli-comment-quote). FPR pass 2026-06-08.",
+          "description": "SQL comments. ANSI -- requires a following space / dash / end-of-string so it matches a real trailing comment (1=1--, -- -) but not CLI flags (--max-retries). C-style /* */ kept. MySQL # excluded (see sqli-comment-quote). FPR pass 2026-06-08. The -- must not be immediately preceded by '!' so HTML comments (<!-- -->) are not flagged as SQL.",
           "redos_safe": true
         },
         {
@@ -204,7 +204,7 @@
         },
         {
           "id": "sqli-boolean-string",
-          "pattern": "\\bOR\\s+['\"][^'\"]+['\"]\\s*=\\s*['\"][^'\"]+['\"]",
+          "pattern": "\\bOR\\s+['\"][^'\"]*['\"]\\s*=\\s*['\"][^'\"]*['\"]?",
           "flags": "gi",
           "description": "Detects OR 'a'='a' style injection",
           "redos_safe": true
@@ -218,7 +218,7 @@
         },
         {
           "id": "sqli-and-string",
-          "pattern": "\\bAND\\s+['\"][^'\"]+['\"]\\s*=\\s*['\"][^'\"]+['\"]",
+          "pattern": "\\bAND\\s+['\"][^'\"]*['\"]\\s*=\\s*['\"][^'\"]*['\"]?",
           "flags": "gi",
           "description": "Detects AND 'a'='a' style injection",
           "redos_safe": true
@@ -283,7 +283,7 @@
       "rules": [
         {
           "id": "nosql-operators",
-          "pattern": "\\$(?:gt|gte|lt|lte|ne|eq|in|nin|and|or|not|nor|exists|type|regex|where|expr|mod|text|jsonSchema|function|accumulator|elemMatch|all|size|lookup|match|project|group|sort|limit|skip|unwind|addFields|replaceRoot)",
+          "pattern": "\\$(?:gt|gte|lt|lte|ne|eq|in|nin|and|or|not|nor|exists|type|regex|where|expr|mod|text|jsonSchema|function|accumulator|elemMatch|all|size|lookup|match|project|group|sort|limit|skip|unwind|addFields|replaceRoot)\\b",
           "flags": "i",
           "description": "Detects MongoDB operators",
           "redos_safe": true
@@ -334,9 +334,9 @@
       "rules": [
         {
           "id": "cmdi-shell-chars",
-          "pattern": "[;&|]\\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\\b",
+          "pattern": "[;&|]\\s*(?:(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd)\\b|base64(?:\\s|$))",
           "flags": "g",
-          "description": "Shell command chained after a metacharacter (; cat, | nc, & curl). Replaces the bare [;&|`] rule, which flagged every semicolon / ampersand in code, URLs and prose. FPR pass 2026-06-08.",
+          "description": "Shell command chained after a metacharacter (; cat, | nc, & curl). Replaces the bare [;&|`] rule, which flagged every semicolon / ampersand in code, URLs and prose. FPR pass 2026-06-08. base64 requires a trailing space or end-of-input so `;base64 -d` is caught but the data-URI `;base64,` MIME parameter is not (FP on inline images).",
           "redos_safe": true
         },
         {
@@ -393,6 +393,20 @@
           "pattern": "`\\s*(?:cat|ls|dir|rm|cp|mv|wget|curl|nc|ncat|bash|sh|zsh|ksh|chmod|chown|kill|ps|id|touch|ping|dig|su|head|tail|php|sed|whoami|nslookup|nmap|python3?|perl|ruby|node|eval|exec|sudo|telnet|ssh|ftp|tftp|scp|awk|xxd|base64)\\b",
           "flags": "gi",
           "description": "Backtick command substitution wrapping a known command (`whoami`). Avoids FP on markdown inline code like `npm install`. FPR pass 2026-06-08.",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-jndi-lookup",
+          "pattern": "\\$\\{jndi:",
+          "flags": "gi",
+          "description": "JNDI lookup used by Log4Shell, e.g. ${jndi:ldap://host/a}",
+          "redos_safe": true
+        },
+        {
+          "id": "cmdi-ssi-directive",
+          "pattern": "<!--\\s*#\\s*(?:exec|include|echo|config|fsize|flastmod|printenv)\\b",
+          "flags": "gi",
+          "description": "Server-side include (SSI) directive, e.g. <!--#exec cmd=...-->",
           "redos_safe": true
         }
       ]
@@ -466,10 +480,31 @@
           "redos_safe": true
         },
         {
+          "id": "path-mixed-dot-encoded",
+          "pattern": "%2e\\.[\\\\/]",
+          "flags": "gi",
+          "description": "Detects half-encoded traversal: URL-encoded dot (%2e) followed by a literal dot and a slash (`%2e./`). Node caught this; Python/Go did not. Migration 2026-06-13.",
+          "redos_safe": true
+        },
+        {
+          "id": "path-mixed-dot-encoded-rev",
+          "pattern": "\\.%2e[\\\\/]",
+          "flags": "gi",
+          "description": "Detects half-encoded traversal: literal dot followed by URL-encoded dot (%2e) and a slash (`.%2e/`). Node caught this; Python/Go did not. Migration 2026-06-13.",
+          "redos_safe": true
+        },
+        {
           "id": "path-overlong-utf8-dot",
           "pattern": "%[Cc]0%[Aa][Ee]",
           "flags": "g",
           "description": "Detects overlong UTF-8 encoding of '.' (%C0%AE). Historic IIS/Apache decoder bypass. Real char `.` is %2E; overlong encoding only appears in evasion attempts. Benchmark B6 gap — neither SDK caught this before. 2026-06-07.",
+          "redos_safe": true
+        },
+        {
+          "id": "path-overlong-utf8-slash",
+          "pattern": "%[Cc]0%[Aa][Ff]",
+          "flags": "g",
+          "description": "Detects overlong UTF-8 encoding of forward slash (%C0%AF). Same IIS/Apache decoder bypass class as path-overlong-utf8-dot. Real slash is %2F; overlong form only appears in evasion. 2026-06-13.",
           "redos_safe": true
         },
         {

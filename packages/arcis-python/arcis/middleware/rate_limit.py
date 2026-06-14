@@ -78,6 +78,10 @@ class RateLimiter:
         self.skip_func = skip_func
         self._store_provided = store is not None
         self.store = store or InMemoryStore()
+        # In-memory fallback used only when an external store (e.g. Redis) is
+        # provided and then fails. Preserves availability while keeping
+        # protection (not a pure fail-open). Mirrors the Node rate limiter.
+        self._fallback_store = InMemoryStore() if self._store_provided else None
         self._closed = False
         self._fallback_lock = threading.Lock()
 
@@ -118,6 +122,8 @@ class RateLimiter:
         if self._cleanup_thread and self._cleanup_thread.is_alive():
             self._cleanup_thread.join(timeout=1.0)
         self.store.close()
+        if self._fallback_store is not None:
+            self._fallback_store.close()
 
     def _default_key_func(self, request) -> str:
         """Default key function - uses client IP address.
@@ -127,6 +133,26 @@ class RateLimiter:
         """
         from ..utils.ip import detect_client_ip
         return detect_client_ip(request)
+
+    def _count_and_reset(self, store, key: str):
+        """Increment the counter for `key` in `store`; return (count, reset_seconds).
+
+        Atomic via increment_or_set when the store supports it (InMemoryStore);
+        otherwise a serialized get+increment under a lock to avoid the TOCTOU
+        race where two threads both see count=N and both pass.
+        """
+        if hasattr(store, 'increment_or_set'):
+            count, reset_time = store.increment_or_set(key, self.window_seconds)
+            now = time.time()
+            return count, max(0, int(reset_time - now))
+        with self._fallback_lock:
+            now = time.time()
+            entry = store.get(key)
+            if not entry:
+                store.set(key, 1, now + self.window_seconds)
+                return 1, int(self.window_seconds)
+            count = store.increment(key)
+            return count, max(0, int(entry.reset_time - now))
 
     def check(self, request) -> Dict[str, Any]:
         """
@@ -142,29 +168,21 @@ class RateLimiter:
 
         key = self.key_func(request)
 
-        # Use atomic increment_or_set when available (InMemoryStore) to avoid the
-        # get()+increment() race where two concurrent threads both see count=N and
-        # both get allowed. External stores (Redis) handle atomicity via INCR.
-        if hasattr(self.store, 'increment_or_set'):
-            count, reset_time = self.store.increment_or_set(key, self.window_seconds)
-            now = time.time()
-            reset = max(0, int(reset_time - now))
-        else:
-            # Serialize get+increment to prevent TOCTOU race where two threads
-            # both see count=N and both pass through.
-            with self._fallback_lock:
-                now = time.time()
-                entry = self.store.get(key)
-                if not entry:
-                    self.store.set(key, 1, now + self.window_seconds)
-                    return {
-                        "allowed": True,
-                        "limit": self.max_requests,
-                        "remaining": self.max_requests - 1,
-                        "reset": int(self.window_seconds),
-                    }
-                count = self.store.increment(key)
-                reset = max(0, int(entry.reset_time - now))
+        try:
+            count, reset = self._count_and_reset(self.store, key)
+        except Exception:
+            # Primary store failed (e.g. Redis is down). Fall back to the
+            # in-memory store to preserve availability while keeping protection.
+            # Pure fail-open would be a security bypass, so this mirrors the
+            # Node limiter's in-memory fallback.
+            if self._fallback_store is None:
+                return {
+                    "allowed": True,
+                    "limit": self.max_requests,
+                    "remaining": self.max_requests,
+                    "reset": 0,
+                }
+            count, reset = self._count_and_reset(self._fallback_store, key)
 
         remaining = max(0, self.max_requests - count)
 

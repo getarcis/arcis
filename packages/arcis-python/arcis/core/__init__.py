@@ -8,7 +8,6 @@ All existing ``from arcis.core import X`` statements continue to work unchanged.
 from .constants import (
     _find_patterns_path,
     load_patterns,
-    get_embedded_patterns,
     PATTERNS,
     DEFAULT_MAX_INPUT_SIZE,
     MAX_RECURSION_DEPTH,
@@ -53,7 +52,6 @@ __all__ = [
     # Pattern loading
     "_find_patterns_path",
     "load_patterns",
-    "get_embedded_patterns",
     "PATTERNS",
     "DEFAULT_MAX_INPUT_SIZE",
     "MAX_RECURSION_DEPTH",

@@ -5,6 +5,7 @@
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { TelemetryOptions } from '../telemetry/types';
+import type { IntelligenceOptions } from '../intelligence/types';
 
 // =============================================================================
 // MAIN CONFIGURATION
@@ -104,6 +105,18 @@ export interface ArcisOptions {
    * See spec/API_SPEC.md §9.
    */
   telemetry?: TelemetryOptions;
+  /**
+   * Opt-in cloud intelligence (IP reputation). When set with
+   * `cloudDecisions: ['ip-rep']` and an `endpoint`, the middleware consults a
+   * locally-cached IP reputation feed served by an Arcis intelligence endpoint.
+   * Lookups are cache-first and never block the request path; an unreachable
+   * service fails open. Omitted = zero network work, fully local.
+   *
+   * Reputation is a signal, not a binary gate: blocking on it requires an
+   * explicit `blockThreshold`. Without one, the verdict is attached to the
+   * request for observability (telemetry) but does not block.
+   */
+  intelligence?: IntelligenceOptions;
   /**
    * Dry-run mode: detection runs as normal but the middleware never blocks,
    * never strips, and never returns 429. Pair with `onSanitize` to log what

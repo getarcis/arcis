@@ -1,6 +1,6 @@
 {
   "name": "@arcis/node",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Inside-the-app security middleware for Node.js. Express and NestJS run the full sanitizer pipeline (XSS, SQL, NoSQL, SSTI, XXE, path, command, prompt injection, prototype pollution, LDAP, XPath, header injection, plus 20+ more attack types). Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt, and Bun ship rate-limit + bot detection + security headers as v1 adapters; pair them with `sanitizeObject` from @arcis/node/sanitizers for body inspection. v1.6 ships interactive REPL, NFKC + multi-decode hardening, deserialization markers (V33), GraphQL alias-bomb guard (V34), and a stateful per-IP correlation window. Includes prompt-injection signature library, LLM token-budget middleware, 695-pattern bot corpus, and the @arcis/cli native CLI.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

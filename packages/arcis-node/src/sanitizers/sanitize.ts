@@ -17,6 +17,7 @@ import { detectLdapInjection } from './ldap';
 import { detectXpathInjection } from './xpath';
 import { detectHeaderInjectionStrict } from './headers';
 import { detectDeserialization } from './deserialization';
+import { detectNoSqlString } from './nosql';
 
 /**
  * Sanitize a string value against multiple attack vectors.
@@ -360,6 +361,14 @@ export function scanThreats(data: unknown, depth = 0): ThreatHit | null {
   // payload with a stray newline still attributes to xss.
   if (detectHeaderInjectionStrict(norm)) {
     return { vector: 'header', rule: 'header/match', matchedPattern: sample };
+  }
+  // String-form NoSQL operator (`$where`, `$ne`, `[$gt]`) carried in a
+  // string value rather than an object key. Last in the chain so the
+  // more-specific detectors above win; this only catches operator tokens
+  // that would otherwise pass through. Closes the Node-vs-Python NoSQL
+  // string parity gap (GoTestWAF NoSQL was 0% on Node).
+  if (detectNoSqlString(norm)) {
+    return { vector: 'nosql', rule: 'nosql/string', matchedPattern: sample };
   }
   return null;
 }

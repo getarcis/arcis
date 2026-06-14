@@ -36,6 +36,8 @@ from .telemetry.client import AsyncTelemetryClient
 from .telemetry.types import TelemetryOptions
 from .middleware.telemetry import telemetry_options_from_env as _telemetry_options_from_env
 from .utils.ip import detect_client_ip
+from .intelligence.client import IntelligenceClient, reputation_severity_tier
+from .intelligence.types import IntelligenceOptions
 
 logger = logging.getLogger(__name__)
 
@@ -78,297 +80,51 @@ def _scan_prompt_injection(body: Any, min_severity: str, depth: int = 0) -> bool
     return False
 
 
-# ============================================================================
-# ASYNC RATE LIMITER STORE PROTOCOL
-# ============================================================================
+def _intelligence_from_env() -> Optional[IntelligenceOptions]:
+    """Build IntelligenceOptions from ARCIS_INTEL_* env vars (12-factor config),
+    or None if ARCIS_INTEL_ENDPOINT is unset. Mirrors the Node env fallback so
+    cloud intelligence can be enabled without code.
 
-class AsyncRateLimitStore(Protocol):
-    """Protocol for async rate limit stores (e.g., Redis with aioredis)."""
-    
-    async def get(self, key: str) -> Optional[RateLimitEntry]:
-        """Get rate limit entry for a key."""
-        ...
-    
-    async def set(self, key: str, count: int, reset_time: float) -> None:
-        """Set rate limit entry for a key."""
-        ...
-    
-    async def increment(self, key: str) -> int:
-        """Increment count for a key and return new count."""
-        ...
-    
-    async def cleanup(self) -> None:
-        """Remove expired entries."""
-        ...
-    
-    async def close(self) -> None:
-        """Close the store and release resources."""
-        ...
-
-
-# ============================================================================
-# ASYNC IN-MEMORY STORE
-# ============================================================================
-
-class AsyncInMemoryStore:
+        ARCIS_INTEL_ENDPOINT   required to activate the env path
+        ARCIS_INTEL_KEY        optional bearer token
+        ARCIS_INTEL_WORKSPACE        optional workspace id
+        ARCIS_INTEL_DECISIONS        comma list: "ip-rep,bot-corpus"
+        ARCIS_INTEL_BLOCK_THRESHOLD  optional int; reputation severity at/above
+                                     which to block (omit = annotate only)
     """
-    Async-safe in-memory store for rate limiting.
-    
-    Uses asyncio.Lock for thread safety in async context.
-    Suitable for single-instance deployments with async frameworks.
-    """
-    
-    def __init__(self):
-        self._store: Dict[str, RateLimitEntry] = {}
-        self._lock = asyncio.Lock()
-        self._closed = False
-        self._cleanup_task: Optional[asyncio.Task] = None
-    
-    async def get(self, key: str) -> Optional[RateLimitEntry]:
-        """Get rate limit entry for a key."""
-        async with self._lock:
-            entry = self._store.get(key)
-            if entry and entry.reset_time < time.time():
-                del self._store[key]
-                return None
-            return entry
-    
-    async def set(self, key: str, count: int, reset_time: float) -> None:
-        """Set rate limit entry for a key."""
-        async with self._lock:
-            self._store[key] = RateLimitEntry(count=count, reset_time=reset_time)
-    
-    async def increment(self, key: str) -> int:
-        """Increment count for a key. Returns 1 if key not found (race condition
-        edge case — caller's set() was cleaned up between get() and increment()). The next
-        request will re-create the entry via set()."""
-        async with self._lock:
-            entry = self._store.get(key)
-            if entry:
-                entry.count += 1
-                return entry.count
-            return 1
-    
-    async def cleanup(self) -> None:
-        """Remove expired entries."""
-        async with self._lock:
-            now = time.time()
-            expired = [k for k, v in self._store.items() if v.reset_time < now]
-            for k in expired:
-                del self._store[k]
-    
-    async def clear(self) -> None:
-        """Clear all entries."""
-        async with self._lock:
-            self._store.clear()
-    
-    async def close(self) -> None:
-        """Mark store as closed and cancel cleanup task."""
-        self._closed = True
-        if self._cleanup_task and not self._cleanup_task.done():
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
-        await self.clear()
+    import os
+
+    endpoint = os.environ.get("ARCIS_INTEL_ENDPOINT")
+    if not endpoint:
+        return None
+    valid = {"ip-rep", "bot-corpus"}
+    decisions = [
+        d.strip()
+        for d in os.environ.get("ARCIS_INTEL_DECISIONS", "").split(",")
+        if d.strip() in valid
+    ]
+    raw_threshold = os.environ.get("ARCIS_INTEL_BLOCK_THRESHOLD")
+    block_threshold = None
+    if raw_threshold:
+        try:
+            block_threshold = int(raw_threshold)
+        except ValueError:
+            block_threshold = None
+    return IntelligenceOptions(
+        endpoint=endpoint,
+        api_key=os.environ.get("ARCIS_INTEL_KEY"),
+        workspace_id=os.environ.get("ARCIS_INTEL_WORKSPACE"),
+        cloud_decisions=decisions,
+        block_threshold=block_threshold,
+    )
 
 
-# ============================================================================
-# ASYNC RATE LIMITER
-# ============================================================================
-
-class AsyncRateLimitExceeded(Exception):
-    """Exception raised when async rate limit is exceeded."""
-    
-    def __init__(self, message: str = "Rate limit exceeded", retry_after: int = 0):
-        self.message = message
-        self.retry_after = retry_after
-        super().__init__(self.message)
-
-
-class AsyncRateLimiter:
-    """
-    Async rate limiter for FastAPI and other async frameworks.
-    
-    Uses asyncio-native locking and supports pluggable async stores
-    (e.g., aioredis for distributed rate limiting).
-    
-    Example:
-        limiter = AsyncRateLimiter(max_requests=100, window_ms=60000)
-        
-        # In middleware or dependency
-        result = await limiter.check(request)
-        
-        # With custom async store (e.g., Redis)
-        from arcis.stores.redis import AsyncRedisRateLimitStore
-        import redis.asyncio as redis
-        
-        redis_client = redis.Redis()
-        store = AsyncRedisRateLimitStore(redis_client)
-        limiter = AsyncRateLimiter(store=store)
-    """
-    
-    def __init__(
-        self,
-        max_requests: int = DEFAULT_MAX_REQUESTS,
-        window_ms: int = DEFAULT_WINDOW_MS,
-        message: str = DEFAULT_RATE_LIMIT_MESSAGE,
-        key_func: Optional[Callable] = None,
-        skip_func: Optional[Callable] = None,
-        store: Optional[AsyncRateLimitStore] = None,
-    ):
-        if max_requests < 1:
-            raise ValueError(f"max_requests must be >= 1, got {max_requests}")
-        if window_ms < 1:
-            raise ValueError(f"window_ms must be >= 1, got {window_ms}")
-
-        self.max_requests = max_requests
-        self.window_seconds = window_ms / 1000
-        self.window_ms = window_ms
-        self.message = message
-        self.key_func = key_func or self._default_key_func
-        self.skip_func = skip_func
-        self._closed = False
-        
-        # Use provided store or create async in-memory store
-        self._store_provided = store is not None
-        self.store = store or AsyncInMemoryStore()
-        
-        # Cleanup task for in-memory store
-        self._cleanup_task: Optional[asyncio.Task] = None
-        # Lock prevents concurrent first requests from each spawning a cleanup task
-        self._cleanup_lock: Optional[asyncio.Lock] = None
-
-    def _default_key_func(self, request: Request) -> str:
-        """Default key function. Uses the real client IP.
-
-        SECURITY: delegates to ``detect_client_ip`` which parses
-        ``X-Forwarded-For`` from the right (proxy-appended end) and prefers
-        platform-specific spoofproof headers (Cloudflare, Vercel, Fly.io,
-        etc.). Reading XFF from the left is spoofable: an attacker can
-        prepend an arbitrary value and be rate-limited under that key.
-        """
-        # FastAPI/Starlette: socket peer address is always trustworthy
-        if hasattr(request, 'client') and request.client:
-            host = request.client.host
-            if host:
-                return host
-
-        return detect_client_ip(request) or "unknown"
-    
-    async def _start_cleanup(self) -> None:
-        """Start background cleanup task for in-memory store.
-
-        Uses a lock so concurrent first requests don't each spawn a task.
-        Lock is lazily created on first call (must be inside running loop).
-        """
-        if self._store_provided:
-            return  # External stores handle their own cleanup
-
-        if self._cleanup_lock is None:
-            self._cleanup_lock = asyncio.Lock()
-
-        async with self._cleanup_lock:
-            # Re-check under lock — another coroutine may have started it
-            if self._cleanup_task is not None:
-                return
-
-            async def cleanup_loop():
-                while not self._closed:
-                    try:
-                        await asyncio.sleep(self.window_seconds)
-                        if not self._closed:
-                            await self.store.cleanup()
-                    except asyncio.CancelledError:
-                        break
-                    except Exception as e:
-                        logger.error("Async rate limiter cleanup error: %s", e)
-
-            self._cleanup_task = asyncio.create_task(cleanup_loop())
-    
-    async def check(self, request: Request) -> Dict[str, Any]:
-        """
-        Check if request is within rate limit.
-        
-        Returns dict with limit info and raises AsyncRateLimitExceeded if exceeded.
-        
-        Args:
-            request: The FastAPI/Starlette request
-            
-        Returns:
-            Dict with keys: allowed, limit, remaining, reset
-            
-        Raises:
-            AsyncRateLimitExceeded: If rate limit is exceeded
-        """
-        if self._closed:
-            return {"allowed": True, "limit": self.max_requests, "remaining": self.max_requests, "reset": 0}
-        
-        # Start cleanup task if not already running
-        if self._cleanup_task is None and not self._store_provided:
-            await self._start_cleanup()
-        
-        # Check skip function
-        if self.skip_func:
-            should_skip = self.skip_func(request)
-            if asyncio.iscoroutine(should_skip):
-                should_skip = await should_skip
-            if should_skip:
-                return {"allowed": True, "limit": self.max_requests, "remaining": self.max_requests, "reset": 0}
-        
-        key = self.key_func(request)
-        # Mirror the skip_func async-handling pattern: if the user passed
-        # an async key_func, await it. Without this, the returned coroutine
-        # would silently be used as the rate-limit key, breaking per-IP
-        # isolation entirely.
-        if asyncio.iscoroutine(key):
-            key = await key
-        now = time.time()
-
-        entry = await self.store.get(key)
-        
-        if not entry or entry.reset_time < now:
-            # New window. Compute reset as the same `reset_time - now`
-            # delta that the subsequent-request branch uses so clients
-            # see a consistent representation across the whole window.
-            reset_time = now + self.window_seconds
-            await self.store.set(key, 1, reset_time)
-            return {
-                "allowed": True,
-                "limit": self.max_requests,
-                "remaining": self.max_requests - 1,
-                "reset": int(reset_time - now),
-            }
-
-        count = await self.store.increment(key)
-        remaining = max(0, self.max_requests - count)
-        reset = int(entry.reset_time - now)
-        
-        if count > self.max_requests:
-            raise AsyncRateLimitExceeded(self.message, max(0, reset))
-        
-        return {
-            "allowed": True,
-            "limit": self.max_requests,
-            "remaining": remaining,
-            "reset": max(0, reset),
-        }
-    
-    async def close(self) -> None:
-        """Stop cleanup task and release resources."""
-        if self._closed:
-            return
-        self._closed = True
-        
-        if self._cleanup_task and not self._cleanup_task.done():
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
-        
-        await self.store.close()
+from .async_rate_limit import (
+    AsyncRateLimitStore,
+    AsyncInMemoryStore,
+    AsyncRateLimitExceeded,
+    AsyncRateLimiter,
+)
 
 
 # ============================================================================
@@ -530,6 +286,12 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # Telemetry: dict, TelemetryOptions, or pre-built AsyncTelemetryClient.
         # When None, telemetry is fully disabled (zero overhead).
         telemetry: Optional[Any] = None,
+        # Opt-in cloud intelligence (IP reputation): dict, IntelligenceOptions,
+        # or pre-built IntelligenceClient. Active only when an endpoint is set
+        # and cloud_decisions includes "ip-rep". Lookups are cache-first and
+        # never block the request path; an unreachable service fails open.
+        # When None, no network work happens (fully local).
+        intelligence: Optional[Any] = None,
     ):
         super().__init__(app)
 
@@ -655,6 +417,76 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                     "TelemetryOptions, dict, or None"
                 )
 
+        # ── Intelligence wiring (opt-in cloud intelligence) ─────────────────
+        # Accept IntelligenceClient (caller-managed), IntelligenceOptions, or a
+        # dict. One client serves both capabilities: per-request IP reputation
+        # ("ip-rep") and bot-corpus cloud refresh ("bot-corpus"). The dispatch
+        # ip-rep check is gated on _intel_ip_rep so a bot-corpus-only config
+        # adds no per-request work.
+        self._intel_client: Optional[IntelligenceClient] = None
+        self._owns_intel_client: bool = False
+        self._intel_block_threshold: Optional[int] = None
+        self._intel_ip_rep: bool = False
+        if intelligence is None:
+            intelligence = _intelligence_from_env()
+        if intelligence is not None:
+            if isinstance(intelligence, IntelligenceClient):
+                self._intel_client = intelligence
+                self._intel_ip_rep = True  # caller-managed: assume ip-rep usage
+            else:
+                opts = (
+                    intelligence
+                    if isinstance(intelligence, IntelligenceOptions)
+                    else IntelligenceOptions(**intelligence)
+                    if isinstance(intelligence, dict)
+                    else None
+                )
+                if opts is None:
+                    raise TypeError(
+                        "ArcisMiddleware.intelligence must be IntelligenceClient, "
+                        "IntelligenceOptions, dict, or None"
+                    )
+                decisions = opts.cloud_decisions or []
+                if opts.endpoint and decisions:
+                    self._intel_client = IntelligenceClient(opts)
+                    self._owns_intel_client = True
+                    self._intel_block_threshold = opts.block_threshold
+                    self._intel_ip_rep = "ip-rep" in decisions
+                    self._intel_bot_corpus_refresh_secs = opts.bot_corpus_refresh_secs
+                    if "bot-corpus" in decisions:
+                        self._start_bot_corpus_refresh()
+
+    def _start_bot_corpus_refresh(self) -> None:
+        """Fetch the bot corpus on startup and periodically thereafter (default
+        weekly), merging on top of the bundled corpus. Fail-open: fetch returns
+        [] on error, so the bundled corpus is never disturbed. Mirrors the Node
+        SDK's weekly setInterval refresh; set bot_corpus_refresh_secs=0 for a
+        startup-only fetch."""
+        import threading
+
+        from .middleware.bot_detection import merge_bot_patterns
+
+        interval = getattr(self, "_intel_bot_corpus_refresh_secs", 7 * 24 * 60 * 60)
+        stop = threading.Event()
+        self._bot_corpus_stop = stop
+
+        def _run() -> None:
+            while True:
+                try:
+                    entries = self._intel_client.fetch_bot_corpus()
+                    if entries:
+                        merge_bot_patterns(entries)
+                except Exception:
+                    pass
+                if interval <= 0:
+                    return
+                # wait() returns True the moment close() sets the event, so the
+                # thread exits promptly on shutdown instead of sleeping a week.
+                if stop.wait(interval):
+                    return
+
+        threading.Thread(target=_run, name="arcis-bot-corpus", daemon=True).start()
+
     async def close(self) -> None:
         """Drain telemetry queue and stop the background flush task.
 
@@ -666,6 +498,14 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 await self._telemetry_client.close()
             except Exception:
                 # fail-open on shutdown
+                pass
+        stop = getattr(self, "_bot_corpus_stop", None)
+        if stop is not None:
+            stop.set()
+        if self._intel_client is not None and self._owns_intel_client:
+            try:
+                self._intel_client.close()
+            except Exception:
                 pass
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -715,6 +555,46 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                             )
                             self._maybe_record(request, response, telemetry_start)
                             return response
+
+        # Cloud IP reputation (opt-in). Runs after forwarded-header inspection
+        # and before scanner/bot/rate-limit so a known-bad IP is blocked before
+        # consuming quota. Cache-first and non-blocking: a miss never adds
+        # latency, and an unreachable service fails open. Active only when
+        # configured with cloud_decisions including "ip-rep".
+        if self._intel_client is not None and self._intel_ip_rep:
+            rep = self._intel_client.check(detect_client_ip(request))
+            request.state.arcis_ip_reputation = rep
+            should_block = (
+                not self.dry_run
+                and rep.found
+                and self._intel_block_threshold is not None
+                and (rep.severity or 0) >= self._intel_block_threshold
+            )
+            if should_block:
+                if self._telemetry_client is not None:
+                    marker = getattr(request.state, ARCIS_MARKER_ATTR, None)
+                    if marker is None:
+                        marker = ArcisTelemetryMarker()
+                        setattr(request.state, ARCIS_MARKER_ATTR, marker)
+                    marker.vector = "ip-reputation"
+                    marker.rule = "ip-reputation/known-bad"
+                    marker.severity = reputation_severity_tier(rep.severity)
+                    marker.reason = (
+                        f"IP reputation severity {rep.severity} "
+                        f">= {self._intel_block_threshold}"
+                    )
+                    marker.decision = "deny"
+                response = JSONResponse(
+                    content={
+                        "error": "Request blocked for security reasons",
+                        "code": "SECURITY_THREAT",
+                        "vector": "ip-reputation",
+                        "rule": "ip-reputation/known-bad",
+                    },
+                    status_code=403,
+                )
+                self._maybe_record(request, response, telemetry_start)
+                return response
 
         # Scanner-path probe blocking (v1.7 W2). Runs BEFORE bot detection
         # because some scanner UAs forge a browser UA but still hit dotfile /
@@ -1077,414 +957,14 @@ class ArcisMiddleware(BaseHTTPMiddleware):
             return
 
 
-# ============================================================================
-# DEPENDENCIES
-# ============================================================================
-
-def get_sanitized_body(request: Request) -> Optional[Dict[str, Any]]:
-    """
-    Dependency to get sanitized request body in FastAPI.
-    
-    Usage:
-        from fastapi import Depends
-        from arcis.fastapi import get_sanitized_body
-        
-        @app.post("/users")
-        async def create_user(body: dict = Depends(get_sanitized_body)):
-            # body is already sanitized
-            pass
-    """
-    return getattr(request.state, "sanitized_body", None)
-
-
-def get_json(request: Request) -> Optional[Dict[str, Any]]:
-    """
-    Alias for get_sanitized_body - more intuitive name.
-    
-    Usage:
-        from fastapi import Depends
-        from arcis.fastapi import get_json
-        
-        @app.post("/users")
-        async def create_user(data: dict = Depends(get_json)):
-            # data is already sanitized
-            pass
-    """
-    return get_sanitized_body(request)
-
-
-async def get_rate_limit_info(request: Request) -> Optional[Dict[str, Any]]:
-    """
-    Dependency to get rate limit info for the current request.
-    
-    Usage:
-        from fastapi import Depends
-        from arcis.fastapi import get_rate_limit_info
-        
-        @app.get("/status")
-        async def status(rate_info: dict = Depends(get_rate_limit_info)):
-            return {"requests_remaining": rate_info.get("remaining")}
-    """
-    return getattr(request.state, "rate_limit_info", None)
-
-
-# ============================================================================
-# STANDALONE ASYNC RATE LIMIT DEPENDENCY
-# ============================================================================
-
-def create_rate_limit_dependency(
-    max_requests: int = DEFAULT_MAX_REQUESTS,
-    window_ms: int = DEFAULT_WINDOW_MS,
-    key_func: Optional[Callable] = None,
-    skip_func: Optional[Callable] = None,
-    store: Optional[AsyncRateLimitStore] = None,
-):
-    """
-    Create a FastAPI dependency for rate limiting.
-    
-    Useful when you want per-route rate limiting instead of global middleware.
-    
-    Usage:
-        from fastapi import Depends
-        from arcis.fastapi import create_rate_limit_dependency
-        
-        # Global rate limiter
-        rate_limit = create_rate_limit_dependency(max_requests=100)
-        
-        # Strict rate limiter for sensitive endpoints
-        strict_rate_limit = create_rate_limit_dependency(max_requests=10, window_ms=60000)
-        
-        @app.post("/login", dependencies=[Depends(strict_rate_limit)])
-        async def login():
-            pass
-        
-        @app.get("/data", dependencies=[Depends(rate_limit)])
-        async def get_data():
-            pass
-    """
-    limiter = AsyncRateLimiter(
-        max_requests=max_requests,
-        window_ms=window_ms,
-        key_func=key_func,
-        skip_func=skip_func,
-        store=store,
-    )
-
-    async def rate_limit_dependency(request: Request):
-        try:
-            info = await limiter.check(request)
-            request.state.rate_limit_info = info
-            return info
-        except AsyncRateLimitExceeded as e:
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=429,
-                detail={"error": e.message, "retry_after": e.retry_after},
-                headers={"Retry-After": str(e.retry_after)},
-            )
-
-    return rate_limit_dependency
-
-
-# improvements.md §1.4 — per-framework protect_login factory for FastAPI.
-def create_login_protection_dependency(
-    *,
-    username_field: str = "username",
-    password_field: str = "password",
-    require_credentials: bool = True,
-    check_bot: bool = True,
-    allowed_bot_categories: Optional[List[str]] = None,
-    correlation_window: Any = None,
-    route: str = "/login",
-):
-    """
-    Create a FastAPI dependency that runs check_login() and raises
-    HTTPException on rejection.
-
-    Wraps arcis.check_login (which is framework-agnostic) into the
-    FastAPI Depends() shape, including IP extraction from request.client
-    so callers don't have to pull it manually.
-
-    Usage:
-        from fastapi import FastAPI, Depends
-        from arcis.fastapi import create_login_protection_dependency
-        from arcis.middleware.correlation import CorrelationWindow
-
-        cw = CorrelationWindow()
-        login_protect = create_login_protection_dependency(
-            correlation_window=cw,
-            route="/login",
-        )
-
-        @app.post("/login", dependencies=[Depends(login_protect)])
-        async def login(req: Request):
-            ...
-
-    On rejection the dependency raises HTTPException(429) with
-    detail = {"reason": "<bot|missing_credentials|correlation>",
-              "details": {...}}.
-    """
-    from .middleware.protect_login import check_login as _check_login
-
-    async def login_protection_dependency(request: Request):
-        client_ip = request.client.host if request.client else None
-        result = _check_login(
-            request,
-            username_field=username_field,
-            password_field=password_field,
-            require_credentials=require_credentials,
-            check_bot=check_bot,
-            allowed_bot_categories=allowed_bot_categories,
-            correlation_window=correlation_window,
-            client_ip=client_ip,
-            route=route,
-        )
-        if not result.allowed:
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=429,
-                detail={"reason": result.reason, "details": result.details},
-            )
-        return result
-
-    return login_protection_dependency
-
-
-# ============================================================================
-# PROTECT FACTORIES (improvements.md §1.4)
-# ============================================================================
-# Per-framework wrappers around the composite login / signup / api checks
-# plus a shared CorrelationWindow. Each factory returns a FastAPI/Starlette
-# async dependency that auto-extracts the client IP (X-Forwarded-For first
-# hop, then request.client.host) and the route path, forwards them into the
-# base check with the right vector tag, and raises HTTPException on denial.
-#
-# Rate limiting stays the RateLimiter middleware's job (Pattern 3). Mount
-# create_rate_limit_dependency / ArcisMiddleware at the route for the
-# Node-parity limits (login 5/min, signup 3/min, api 100/min); these
-# factories own the correlation + bot + credential / threat wiring.
-
-
-class _BodyRequest:
-    """Wrapper exposing a parsed body dict + headers to the base checks.
-
-    A Starlette ``Request`` only exposes the body via the async
-    ``request.json()`` coroutine, which the synchronous base checks
-    cannot read. The factory reads it once (async) and hands the base
-    check this duck-typed shim instead.
-    """
-
-    def __init__(self, body: Any, headers: Any) -> None:
-        self.body = body
-        self.headers = headers
-
-
-async def _read_json_body(request: Request) -> Any:
-    """Best-effort async read of a JSON body. Returns None on any error."""
-    content_type = request.headers.get("content-type", "")
-    if "application/json" not in content_type:
-        return None
-    try:
-        return await request.json()
-    except Exception:
-        return None
-
-
-def _starlette_client_ip(request: Request) -> Optional[str]:
-    """Resolve client IP: X-Forwarded-For first hop, then socket peer."""
-    from .middleware.protect_factories import client_ip_from_xff_then
-
-    fallback = request.client.host if request.client else None
-    return client_ip_from_xff_then(
-        request.headers.get("x-forwarded-for"), fallback
-    )
-
-
-def protect_login(
-    *,
-    username_field: str = "username",
-    password_field: str = "password",
-    require_credentials: bool = True,
-    check_bot: bool = True,
-    allowed_bot_categories: Optional[List[str]] = None,
-    correlation_window: Any = None,
-    route: Optional[str] = None,
-):
-    """FastAPI/Starlette login-protection dependency factory.
-
-    Returns an async dependency that runs :func:`check_login` with the
-    auto-extracted client IP, the route path, and the ``"login"`` vector,
-    forwarding an optional shared :class:`CorrelationWindow`. On denial it
-    raises ``HTTPException`` (429 for correlation, 403 for bot, 400 for
-    missing credentials) with body ``{"error": reason}``.
-
-    Args:
-        username_field: Body field carrying the username. Default
-            ``"username"``.
-        password_field: Body field carrying the password. Default
-            ``"password"``.
-        require_credentials: Forwarded to :func:`check_login`.
-        check_bot: Forwarded to :func:`check_login`.
-        allowed_bot_categories: Forwarded to :func:`check_login`.
-        correlation_window: Optional shared window. Pass the same
-            instance to several factories to share per-IP state.
-        route: Route label recorded in the window. Defaults to the
-            request path.
-
-    Returns:
-        An async FastAPI dependency callable.
-    """
-    from fastapi import HTTPException
-
-    from .middleware.protect_factories import block_status_code, check_login
-
-    async def login_dependency(request: Request):
-        client_ip = _starlette_client_ip(request)
-        body = await _read_json_body(request)
-        shim = _BodyRequest(body, request.headers)
-        result = check_login(
-            shim,
-            username_field=username_field,
-            password_field=password_field,
-            require_credentials=require_credentials,
-            check_bot=check_bot,
-            allowed_bot_categories=allowed_bot_categories,
-            correlation_window=correlation_window,
-            client_ip=client_ip,
-            route=route if route is not None else request.url.path,
-        )
-        if not result.allowed:
-            raise HTTPException(
-                status_code=block_status_code(result.reason),
-                detail={"error": result.reason},
-            )
-        return result
-
-    return login_dependency
-
-
-def protect_signup(
-    *,
-    email_field: str = "email",
-    check_email: bool = True,
-    block_disposable: bool = True,
-    check_bot: bool = True,
-    allowed_bot_categories: Optional[List[str]] = None,
-    allowed_email_domains: Optional[List[str]] = None,
-    blocked_email_domains: Optional[List[str]] = None,
-    correlation_window: Any = None,
-    route: Optional[str] = None,
-):
-    """FastAPI/Starlette signup-protection dependency factory.
-
-    Returns an async dependency that runs the signup check (bot + email
-    validation) then consults an optional shared
-    :class:`CorrelationWindow` (vector ``"signup"``). On denial it raises
-    ``HTTPException`` (429 for correlation, 403 for bot, 400 for email
-    errors) with body ``{"error": reason}``.
-
-    Args:
-        email_field: Body field carrying the email. Default ``"email"``.
-        check_email: Forwarded to the signup check.
-        block_disposable: Forwarded to the signup check.
-        check_bot: Forwarded to the signup check.
-        allowed_bot_categories: Forwarded to the signup check.
-        allowed_email_domains: Forwarded to the signup check.
-        blocked_email_domains: Forwarded to the signup check.
-        correlation_window: Optional shared window.
-        route: Route label recorded in the window. Defaults to the
-            request path.
-
-    Returns:
-        An async FastAPI dependency callable.
-    """
-    from fastapi import HTTPException
-
-    from .middleware.protect_factories import (
-        block_status_code,
-        signup_check_with_correlation,
-    )
-
-    async def signup_dependency(request: Request):
-        client_ip = _starlette_client_ip(request)
-        body = await _read_json_body(request)
-        shim = _BodyRequest(body, request.headers)
-        result = signup_check_with_correlation(
-            shim,
-            correlation_window=correlation_window,
-            client_ip=client_ip,
-            route=route if route is not None else request.url.path,
-            email_field=email_field,
-            check_email=check_email,
-            block_disposable=block_disposable,
-            check_bot=check_bot,
-            allowed_bot_categories=allowed_bot_categories,
-            allowed_email_domains=allowed_email_domains,
-            blocked_email_domains=blocked_email_domains,
-        )
-        if not result.allowed:
-            raise HTTPException(
-                status_code=block_status_code(result.reason),
-                detail={"error": result.reason},
-            )
-        return result
-
-    return signup_dependency
-
-
-def protect_api(
-    *,
-    expected_origins: Optional[List[str]] = None,
-    check_bot: bool = True,
-    allowed_bot_categories: Optional[List[str]] = None,
-    scan_body: bool = True,
-    correlation_window: Any = None,
-    route: Optional[str] = None,
-):
-    """FastAPI/Starlette API-protection dependency factory.
-
-    Returns an async dependency that runs :func:`check_api` (origin + bot
-    + body threat scan) with the auto-extracted client IP, the route
-    path, and the ``"api"`` vector, forwarding an optional shared
-    :class:`CorrelationWindow`. On denial it raises ``HTTPException`` (429
-    for correlation, 403 for bot / bad-origin / threat) with body
-    ``{"error": reason}``.
-
-    Args:
-        expected_origins: Forwarded to :func:`check_api`.
-        check_bot: Forwarded to :func:`check_api`.
-        allowed_bot_categories: Forwarded to :func:`check_api`.
-        scan_body: Forwarded to :func:`check_api`.
-        correlation_window: Optional shared window.
-        route: Route label recorded in the window. Defaults to the
-            request path.
-
-    Returns:
-        An async FastAPI dependency callable.
-    """
-    from fastapi import HTTPException
-
-    from .middleware.protect_factories import block_status_code, check_api
-
-    async def api_dependency(request: Request):
-        client_ip = _starlette_client_ip(request)
-        body = await _read_json_body(request)
-        shim = _BodyRequest(body, request.headers)
-        result = check_api(
-            shim,
-            expected_origins=expected_origins,
-            check_bot=check_bot,
-            allowed_bot_categories=allowed_bot_categories,
-            scan_body=scan_body,
-            correlation_window=correlation_window,
-            client_ip=client_ip,
-            route=route if route is not None else request.url.path,
-        )
-        if not result.allowed:
-            raise HTTPException(
-                status_code=block_status_code(result.reason),
-                detail={"error": result.reason},
-            )
-        return result
-
-    return api_dependency
+# Dependency factories + protect helpers live in fastapi_protect.py; re-exported
+# here so `from arcis.fastapi import protect_login` keeps working.
+from .fastapi_protect import (
+    get_sanitized_body,
+    get_json,
+    create_rate_limit_dependency,
+    create_login_protection_dependency,
+    protect_login,
+    protect_signup,
+    protect_api,
+)

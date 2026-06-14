@@ -178,6 +178,25 @@ class TestScrapers:
 
 
 # =============================================================================
+# SECURITY SCANNERS
+# =============================================================================
+
+class TestSecurityScanners:
+    @pytest.mark.parametrize("ua,expected_name", [
+        ('Mozilla/5.0 [en] (X11, U; OpenVAS-VT 22.4.1)', 'openvas'),
+        ('Fuzz Faster U Fool v2.0.0', 'ffuf'),
+        ('feroxbuster/2.7', 'feroxbuster'),
+        ('sqlmap/1.7', 'sqlmap'),
+        ('Nikto/2.1.6', 'nikto'),
+    ])
+    def test_security_scanners(self, ua, expected_name):
+        result = detect_bot(make_request(ua))
+        assert result.is_bot is True
+        assert result.category == 'SECURITY_SCANNER'
+        assert result.name == expected_name
+
+
+# =============================================================================
 # HUMAN DETECTION
 # =============================================================================
 
