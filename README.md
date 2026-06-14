@@ -1,5 +1,5 @@
 > [!NOTE]
-> **New in v1.6: Interactive REPL (`arcis` with no args), V32-V34 vectors (toolcall injection, deserialization markers, GraphQL alias bomb), and the first stateful primitive (`CorrelationWindow`). `arcis sca` ships with 104 curated supply chain advisories embedded (63 npm + 41 PyPI, including axios 2026 + litellm 2026 + colourama + event-stream + ua-parser-js + @solana/web3.js) plus a live OSV layer via `--osv`. [See the CLI section →](#arcis-cli)**
+> **New in v1.7: the full detector suite is wired into the middleware path (bot-UA classification, scanner-path blocking, GraphQL abuse guard, mass-assignment detection, SSRF body validation, prompt-injection screening), plus cross-SDK `protect_login` / `protect_signup` / `protect_api` factories and the `CorrelationWindow` stateful primitive across Node, Python, and Go. `arcis sca` ships with 104 curated supply chain advisories embedded (63 npm + 41 PyPI) plus a live OSV layer via `--osv`. [See the CLI section →](#arcis-cli)**
 
 <div align="center">
 
@@ -53,7 +53,7 @@ Or, in sanitize mode (the default), your handler gets:
 }
 ```
 
-The detection model runs on top of NFKC Unicode normalization + a multi-decode chain, so fullwidth `＜script＞`, URL-encoded `%3Cscript%3E`, and triple-encoded variants reach the detector as the same string. The same call returns the same result in Node, Python, and Go — enforced by [shared test vectors](https://github.com/getarcis/arcis/blob/main/spec/TEST_VECTORS.json).
+The detection model runs on top of NFKC Unicode normalization + a multi-decode chain, so fullwidth `＜script＞`, URL-encoded `%3Cscript%3E`, and triple-encoded variants reach the detector as the same string. The same call returns the same result in Node, Python, and Go, enforced by [shared test vectors](https://github.com/getarcis/arcis/blob/main/spec/TEST_VECTORS.json).
 
 ---
 
@@ -75,15 +75,15 @@ Arcis replaces the patchwork with one package and one line of code, and gives yo
 User sends request → [ARCIS] → Your application code
 
 At the checkpoint, Arcis:
-  1. Rate limits — is this IP flooding requests?
-  2. Bot detection — is this a known malicious bot?
-  3. Sanitization — strip XSS, SQL injection, command injection, etc.
-  4. CSRF verification — is this a legitimate form submission?
-  5. Validation — does the input match expected schema?
+  1. Rate limits: is this IP flooding requests?
+  2. Bot detection: is this a known malicious bot?
+  3. Sanitization: strip XSS, SQL injection, command injection, etc.
+  4. CSRF verification: is this a legitimate form submission?
+  5. Validation: does the input match expected schema?
       ↓
   Your code runs with clean, validated input
       ↓
-  6. Response hardening — security headers, secure cookies, CORS, error scrubbing
+  6. Response hardening: security headers, secure cookies, CORS, error scrubbing
 ```
 
 ## Features
@@ -97,14 +97,14 @@ At the checkpoint, Arcis:
 - **Framework adapters (Node)**: ten subpath imports keep each framework SDK as a type-only dependency, so non-users pay nothing. Adapter surface varies by framework:
   - *Full sanitizer pipeline* (XSS, SQL, NoSQL, SSTI, XXE, path, command, prompt injection, prototype, LDAP, XPath, header injection): **Express** (`@arcis/node`), **NestJS** (`@arcis/node/nestjs`).
   - *Rate-limit + bot + security headers* (narrower scope because the runtime cannot easily inspect request bodies, or because the adapter is `v1` and ships the basics first): **Fastify, Koa, Hono, Next.js (Edge Middleware), SvelteKit, Astro, Nuxt, Bun**. Pair with `sanitizeObject()` / `detectXss()` / `sanitizeString()` from `@arcis/node/sanitizers` inside your route handlers for body-payload inspection.
-- **Framework adapters (Python)**: FastAPI, Flask, Django, Litestar (full pipeline on every adapter — Python middleware can read request bodies natively).
+- **Framework adapters (Python)**: FastAPI, Flask, Django, Litestar (full pipeline on every adapter, since Python middleware can read request bodies natively).
 - **Framework adapters (Go)**: Gin, Echo, chi, Fiber, plus a stdlib `net/http` helper (full pipeline on every adapter when `Block: true` is set).
 - **Context-aware output encoding**: `encodeForHtml()`, `encodeForJs()`, `encodeForUrl()`, `encodeForCss()`, `encodeForAttribute()` for safe rendering in every output context.
 - **Supply chain scanner**: `arcis sca` checks lockfiles, `node_modules`, and Python environments against a database of known compromised packages.
 - **Static analysis CLI**: `arcis scan` and `arcis audit` flag unsafe patterns (`eval()`, `pickle.loads()`, `innerHTML`, SQL concat, SSRF sinks, weak crypto) across 23 rules.
 - **Interactive REPL (v1.6)**: `arcis` with no args drops into a full-screen TUI ("Arcis Console") with a persistent welcome banner, scrollback, slash commands (`/help`, `/clear`, `/cwd`, `/export`, `/exit`), command history at `~/.arcis/history`, and F2 / Shift-F2 jump-to-finding navigation. Opt out with `ARCIS_NO_REPL=1` or in CI / piped contexts (auto-disabled).
 - **Tier 1 detection hardening (v1.6)**: NFKC Unicode normalization + multi-decode chain close the fullwidth and encoding-stack bypass classes across every detector. Mutation tester runs 142 case/encoding/Unicode variants against the corpus on every PR. Go SDK now loads `patterns.json` at runtime via `//go:embed` for cross-SDK parity.
-- **New v1.6 vectors**: V32 toolcall-injection patterns in `detectPromptInjection`. V33 modern deserialization markers (`detectDeserialization` — Python pickle, Java FastJSON `@type`, PHP `unserialize`, Ruby Marshal, .NET BinaryFormatter). V34 GraphQL alias bomb + fragment cycle (`max_aliases` + `block_fragment_cycles` options in `graphqlGuard`).
+- **New v1.6 vectors**: V32 toolcall-injection patterns in `detectPromptInjection`. V33 modern deserialization markers (`detectDeserialization`: Python pickle, Java FastJSON `@type`, PHP `unserialize`, Ruby Marshal, .NET BinaryFormatter). V34 GraphQL alias bomb + fragment cycle (`max_aliases` + `block_fragment_cycles` options in `graphqlGuard`).
 - **Stateful per-IP correlation (v1.6)**: `CorrelationWindow` middleware tracks a 60s rolling window per IP with scanner / credential-stuffing / race-window detection. `protectLogin / protectSignup / protectApi` accept a `correlation: { window }` option to wire it through with one line.
 
 ## Threat Coverage
@@ -172,16 +172,16 @@ At the checkpoint, Arcis:
 ### Install
 
 ```bash
-npm install @arcis/node          # Node.js SDK
-pip install arcis                # Python SDK
-go get github.com/getarcis/arcis  # Go SDK
+npm install @arcis/node              # Node.js SDK
+pip install arcis                    # Python SDK
+go get github.com/getarcis/arcis-go  # Go SDK
 
 npm install -g @arcis/cli        # CLI: audit / scan / sca (single static binary)
 ```
 
-> **Heads up — three rules that catch every newcomer:**
+> **Heads up: three rules that catch every newcomer:**
 > 1. **Install in your backend project, not the frontend.** Arcis is server-side middleware. Bundling it into a React / Vite / Next.js client folder leaks the API key into client JS and the middleware never runs there anyway.
-> 2. **`.env` lives next to the server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_` — those expose values to the browser. Add `.env` to `.gitignore`.
+> 2. **`.env` lives next to the server entry point.** Add `ARCIS_KEY=...`, `ARCIS_WORKSPACE_ID=...`, `ARCIS_ENDPOINT=...`. Do **not** prefix with `NEXT_PUBLIC_`, `VITE_`, or `REACT_APP_`. Those expose values to the browser. Add `.env` to `.gitignore`.
 > 3. **The CLI is its own package.** `audit`, `scan`, and `sca` ship as a native binary via `npm install -g @arcis/cli`. It works regardless of whether your app is Node, Python, or Go. (Before v1.5.0 the CLI shipped inside the Python SDK; that's no longer the case.)
 
 ### Protect Your App (One Line)
@@ -292,19 +292,19 @@ Every function below works with plain strings and objects. No `req`, `res`, or f
 
 ```js
 import {
-  // Sanitize — strip dangerous patterns
+  // Sanitize: strip dangerous patterns
   sanitizeString, sanitizeObject, sanitizeSsti, sanitizeXxe, sanitizeJsonpCallback,
 
-  // Detect — flag threats without modifying input
+  // Detect: flag threats without modifying input
   detectXss, detectSql, detectSsti, detectXxe, detectHeaderInjection,
 
-  // Encode — context-aware output encoding
+  // Encode: context-aware output encoding
   encodeForHtml, encodeForAttribute, encodeForJs, encodeForUrl, encodeForCss,
 
-  // Validate — block SSRF, open redirects, bad input
+  // Validate: block SSRF, open redirects, bad input
   validateUrl, validateRedirect, validateEmail,
 
-  // Protect — PII, logging, utilities
+  // Protect: PII, logging, utilities
   scanPii, redactPii, createSafeLogger,
 } from '@arcis/node';
 ```
@@ -403,7 +403,7 @@ arcis sca . --system
 arcis sca . --json
 arcis sca . --sarif
 
-# Inventory only — generate a CycloneDX SBOM
+# Inventory only: generate a CycloneDX SBOM
 arcis sca . --sbom
 
 # List every threat in the embedded DB with source advisory links
@@ -423,9 +423,9 @@ Arcis separates **core security logic** from **framework adapters**:
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                     SPECIFICATION LAYER                       │
-│  spec/API_SPEC.md        — function contracts (the rules)    │
-│  spec/TEST_VECTORS.json  — expected behaviors (the tests)    │
-│  packages/core/patterns.json — regex patterns (the detection)│
+│  spec/API_SPEC.md        - function contracts (the rules)    │
+│  spec/TEST_VECTORS.json  - expected behaviors (the tests)    │
+│  packages/core/patterns.json - regex patterns (the detection)│
 └────────────┬──────────────────┬───────────────────┬──────────┘
              │                  │                   │
       ┌──────▼──────┐   ┌──────▼──────┐    ┌───────▼──────┐
@@ -497,8 +497,8 @@ Response sent to client
 | SDK | Full-pipeline adapters | Edge / narrow-scope adapters | Status |
 |-----|------------------------|------------------------------|--------|
 | **Node.js** | Express, NestJS | Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt, Bun | Stable |
-| **Python** | FastAPI, Flask, Django, Litestar | (none — every Python adapter runs the full pipeline) | Stable |
-| **Go** | Gin, Echo, chi, Fiber, net/http | (none — every Go adapter runs the full pipeline when `Block: true`) | Stable |
+| **Python** | FastAPI, Flask, Django, Litestar | (none; every Python adapter runs the full pipeline) | Stable |
+| **Go** | Gin, Echo, chi, Fiber, net/http | (none; every Go adapter runs the full pipeline when `Block: true`) | Stable |
 
 **Full-pipeline** adapters run the full Arcis sanitization stack (XSS, SQL, NoSQL, SSTI, XXE, path, command, prototype, prompt injection, LDAP, XPath, header injection) against query, params, headers, and body.
 

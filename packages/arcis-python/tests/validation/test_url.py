@@ -6,6 +6,7 @@ Tests for arcis/validation/url.py
 from arcis.validation.url import (
     validate_url_ssrf,
     is_url_safe,
+    scan_for_ssrf,
     ValidateUrlOptions,
 )
 
@@ -370,3 +371,21 @@ class TestIsUrlSafe:
     def test_passes_options(self):
         opts = ValidateUrlOptions(allow_localhost=True)
         assert is_url_safe("http://localhost:3000", opts) is True
+
+
+class TestScanForSsrfSchemes:
+    """Body scan flags only SSRF-relevant schemes, not typos / custom schemes."""
+
+    def test_skips_typo_and_custom_schemes(self):
+        # A mangled scheme (lhttps://) or a custom app scheme is URL-shaped but
+        # is not an SSRF vector, so it must not be flagged.
+        assert scan_for_ssrf({"q": "lhttps://www.instagram.com/p/x"}).detected is False
+        assert scan_for_ssrf({"q": "myapp://deeplink/page"}).detected is False
+
+    def test_allows_public_http(self):
+        assert scan_for_ssrf({"url": "https://www.instagram.com/p/x"}).detected is False
+
+    def test_still_blocks_dangerous(self):
+        assert scan_for_ssrf({"u": "file:///etc/passwd"}).detected is True
+        assert scan_for_ssrf({"u": "http://10.0.0.1/admin"}).detected is True
+        assert scan_for_ssrf({"u": "gopher://internal:6379/_INFO"}).detected is True

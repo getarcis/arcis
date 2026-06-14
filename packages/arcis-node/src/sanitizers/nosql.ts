@@ -3,7 +3,7 @@
  * NoSQL injection prevention (MongoDB operators)
  */
 
-import { NOSQL_DANGEROUS_KEYS } from '../core/constants';
+import { NOSQL_DANGEROUS_KEYS, NOSQL_STRING_PATTERN } from '../core/constants';
 
 /**
  * Checks if a key is a dangerous MongoDB operator.
@@ -51,9 +51,30 @@ export function detectNoSqlInjection(obj: unknown, maxDepth = 10): boolean {
 }
 
 /**
+ * Detects a MongoDB operator appearing in a STRING value.
+ *
+ * detectNoSqlInjection only inspects object keys. But operators also
+ * arrive as strings: `?user[$ne]=1` reaches the handler as the literal
+ * `$ne` before any object is built, and mongo-shell payloads like
+ * `$where: '1==1'` are plain strings. This is the string-level check
+ * used by block-mode scanThreats, matching Python's `_NOSQL_DETECT`.
+ *
+ * @param input - The string to check
+ * @returns True if a NoSQL operator token is present
+ *
+ * @example
+ * detectNoSqlString("$where: 'this.a==1'") // true
+ * detectNoSqlString("$invoice total")      // false ($in not a token here)
+ */
+export function detectNoSqlString(input: string): boolean {
+  if (typeof input !== 'string') return false;
+  return NOSQL_STRING_PATTERN.test(input);
+}
+
+/**
  * Get list of all MongoDB operators considered dangerous.
  * Useful for documentation or custom validation.
- * 
+ *
  * @returns Array of dangerous operator strings
  */
 export function getDangerousOperators(): string[] {

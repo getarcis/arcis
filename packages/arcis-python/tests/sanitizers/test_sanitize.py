@@ -3,6 +3,7 @@ Sanitizer class tests — extracted from tests/test_core.py.
 """
 
 from arcis.core import Sanitizer, sanitize_string
+from arcis import detect_sql
 
 
 class TestSanitizeStringXSS:
@@ -75,6 +76,13 @@ class TestSanitizeStringSQL:
     def test_removes_sql_comments(self):
         result = sanitize_string("admin'--")
         assert '--' not in result
+
+    def test_detect_sql_ignores_html_comments(self):
+        # The -- inside <!-- --> must not be flagged as a SQL comment.
+        assert detect_sql("<!-- TODO fix later -->") is False
+        assert detect_sql("<!-- a longer note: see the ticket -->") is False
+        # A real trailing SQL comment is still detected.
+        assert detect_sql("admin'-- ") is True
 
     def test_removes_union_and_block_comments(self):
         result = sanitize_string("1 /* comment */ UNION SELECT")

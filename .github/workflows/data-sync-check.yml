@@ -1,12 +1,14 @@
 name: Data sync check
 
-# Verifies the shared JSON data files stay in sync across the three
-# copies the monorepo keeps:
+# Verifies the shared JSON data files stay in sync across the copies the
+# monorepo keeps:
 #
 #   1. packages/core/patterns.json            <- canonical, human-edited
 #   2. packages/arcis-python/arcis/data/      <- bundled copy the Python
 #                                                 package loads at runtime
-#   3. packages/arcis-rust/crates/arcis-data/data/ <- vendored copy the
+#   3. packages/arcis-node/src/data/          <- bundled copy the Node
+#                                                 package loads at runtime
+#   4. packages/arcis-rust/crates/arcis-data/data/ <- vendored copy the
 #                                                 Rust CLI build needs
 #
 # WHY (core check): patterns.json is edited in packages/core/ but the
@@ -22,22 +24,31 @@ name: Data sync check
 # vendored copy fixes the build; this job stops it drifting from Python.
 #
 # Fails on any sha256 mismatch and prints the one-line fix. threat-db.json
-# has no core copy (the Python data dir is its canonical source), so only
-# patterns.json is checked against core.
+# has no core copy (the Python data dir is its canonical source). patterns.json
+# and the bot corpus (bot-patterns.json in core/Node, bot_patterns.json in
+# Python) are both checked against the canonical core copy.
 
 on:
   pull_request:
     paths:
       - "packages/core/patterns.json"
+      - "packages/core/bot-patterns.json"
+      - "packages/arcis-node/src/data/patterns.json"
+      - "packages/arcis-node/src/data/bot-patterns.json"
       - "packages/arcis-python/arcis/data/threat-db.json"
       - "packages/arcis-python/arcis/data/patterns.json"
+      - "packages/arcis-python/arcis/data/bot_patterns.json"
       - "packages/arcis-rust/crates/arcis-data/data/**"
   push:
     branches: [main, nwl]
     paths:
       - "packages/core/patterns.json"
+      - "packages/core/bot-patterns.json"
+      - "packages/arcis-node/src/data/patterns.json"
+      - "packages/arcis-node/src/data/bot-patterns.json"
       - "packages/arcis-python/arcis/data/threat-db.json"
       - "packages/arcis-python/arcis/data/patterns.json"
+      - "packages/arcis-python/arcis/data/bot_patterns.json"
       - "packages/arcis-rust/crates/arcis-data/data/**"
   workflow_dispatch:
 
@@ -58,31 +69,36 @@ jobs:
 
           sha() { sha256sum "$1" | awk '{print $1}'; }
 
-          # 1. Canonical patterns.json (packages/core) must match the
-          #    bundled Python copy. This is the check that was missing
-          #    when v1.6.5 shipped a stale wheel.
+          # 1. Canonical patterns.json (packages/core) must match every
+          #    bundled copy that an SDK loads at runtime: Python and (since
+          #    the Node runtime-patterns migration) Node. This is the check
+          #    that was missing when v1.6.5 shipped a stale wheel.
           core="packages/core/patterns.json"
-          py_patterns="packages/arcis-python/arcis/data/patterns.json"
           if [ ! -f "$core" ]; then
             echo "::error file=$core::canonical file missing"
             fail=1
-          elif [ ! -f "$py_patterns" ]; then
-            echo "::error file=$py_patterns::bundled file missing"
-            fail=1
           else
             core_hash=$(sha "$core")
-            py_hash=$(sha "$py_patterns")
-            if [ "$core_hash" != "$py_hash" ]; then
-              echo "::error::canonical $core has drifted from bundled $py_patterns"
-              echo "  canonical (core)   sha256: $core_hash"
-              echo "  bundled   (python) sha256: $py_hash"
-              echo "  fix:"
-              echo "    cp $core $py_patterns"
-              echo "    git add $py_patterns && git commit -m 'chore: resync bundled patterns.json'"
-              fail=1
-            else
-              echo "ok: patterns.json core matches python bundled ($core_hash)"
-            fi
+            for bundled in "packages/arcis-python/arcis/data/patterns.json" \
+                           "packages/arcis-node/src/data/patterns.json"; do
+              if [ ! -f "$bundled" ]; then
+                echo "::error file=$bundled::bundled patterns.json missing"
+                fail=1
+                continue
+              fi
+              b_hash=$(sha "$bundled")
+              if [ "$core_hash" != "$b_hash" ]; then
+                echo "::error::canonical $core has drifted from bundled $bundled"
+                echo "  canonical (core) sha256: $core_hash"
+                echo "  bundled          sha256: $b_hash"
+                echo "  fix:"
+                echo "    cp $core $bundled"
+                echo "    git add $bundled && git commit -m 'chore: resync bundled patterns.json'"
+                fail=1
+              else
+                echo "ok: patterns.json core matches $bundled ($core_hash)"
+              fi
+            done
           fi
 
           # 2. Bundled Python copies must match the Rust vendored copies.
@@ -113,5 +129,38 @@ jobs:
               echo "ok: $f python matches rust vendored ($c_hash)"
             fi
           done
+
+          # 3. Bot corpus: the canonical core copy must match the Node and
+          #    Python bundled copies. Note the filename differs: core and Node
+          #    use bot-patterns.json (hyphen), Python uses bot_patterns.json
+          #    (underscore). All three must be byte-identical. A scanner UA
+          #    added to one but not the others is exactly the drift this catches.
+          bot_core="packages/core/bot-patterns.json"
+          if [ ! -f "$bot_core" ]; then
+            echo "::error file=$bot_core::canonical bot corpus missing"
+            fail=1
+          else
+            bot_core_hash=$(sha "$bot_core")
+            for bf in "packages/arcis-node/src/data/bot-patterns.json" \
+                      "packages/arcis-python/arcis/data/bot_patterns.json"; do
+              if [ ! -f "$bf" ]; then
+                echo "::error file=$bf::bundled bot corpus missing"
+                fail=1
+                continue
+              fi
+              bf_hash=$(sha "$bf")
+              if [ "$bot_core_hash" != "$bf_hash" ]; then
+                echo "::error::bot corpus $bf has drifted from canonical $bot_core"
+                echo "  canonical (core) sha256: $bot_core_hash"
+                echo "  copy             sha256: $bf_hash"
+                echo "  fix:"
+                echo "    cp $bot_core $bf   # Python uses the underscore filename"
+                echo "    git add $bf && git commit -m 'chore: resync bundled bot corpus'"
+                fail=1
+              else
+                echo "ok: bot corpus $bf matches canonical ($bot_core_hash)"
+              fi
+            done
+          fi
 
           exit $fail

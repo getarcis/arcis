@@ -95,10 +95,14 @@ describe('sanitizeXpath', () => {
 
 describe('scanThreats integration — XPath + LDAP wiring', () => {
   it('reports vector="xpath" for an XPath injection payload', () => {
-    const hit = scanThreats({ name: "' or '1'='1" });
+    // XPath-distinct payload (blind-extraction function), not the bare
+    // `' or '1'='1` tautology — that shape is now caught as SQL (the canonical
+    // SQL tautology) so it would classify as `sql` here. count(/...) is
+    // XPath-only and SQL detection does not match it.
+    const hit = scanThreats({ name: 'count(//user)>0' });
     expect(hit?.vector).toBe('xpath');
     expect(hit?.rule).toBe('xpath/match');
-    expect(hit?.matchedPattern).toContain("' or '1'='1");
+    expect(hit?.matchedPattern).toContain('count(');
   });
 
   it('reports vector="ldap" for an LDAP injection payload', () => {
@@ -121,7 +125,7 @@ describe('scanThreats integration — XPath + LDAP wiring', () => {
     // scanThreats walks objects + arrays recursively. Pin: nested
     // structures (request body shapes) still surface the hit.
     const hit = scanThreats({
-      filter: { user: { name: "' or '1'='1" } },
+      filter: { user: { name: 'count(//user)>0' } },
     });
     expect(hit?.vector).toBe('xpath');
   });

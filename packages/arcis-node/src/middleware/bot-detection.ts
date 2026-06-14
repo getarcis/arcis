@@ -109,6 +109,46 @@ const BOT_PATTERNS: BotPattern[] = (BOT_PATTERN_DATA as BotPatternData[]).map((e
   forbidden: entry.forbidden.map(compilePattern),
 }));
 
+// Snapshot of the bundled set, captured before any cloud merge, so tests can
+// restore a clean baseline.
+const BUNDLED_PATTERNS: BotPattern[] = [...BOT_PATTERNS];
+
+/**
+ * Merge cloud-fetched bot-corpus entries into the live pattern set (Phase C
+ * cloud refresh). New ids are appended; existing ids are replaced in place so
+ * a curated correction overrides the bundled entry. An entry with an
+ * uncompilable pattern is skipped — this never throws into the refresh path
+ * (fail-open). Process-global by design: the corpus is a singleton, same as the
+ * bundled import. Returns the number of entries merged.
+ */
+export function mergeBotPatterns(entries: BotPatternData[]): number {
+  let merged = 0;
+  for (const entry of entries) {
+    try {
+      const compiled: BotPattern = {
+        id: entry.id,
+        name: entry.name,
+        category: entry.category as BotCategory,
+        patterns: entry.patterns.map(compilePattern),
+        forbidden: entry.forbidden.map(compilePattern),
+      };
+      const idx = BOT_PATTERNS.findIndex((b) => b.id === entry.id);
+      if (idx >= 0) BOT_PATTERNS[idx] = compiled;
+      else BOT_PATTERNS.push(compiled);
+      merged += 1;
+    } catch {
+      // skip an entry with a bad regex; never break the refresh
+    }
+  }
+  return merged;
+}
+
+/** Test hook — restore the bundled corpus, dropping any cloud-merged entries. */
+export function _resetBotPatternsForTest(): void {
+  BOT_PATTERNS.length = 0;
+  BOT_PATTERNS.push(...BUNDLED_PATTERNS);
+}
+
 
 // =============================================================================
 // DETECTION ENGINE

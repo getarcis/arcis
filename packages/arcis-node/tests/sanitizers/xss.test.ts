@@ -176,6 +176,15 @@ describe('detectXss', () => {
 
   it('should detect javascript: protocol', () => {
     expect(detectXss('javascript:alert(1)')).toBe(true);
+    expect(detectXss('JAVASCRIPT:alert(1)')).toBe(true);
+    expect(detectXss('javascript :alert(1)')).toBe(true);
+  });
+
+  it('should not flag prose that merely contains "javascript:"', () => {
+    // The colon must be followed by a non-space char. Common benign titles
+    // and labels like "JavaScript: The Good Parts" are not XSS.
+    expect(detectXss('JavaScript: Basics of JavaScript Language')).toBe(false);
+    expect(detectXss('JavaScript: The Good Parts')).toBe(false);
   });
 
   it('should detect dangerous HTML tags', () => {

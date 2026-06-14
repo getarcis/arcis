@@ -141,12 +141,14 @@ export {
   detectPromptInjection,
   sanitizePromptInjection,
 } from './sanitizers/prompt-injection';
+export { detectDeserialization, isSerializedPayload } from './sanitizers/deserialization';
+export type { DeserializeRuntime } from './sanitizers/deserialization';
 export type {
   DetectPromptInjectionResult,
   PromptInjectionMatch,
   PromptInjectionSeverity,
 } from './sanitizers/prompt-injection';
-export { isDangerousNoSqlKey, detectNoSqlInjection } from './sanitizers/nosql';
+export { isDangerousNoSqlKey, detectNoSqlInjection, detectNoSqlString } from './sanitizers/nosql';
 export { isDangerousProtoKey, detectPrototypePollution } from './sanitizers/prototype';
 export { sanitizeHeaderValue, sanitizeHeaders, detectHeaderInjection } from './sanitizers/headers';
 export { scanPii, detectPii, redactPii, scanObjectPii, redactObjectPii } from './sanitizers/pii';
@@ -158,6 +160,8 @@ export { encodeForHtml, encodeForAttribute, encodeForJs, encodeForUrl, encodeFor
 export { validate, createValidator } from './validation/schema';
 export { validateUrl, isUrlSafe, scanForSsrf } from './validation/url';
 export { validateRedirect, isRedirectSafe } from './validation/redirect';
+export { validateHost, isHostAllowed } from './validation/host-header';
+export type { ValidateHostResult } from './validation/host-header';
 export { validateFile, sanitizeFilename, isDangerousExtension } from './validation/file';
 export { validateEmail, verifyEmailMx, isValidEmailSyntax } from './validation/email';
 
@@ -183,6 +187,16 @@ export type {
   TelemetryDecision,
   TelemetrySeverity,
 } from './telemetry/types';
+
+// =============================================================================
+// INTELLIGENCE (opt-in cloud IP reputation)
+// =============================================================================
+export { IntelligenceClient, reputationSeverityTier } from './intelligence/client';
+export type {
+  IntelligenceOptions,
+  IpReputation,
+  CloudDecision,
+} from './intelligence/types';
 
 // =============================================================================
 // STORES

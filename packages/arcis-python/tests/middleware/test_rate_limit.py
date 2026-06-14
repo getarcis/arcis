@@ -66,6 +66,46 @@ class TestRateLimiter:
             assert result["allowed"] is True
 
 
+class TestRateLimiterFailOpen:
+    """The limiter must fail open (in-memory fallback) when the store errors."""
+
+    class _BoomStore:
+        """A store whose every operation raises, simulating Redis being down."""
+        def increment_or_set(self, key, window):
+            raise RuntimeError("redis down")
+
+        def get(self, key):
+            raise RuntimeError("redis down")
+
+        def set(self, *args):
+            raise RuntimeError("redis down")
+
+        def increment(self, key):
+            raise RuntimeError("redis down")
+
+        def close(self):
+            pass
+
+    def test_allows_request_when_store_errors(self):
+        """Availability over denial: a store outage must not 500 the request."""
+        limiter = RateLimiter(max_requests=5, window_ms=60000, store=self._BoomStore())
+        try:
+            result = limiter.check(MockRequest("9.9.9.9"))
+            assert result["allowed"] is True
+        finally:
+            limiter.close()
+
+    def test_fallback_still_enforces_limit(self):
+        """The fallback maintains protection; it is not a pure bypass."""
+        limiter = RateLimiter(max_requests=1, window_ms=60000, store=self._BoomStore())
+        try:
+            limiter.check(MockRequest("8.8.8.8"))  # allowed via fallback
+            with pytest.raises(RateLimitExceeded):
+                limiter.check(MockRequest("8.8.8.8"))  # fallback rate-limits it
+        finally:
+            limiter.close()
+
+
 class TestRateLimitExceeded:
     """Test RateLimitExceeded exception."""
 

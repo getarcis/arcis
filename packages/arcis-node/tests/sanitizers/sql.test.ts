@@ -167,6 +167,30 @@ describe('sanitizeSql', () => {
       const result = sanitizeSql("' AND 1=1");
       expect(result.toUpperCase()).not.toMatch(/AND\s+1/);
     });
+
+    // Quoted-boolean tautology: the closing quote is unterminated because the
+    // app's own quote completes it (`1' OR '1'='1`). Previously missed because
+    // the boolean-string rule required both operands fully quote-closed.
+    it.each([
+      "1' OR '1'='1",
+      "' OR '1'='1",
+      "admin' OR '1'='1",
+      "' OR 'a'='a",
+      '1" OR "1"="1',
+      "x' AND '1'='1",
+    ])('detects quoted-boolean tautology: %s', (payload) => {
+      expect(detectSql(payload)).toBe(true);
+    });
+
+    it.each([
+      "O'Brien",
+      "it's a test",
+      "Sam's OR Jill's pick",
+      "author = 'John'",
+      "status OR priority",
+    ])('does NOT flag benign quoted text: %s', (text) => {
+      expect(detectSql(text)).toBe(false);
+    });
   });
 
   describe('Threat Collection', () => {
@@ -229,6 +253,13 @@ describe('detectSql', () => {
 
   it('should detect comment syntax', () => {
     expect(detectSql("admin'--")).toBe(true);
+  });
+
+  it('should not flag HTML comments as SQL (the -- inside <!--)', () => {
+    expect(detectSql('<!-- TODO fix later -->')).toBe(false);
+    expect(detectSql('<!-- a longer note: see the ticket -->')).toBe(false);
+    // a real trailing SQL comment is still caught
+    expect(detectSql("admin'-- ")).toBe(true);
   });
 
   it('should detect UNION keyword', () => {

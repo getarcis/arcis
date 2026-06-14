@@ -91,6 +91,44 @@ def _load_bot_patterns() -> List[_BotEntry]:
 
 BOT_PATTERNS = _load_bot_patterns()
 
+# Snapshot of the bundled set, captured before any cloud merge, so tests can
+# restore a clean baseline.
+_BUNDLED_PATTERNS = list(BOT_PATTERNS)
+
+
+def merge_bot_patterns(entries) -> int:
+    """Merge cloud-fetched bot-corpus entries on top of the bundled corpus
+    (Phase C cloud refresh). New ids are appended; existing ids are replaced in
+    place. An entry with an uncompilable pattern or missing field is skipped
+    (fail-open) -- this never raises into the refresh path. Process-global by
+    design, mirroring the bundled import. Returns the number merged.
+    """
+    merged = 0
+    for entry in entries:
+        try:
+            compiled = _BotEntry(
+                entry_id=entry["id"],
+                name=entry["name"],
+                category=entry["category"],
+                accepted=tuple(re.compile(p, re.IGNORECASE) for p in entry["patterns"]),
+                forbidden=tuple(re.compile(p, re.IGNORECASE) for p in entry.get("forbidden", [])),
+            )
+        except (re.error, KeyError, TypeError):
+            continue
+        for i, existing in enumerate(BOT_PATTERNS):
+            if existing.entry_id == compiled.entry_id:
+                BOT_PATTERNS[i] = compiled
+                break
+        else:
+            BOT_PATTERNS.append(compiled)
+        merged += 1
+    return merged
+
+
+def _reset_bot_patterns_for_test() -> None:
+    """Test hook -- restore the bundled corpus, dropping cloud-merged entries."""
+    BOT_PATTERNS[:] = _BUNDLED_PATTERNS
+
 
 # =============================================================================
 # DETECTION ENGINE

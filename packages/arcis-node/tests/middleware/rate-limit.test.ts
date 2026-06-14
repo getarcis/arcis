@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Request, Response } from 'express';
 import { createRateLimiter, rateLimit } from '../../src/middleware/rate-limit';
 import { mockRequest, mockResponse, mockNext, createTestServer, TestServer } from '../setup';
+import type { RateLimitStore } from '../../src/core/types';
 
 describe('createRateLimiter', () => {
   let limiter: ReturnType<typeof createRateLimiter>;
@@ -60,6 +61,43 @@ describe('createRateLimiter', () => {
       await limiter(req as Request, res as Response, mockNext);
 
       expect(res.status).toHaveBeenCalledWith(429);
+    });
+  });
+
+  describe('Fail-open on store errors', () => {
+    // A store whose every operation rejects, simulating Redis being down.
+    const throwingStore = (): RateLimitStore =>
+      ({
+        get: () => Promise.reject(new Error('redis down')),
+        set: () => Promise.reject(new Error('redis down')),
+        increment: () => Promise.reject(new Error('redis down')),
+        reset: () => Promise.reject(new Error('redis down')),
+      } as unknown as RateLimitStore);
+
+    it('allows the request when the store throws (availability over denial)', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      limiter = createRateLimiter({ max: 5, windowMs: 60000, store: throwingStore() });
+      const req = mockRequest({ ip: '9.9.9.9' });
+      const res = mockResponse();
+
+      await limiter(req as Request, res as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalledWith(429);
+      errSpy.mockRestore();
+    });
+
+    it('still enforces the limit via the in-memory fallback (not a pure bypass)', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      limiter = createRateLimiter({ max: 1, windowMs: 60000, store: throwingStore() });
+      // First request from this IP is allowed via the in-memory fallback.
+      await limiter(mockRequest({ ip: '8.8.8.8' }) as Request, mockResponse() as Response, mockNext);
+      // Second request from the same IP must be rate-limited by the fallback.
+      const res = mockResponse();
+      await limiter(mockRequest({ ip: '8.8.8.8' }) as Request, res as Response, mockNext);
+
+      expect(res.status).toHaveBeenCalledWith(429);
+      errSpy.mockRestore();
     });
   });
 
