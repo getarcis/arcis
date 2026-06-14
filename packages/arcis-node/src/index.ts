@@ -160,6 +160,8 @@ export { encodeForHtml, encodeForAttribute, encodeForJs, encodeForUrl, encodeFor
 export { validate, createValidator } from './validation/schema';
 export { validateUrl, isUrlSafe, scanForSsrf } from './validation/url';
 export { validateRedirect, isRedirectSafe } from './validation/redirect';
+export { validateHost, isHostAllowed } from './validation/host-header';
+export type { ValidateHostResult } from './validation/host-header';
 export { validateFile, sanitizeFilename, isDangerousExtension } from './validation/file';
 export { validateEmail, verifyEmailMx, isValidEmailSyntax } from './validation/email';
 

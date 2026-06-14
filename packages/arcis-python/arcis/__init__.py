@@ -102,6 +102,12 @@ from .validation.redirect import (
     ValidateRedirectResult,
 )
 
+from .validation.host_header import (
+    validate_host,
+    is_host_allowed,
+    ValidateHostResult,
+)
+
 from .sanitizers import (
     sanitize_xss,
     sanitize_sql,
@@ -260,6 +266,9 @@ __all__ = [
     "ValidateUrlOptions",
     "ValidateUrlResult",
     "validate_redirect",
+    "validate_host",
+    "is_host_allowed",
+    "ValidateHostResult",
     "is_redirect_safe",
     "ValidateRedirectOptions",
     "ValidateRedirectResult",
