@@ -363,7 +363,7 @@ Moving from DOMPurify: `DOMPurify.sanitize(dirty, cfg)` becomes `sanitizeHtml(di
 
 What you get compared with DOMPurify on the server:
 
-- **No jsdom.** DOMPurify needs a full DOM implementation on the server. Arcis needs only the parser, and the Node add-on uses no Node built-ins. It is about 16x faster than DOMPurify on jsdom over the shared cases.
+- **No jsdom.** DOMPurify needs a full DOM implementation on the server. Arcis needs only the parser, and the Node add-on uses no Node built-ins. On the shared cases it runs more than 10x faster than DOMPurify on jsdom, with identical output.
 - **Python and Go.** The same behavior in all three SDKs, checked against the same shared cases.
 - **Misconfiguration fails loudly.** An unknown option (for example a misspelled `ALLOWED_TAG`) throws instead of silently falling back to the default allowlist. Options that only apply to browser DOM objects are rejected the same way.
 - **Explainable output.** `sanitizeHtmlDetailed()` returns the cleaned HTML plus every element and attribute that was removed, for logging or review.
