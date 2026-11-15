@@ -24,10 +24,9 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
+import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -35,6 +34,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { planSecurityHeaders } from './security-headers';
 
 // ─── h3 / Nuxt duck-typed contracts ─────────────────────────────────────────
 
@@ -137,62 +137,9 @@ function applySecurityHeaders(
   req: NodeIncomingMessageLike,
   options: HeaderOptions,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-
-  if (contentSecurityPolicy) {
-    res.setHeader(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) res.setHeader('X-XSS-Protection', '0');
-  if (noSniff) res.setHeader('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) res.setHeader('X-Frame-Options', frameOptions);
-
-  if (hsts && isHttpsRequest(req)) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    res.setHeader('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) res.setHeader('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) res.setHeader('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) res.setHeader('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) res.setHeader('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) res.setHeader('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) res.setHeader('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) res.setHeader('X-DNS-Prefetch-Control', 'off');
-  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    res.setHeader(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-  }
-
-  res.removeHeader('X-Powered-By');
+  const plan = planSecurityHeaders(options, { isHttps: isHttpsRequest(req) });
+  for (const [name, value] of plan.set) res.setHeader(name, value);
+  for (const name of plan.remove) res.removeHeader(name);
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────

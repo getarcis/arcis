@@ -34,10 +34,9 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
+import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -45,6 +44,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { applyPlanToHeaders, parseForwardedProto, planSecurityHeaders } from './security-headers';
 
 // ─── Hono duck-typed contracts ──────────────────────────────────────────────
 // Mirrors Hono's `Context` and `MiddlewareHandler` shapes closely enough
@@ -143,79 +143,13 @@ function applySecurityHeaders(
   options: HeaderOptions,
   request: Request,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-  const h = response.headers;
-
-  if (contentSecurityPolicy) {
-    h.set(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) h.set('X-XSS-Protection', '0');
-  if (noSniff) h.set('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) h.set('X-Frame-Options', frameOptions);
-
-  // HSTS only over HTTPS — sending it over HTTP can brick HTTP-only dev
-  // servers. Trust X-Forwarded-Proto only when it's exactly 'http' or
-  // 'https' (anything else is suspect proxy garbage).
-  const xfp = request.headers
-    .get('x-forwarded-proto')
-    ?.split(',')[0]
-    ?.trim()
-    ?.toLowerCase();
-  const trustedXfp = xfp === 'https' || xfp === 'http' ? xfp : undefined;
-  let isHttps = trustedXfp === 'https';
+  let isHttps = parseForwardedProto(request.headers.get('x-forwarded-proto')) === 'https';
   try {
     isHttps = isHttps || new URL(request.url).protocol === 'https:';
   } catch {
     // Malformed request.url shouldn't crash the security-header pass.
   }
-
-  if (hsts && isHttps) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    h.set('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) h.set('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) h.set('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) h.set('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) h.set('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) h.set('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) h.set('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) h.set('X-DNS-Prefetch-Control', 'off');
-  h.set('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    h.set(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    h.set('Pragma', 'no-cache');
-    h.set('Expires', '0');
-  }
-
-  h.delete('X-Powered-By');
+  applyPlanToHeaders(response.headers, planSecurityHeaders(options, { isHttps }));
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
