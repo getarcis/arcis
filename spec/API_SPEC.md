@@ -445,6 +445,20 @@ but current clients omit them even when a manually supplied event contains
 them. Stored historical events are not silently rewritten.
 Shared collector fixtures live under `telemetry.privacy`.
 
+### Sampling, queueing and retention
+
+- **No sampling.** Every decision event is queued, including `allow`. Observed
+  and enforced events are treated identically, so their counts stay comparable.
+- **Bounded memory.** The queue holds at most `maxQueueSize` events (default
+  10,000). On overflow the oldest events are dropped first and
+  `onQueueOverflow` reports the dropped count.
+- **Best-effort delivery.** A batch that fails (network error, timeout or
+  non-2xx response) is dropped and reported through `onError`. There is no
+  retry and no disk persistence, so the SDK never stores events locally.
+- **Retention belongs to the collector.** SDKs keep nothing after delivery.
+  The receiving collector defines how long events are stored and must apply
+  that policy to observed and enforced events alike.
+
 ### Stable producer and policy identifiers
 
 Current clients set `schemaVersion: "1.1"` and their own `sdk` identifier.
