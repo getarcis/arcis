@@ -183,15 +183,15 @@ function createSanitizeObserver(
 }
 
 /**
- * Issue #47 — wraps a 429-emitting middleware so the response body is
+ * Issue #47: wraps a rate limiter so its rejection response body is
  * suppressed in dry-run mode. The X-RateLimit-* headers the limiter set
- * BEFORE deciding to 429 still flow through (they were attached to the
+ * BEFORE deciding to reject still flow through (they were attached to the
  * response Header map by the limiter), giving observability without
  * actually blocking the request.
  *
- * The rate-limit middleware's 429 path is `res.status(429).json({...})`
+ * The rate-limit rejection path is `res.status(rejectionStatus).json({...})`
  * followed by an early return (no `next()` call). To suppress, we
- * intercept `res.status` and on 429:
+ * intercept `res.status` and on the configured rejection status:
  *   - flag `suppressed`,
  *   - swallow the chained `.json(...)` (no body write),
  *   - restore the originals,
@@ -201,7 +201,7 @@ function createSanitizeObserver(
  * the moment we hand control downstream so no other middleware sees
  * the patched methods.
  */
-function suppressRateLimit429(handler: RequestHandler): RequestHandler {
+function observeRateLimitRejection(handler: RequestHandler, rejectionStatus = 429): RequestHandler {
   return (req, res, next) => {
     const originalStatus = res.status.bind(res);
     const originalJson = res.json.bind(res);
@@ -214,7 +214,7 @@ function suppressRateLimit429(handler: RequestHandler): RequestHandler {
     };
 
     res.status = ((code: number): Response => {
-      if (code === 429) {
+      if (code === rejectionStatus) {
         suppressed = true;
         req.__arcis = {
           vector: 'rate-limit',
@@ -230,7 +230,7 @@ function suppressRateLimit429(handler: RequestHandler): RequestHandler {
 
     res.json = ((body: unknown): Response => {
       if (suppressed) {
-        // Limiter's 429 path: it called .status(429).json(...) and then
+        // Limiter's rejection path: it called .status(...).json(...) and then
         // returned without next(). Hand control to the rest of the chain
         // ourselves. Restore originals first so downstream sees a clean
         // ResponseWriter.
@@ -467,16 +467,16 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
     ));
   }
 
-  // Rate limiting — emitter detects 429 from response status, no wrap needed.
-  // Dry-run wraps the limiter so the limiter's 429 decision is silently
-  // dropped (headers still set; request continues). X-RateLimit-* headers
+  // Rate limiting writes an explicit decision for telemetry attribution.
+  // Dry-run records the limiter's rejection without enforcing it
+  // (headers still set; request continues). X-RateLimit-* headers
   // surface either way so dashboards see the would-have-been decision.
   if (options.rateLimit !== false) {
     const rateLimitOpts: RateLimitOptions = typeof options.rateLimit === 'object'
       ? options.rateLimit
       : {};
     const rateLimiter = createRateLimiter(rateLimitOpts);
-    middlewares.push(dryRun ? suppressRateLimit429(rateLimiter) : rateLimiter);
+    middlewares.push(dryRun ? observeRateLimitRejection(rateLimiter, rateLimitOpts.statusCode) : rateLimiter);
     cleanupFns.push(() => rateLimiter.close());
   }
 

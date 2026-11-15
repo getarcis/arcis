@@ -93,7 +93,7 @@ describe('Stage 1 — env-var auto-pickup', () => {
     await vi.waitFor(() => expect(received.length).toBeGreaterThanOrEqual(1), {
       timeout: 5000,
     });
-    expect(received[0].path).toBe('/api/ok');
+    expect(received[0].path).toBe('[redacted]');
     expect(received[0].decision).toBe('allow');
   }, 10_000);
 

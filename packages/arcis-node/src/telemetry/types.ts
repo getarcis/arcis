@@ -18,7 +18,7 @@ export interface TelemetryEvent {
   ip: string;
   /** HTTP method (e.g., "GET", "POST"). */
   method: string;
-  /** Request path without query string. */
+  /** Input path. Current clients always send "[redacted]". */
   path: string;
   /** Final middleware decision. */
   decision: TelemetryDecision;
@@ -30,16 +30,22 @@ export interface TelemetryEvent {
   severity?: TelemetrySeverity;
   /** ISO-3166 alpha-2 country code. */
   country?: string;
-  /** Request User-Agent header. Server defaults to "" if missing. */
+  /** Legacy input only. Current clients omit this field. */
   userAgent?: string;
-  /** Human-readable explanation for the dashboard. */
+  /** Legacy input only. Current clients omit free-form explanations. */
   reason?: string;
-  /** HTTP status code returned by the middleware. Server defaults to 200. */
+  /** Actual HTTP response status; 0 means unavailable. */
   status: number;
-  /** Exact token that triggered the rule (e.g., "UNION SELECT"). */
+  /** Legacy input only. Current clients omit matched request evidence. */
   matchedPattern?: string;
   /** Middleware processing time in milliseconds, fractional. */
   latencyMs?: number;
+  /** Set by the client; per-event overrides are ignored. */
+  schemaVersion?: '1.1';
+  sdk?: 'node' | 'python' | 'go';
+  /** Taken from static client configuration; per-event overrides are ignored. */
+  routeId?: string;
+  policyId?: string;
 }
 
 /**
@@ -47,6 +53,10 @@ export interface TelemetryEvent {
  * Passed via `telemetry` on the main `ArcisOptions`.
  */
 export interface TelemetryOptions {
+  /** Optional static route label. Never derive from request values. */
+  routeId?: string;
+  /** Optional static policy revision label. Never derive from request values. */
+  policyId?: string;
   /** Full URL of the ingest endpoint, e.g., "https://arcis.mycorp.com/v1/events". */
   endpoint: string;
   /** Optional bearer token. Sent as `Authorization: Bearer <apiKey>`. */

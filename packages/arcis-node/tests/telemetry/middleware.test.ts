@@ -82,7 +82,7 @@ describe('Phase 8: telemetry middleware integration', () => {
     expect(received[0]).toMatchObject({
       decision: 'allow',
       method: 'GET',
-      path: '/ping',
+      path: '[redacted]',
       status: 200,
     });
     expect(received[0].latencyMs).toBeGreaterThanOrEqual(0);
@@ -449,7 +449,7 @@ describe('Phase 8: telemetry middleware integration', () => {
     const denyEvent = received.find((e) => e.decision === 'deny');
     expect(denyEvent?.vector).toBe('sql');
     expect(denyEvent?.severity).toBe('high');
-    expect(denyEvent?.matchedPattern).toBeTruthy();
+    expect(denyEvent).not.toHaveProperty('matchedPattern');
   });
 
   it('zero overhead when telemetry option is omitted (no client created)', async () => {
