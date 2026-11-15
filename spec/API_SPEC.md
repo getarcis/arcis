@@ -118,6 +118,89 @@ RateLimitOptions {
   - `X-RateLimit-Reset`: Seconds until window resets
 - If limit exceeded: Return HTTP 429 with JSON error
 
+### Client IP resolution
+
+Every feature that keys on the client address (rate limiters, brute-force
+protection, bot and correlation tracking, telemetry `ip`) uses one resolver per
+SDK. A client must never be able to choose its own key.
+
+**Inputs.** The peer address (the socket address the server sees, before any
+header parsing), the request headers, and `trustedProxies`: a list of IPs and
+CIDR ranges (Node `trustedProxies`, Python `trusted_proxies`, Go
+`TrustedProxies`).
+
+**Default trust set** (used when `trustedProxies` is not configured; equal to
+Express's `trust proxy` value `loopback, linklocal, uniquelocal`):
+`127.0.0.0/8`, `::1/128`, `169.254.0.0/16`, `fe80::/10`, `10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`. An empty list trusts nothing.
+
+**Algorithm.**
+
+1. Build the chain: the peer address, then the `X-Forwarded-For` entries
+   from right to left (entries trimmed; a port such as `1.2.3.4:80` or
+   `[2001:db8::1]:443` is stripped).
+2. Walk the chain from the peer. The client is the first address that is
+   not a valid IP or is not trusted. If every address is trusted, the client
+   is the last (left-most) one.
+3. If the selected entry is not a valid IP, use the nearest valid address to
+   its right, which is the trusted proxy that reported it.
+4. Normalize: drop an IPv6 zone identifier and unwrap IPv4-mapped IPv6
+   (`::ffff:1.2.3.4` is `1.2.3.4`). Lowercase IPv6.
+
+A public peer's forwarded headers are therefore ignored entirely: the
+rotating-`X-Forwarded-For` bypass is impossible from the internet. Other
+headers (`X-Real-IP`, `CF-Connecting-IP`, `Fly-Client-IP`, `True-Client-IP`)
+are used only when explicitly configured as the client IP header, and only
+from a trusted peer.
+
+**Runtimes without a peer address** (edge middleware such as Next.js and
+Cloudflare Workers) cannot run the trust walk. They read a platform header
+only on the platform that sets it and overwrites client values: `x-real-ip`
+then the right-most `x-forwarded-for` entry on Vercel (`VERCEL=1`),
+`cf-connecting-ip` on Cloudflare Workers. Elsewhere they use an explicitly
+configured header or resolver. When no address can be determined, requests
+share one `unknown` key that never mixes with real client keys.
+
+**Diagnostics.** Each SDK warns once per process when forwarded headers arrive
+from an untrusted peer (likely a missing `trustedProxies` entry) and when
+`trustedProxies` contains `0.0.0.0/0` or `::/0`.
+
+**Rate-limit key.** The resolved IP passes through the key function
+(`ipKeyGenerator` in express-rate-limit): IPv4 unchanged; IPv6 grouped to
+its `/56` network written as `<network>/56` (`ipv6Subnet` option: 1-128 or
+false for the full address), so one IPv6 allocation cannot mint unlimited
+keys.
+
+Shared fixtures: `spec/client-ip-vectors.json` (624 resolution cases computed
+with Express's proxy-addr plus the rules above, 40 key cases from
+express-rate-limit).
+
+### Store contract and counting
+
+- Each counted request makes exactly one atomic store call:
+  `increment(key, windowMs) -> { totalHits, resetTime }`. The counter and its
+  expiry are created together. A get-then-set sequence is not allowed.
+  Redis stores implement it in one round trip (a Lua script performing
+  `INCR`, `PEXPIRE` on the first hit, and `PTTL`).
+- `decrement(key)` (floored at 0), `resetKey(key)` and an optional `get(key)`
+  complete the interface.
+- **Store errors fail open and are reported.** The request is allowed (or
+  the in-memory fallback counts it when one is configured), the error is
+  reported through the SDK's error callback and telemetry, at most once per
+  window per limiter. A store must never swallow its own errors.
+- **In-memory stores never stop limiting.** At their size cap they evict
+  expired keys first, then the least recently used.
+- **Sliding window.** The previous window's count contributes only when it is
+  the window immediately before the current one; a key idle for a full
+  window starts from zero.
+- **Validation at construction.** `windowMs` must be a whole number between 1
+  and 2^31-1 milliseconds and `max` a non-negative integer; `max: 0` blocks
+  every request. Anything else is a configuration error.
+
+Multi-instance behavior is verified against a real Redis: concurrent
+requests from several limiter instances sharing one store must never admit
+more than `max` per window.
+
 ---
 
 ## 3. Security Headers

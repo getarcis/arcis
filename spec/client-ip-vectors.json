@@ -1,0 +1,5994 @@
+{
+  "version": "1.0",
+  "description": "Client IP resolution and rate-limit key fixtures. trusted_proxies null means the default trust set (loopback, link-local, unique local: 127.0.0.0/8, ::1, 169.254.0.0/16, fe80::/10, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7). Expected values come from Express proxy-addr plus the Arcis rules in spec/API_SPEC.md, and keys from express-rate-limit ipKeyGenerator. Regenerate with packages/arcis-node/scripts/generate-client-ip-vectors.mjs.",
+  "reference": {
+    "proxy-addr": "2.0.7",
+    "express-rate-limit": "8.7.4"
+  },
+  "default_trusted_proxies": [
+    "127.0.0.0/8",
+    "::1/128",
+    "169.254.0.0/16",
+    "fe80::/10",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "fc00::/7"
+  ],
+  "resolution": [
+    {
+      "id": "default|203.0.113.5|-",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": null,
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|garbage",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|203.0.113.5|",
+      "trusted_proxies": null,
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|-",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": null,
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|garbage",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|2001:db8:ffff::5|",
+      "trusted_proxies": null,
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "default|100.64.0.1|-",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|garbage",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|100.64.0.1|",
+      "trusted_proxies": null,
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "default|127.0.0.1|-",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "default|127.0.0.1|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|127.0.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|127.0.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|127.0.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|127.0.0.1|garbage",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "default|127.0.0.1|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|127.0.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|127.0.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|127.0.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|127.0.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|127.0.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|127.0.0.1|",
+      "trusted_proxies": null,
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "default|::1|-",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "default|::1|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::1|garbage",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "default|::1|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|::1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|::1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|::1|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::1|",
+      "trusted_proxies": null,
+      "peer": "::1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|-",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|garbage",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|::ffff:127.0.0.1|",
+      "trusted_proxies": null,
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "default|10.0.0.2|-",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": null,
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "default|10.0.0.2|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|10.0.0.2|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|10.0.0.2|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|10.0.0.2|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|10.0.0.2|garbage",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "default|10.0.0.2|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|10.0.0.2|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|10.0.0.2|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|10.0.0.2|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|10.0.0.2|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|10.0.0.2|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|10.0.0.2|",
+      "trusted_proxies": null,
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "default|172.16.0.9|-",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": null,
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "default|172.16.0.9|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|172.16.0.9|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|172.16.0.9|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|172.16.0.9|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|172.16.0.9|garbage",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "default|172.16.0.9|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|172.16.0.9|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|172.16.0.9|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|172.16.0.9|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|172.16.0.9|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|172.16.0.9|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|172.16.0.9|",
+      "trusted_proxies": null,
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "default|192.168.1.1|-",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "default|192.168.1.1|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|192.168.1.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|192.168.1.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|192.168.1.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|192.168.1.1|garbage",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "default|192.168.1.1|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|192.168.1.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|192.168.1.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|192.168.1.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|192.168.1.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|192.168.1.1|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|192.168.1.1|",
+      "trusted_proxies": null,
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "default|169.254.1.1|-",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "default|169.254.1.1|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|169.254.1.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|169.254.1.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|169.254.1.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|169.254.1.1|garbage",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "default|169.254.1.1|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|169.254.1.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|169.254.1.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|169.254.1.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|169.254.1.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|169.254.1.1|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|169.254.1.1|",
+      "trusted_proxies": null,
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "default|fe80::1%eth0|-",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": null,
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "default|fe80::1%eth0|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fe80::1%eth0|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fe80::1%eth0|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fe80::1%eth0|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fe80::1%eth0|garbage",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "default|fe80::1%eth0|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fe80::1%eth0|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|fe80::1%eth0|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fe80::1%eth0|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|fe80::1%eth0|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|fe80::1%eth0|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fe80::1%eth0|",
+      "trusted_proxies": null,
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "default|fd00::1|-",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "default|fd00::1|198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fd00::1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fd00::1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fd00::1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fd00::1|garbage",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "default|fd00::1|198.51.100.7:1234",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fd00::1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|fd00::1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fd00::1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "default|fd00::1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "default|fd00::1|::ffff:198.51.100.7",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "default|fd00::1|",
+      "trusted_proxies": null,
+      "peer": "fd00::1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|203.0.113.5|-",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": null,
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|garbage",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|203.0.113.5|",
+      "trusted_proxies": [],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|-",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": null,
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|garbage",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|2001:db8:ffff::5|",
+      "trusted_proxies": [],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "none|100.64.0.1|-",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|garbage",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|100.64.0.1|",
+      "trusted_proxies": [],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|-",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|garbage",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|127.0.0.1|",
+      "trusted_proxies": [],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::1|-",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|garbage",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::1|",
+      "trusted_proxies": [],
+      "peer": "::1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|-",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|garbage",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|::ffff:127.0.0.1|",
+      "trusted_proxies": [],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "none|10.0.0.2|-",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": null,
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|garbage",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|10.0.0.2|",
+      "trusted_proxies": [],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "none|172.16.0.9|-",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": null,
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|garbage",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|172.16.0.9|",
+      "trusted_proxies": [],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "none|192.168.1.1|-",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|garbage",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|192.168.1.1|",
+      "trusted_proxies": [],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|-",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|garbage",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|169.254.1.1|",
+      "trusted_proxies": [],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "none|fe80::1%eth0|-",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": null,
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|garbage",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fe80::1%eth0|",
+      "trusted_proxies": [],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "none|fd00::1|-",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|garbage",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|198.51.100.7:1234",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|::ffff:198.51.100.7",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "none|fd00::1|",
+      "trusted_proxies": [],
+      "peer": "fd00::1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": null,
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "10.0.0.3",
+      "expected_key": "10.0.0.3"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "192.168.0.4",
+      "expected_key": "192.168.0.4"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_public_proxy|203.0.113.5|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": null,
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|2001:db8:ffff::5|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|100.64.0.1|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|127.0.0.1|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::1|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::1|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|::ffff:127.0.0.1|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": null,
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|10.0.0.2|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": null,
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|172.16.0.9|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|192.168.1.1|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|169.254.1.1|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": null,
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fe80::1%eth0|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|-",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|garbage",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_public_proxy|fd00::1|",
+      "trusted_proxies": [
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": null,
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "192.168.0.4",
+      "expected_key": "192.168.0.4"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|203.0.113.5|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "203.0.113.5",
+      "x_forwarded_for": "",
+      "expected_client_ip": "203.0.113.5",
+      "expected_key": "203.0.113.5"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": null,
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|2001:db8:ffff::5|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "2001:db8:ffff::5",
+      "x_forwarded_for": "",
+      "expected_client_ip": "2001:db8:ffff::5",
+      "expected_key": "2001:db8:ffff::/56"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|100.64.0.1|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "100.64.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "100.64.0.1",
+      "expected_key": "100.64.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|127.0.0.1|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "127.0.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::1|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::1|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "::1",
+      "expected_key": "::/56"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|::ffff:127.0.0.1|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "::ffff:127.0.0.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "127.0.0.1",
+      "expected_key": "127.0.0.1"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": null,
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "2001:db8:1234:5678::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "192.168.0.4",
+      "expected_key": "192.168.0.4"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "2001:db8:1234:56ff:ffff::9",
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "198.51.100.7",
+      "expected_key": "198.51.100.7"
+    },
+    {
+      "id": "explicit_private_and_public|10.0.0.2|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "10.0.0.2",
+      "x_forwarded_for": "",
+      "expected_client_ip": "10.0.0.2",
+      "expected_key": "10.0.0.2"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": null,
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|172.16.0.9|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "172.16.0.9",
+      "x_forwarded_for": "",
+      "expected_client_ip": "172.16.0.9",
+      "expected_key": "172.16.0.9"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|192.168.1.1|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "192.168.1.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "192.168.1.1",
+      "expected_key": "192.168.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|169.254.1.1|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "169.254.1.1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "169.254.1.1",
+      "expected_key": "169.254.1.1"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": null,
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fe80::1%eth0|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fe80::1%eth0",
+      "x_forwarded_for": "",
+      "expected_client_ip": "fe80::1",
+      "expected_key": "fe80::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|-",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": null,
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|198.51.100.7, 10.0.0.3",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7, 10.0.0.3",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|1.1.1.1, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "1.1.1.1, 198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|evil-spoof, 198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "evil-spoof, 198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|garbage",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "garbage",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|198.51.100.7:1234",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "198.51.100.7:1234",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|[2001:db8:1234:5678::9]:443",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "[2001:db8:1234:5678::9]:443",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|  198.51.100.7  ,  10.0.0.3  ",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "  198.51.100.7  ,  10.0.0.3  ",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|10.0.0.3, 192.168.0.4",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "10.0.0.3, 192.168.0.4",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|2001:db8:1234:56ff:ffff::9",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "2001:db8:1234:56ff:ffff::9",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|::ffff:198.51.100.7",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "::ffff:198.51.100.7",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    },
+    {
+      "id": "explicit_private_and_public|fd00::1|",
+      "trusted_proxies": [
+        "10.0.0.0/8",
+        "203.0.113.0/24"
+      ],
+      "peer": "fd00::1",
+      "x_forwarded_for": "",
+      "expected_client_ip": "fd00::1",
+      "expected_key": "fd00::/56"
+    }
+  ],
+  "keys": [
+    {
+      "ip": "1.2.3.4",
+      "ipv6_subnet": 56,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "1.2.3.4",
+      "ipv6_subnet": 64,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "1.2.3.4",
+      "ipv6_subnet": 48,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "1.2.3.4",
+      "ipv6_subnet": 128,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "1.2.3.4",
+      "ipv6_subnet": false,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "::ffff:1.2.3.4",
+      "ipv6_subnet": 56,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "::ffff:1.2.3.4",
+      "ipv6_subnet": 64,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "::ffff:1.2.3.4",
+      "ipv6_subnet": 48,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "::ffff:1.2.3.4",
+      "ipv6_subnet": 128,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "::ffff:1.2.3.4",
+      "ipv6_subnet": false,
+      "expected_key": "1.2.3.4"
+    },
+    {
+      "ip": "::1",
+      "ipv6_subnet": 56,
+      "expected_key": "::/56"
+    },
+    {
+      "ip": "::1",
+      "ipv6_subnet": 64,
+      "expected_key": "::/64"
+    },
+    {
+      "ip": "::1",
+      "ipv6_subnet": 48,
+      "expected_key": "::/48"
+    },
+    {
+      "ip": "::1",
+      "ipv6_subnet": 128,
+      "expected_key": "::1/128"
+    },
+    {
+      "ip": "::1",
+      "ipv6_subnet": false,
+      "expected_key": "::1"
+    },
+    {
+      "ip": "2001:db8:1234:5600::1",
+      "ipv6_subnet": 56,
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "ip": "2001:db8:1234:5600::1",
+      "ipv6_subnet": 64,
+      "expected_key": "2001:db8:1234:5600::/64"
+    },
+    {
+      "ip": "2001:db8:1234:5600::1",
+      "ipv6_subnet": 48,
+      "expected_key": "2001:db8:1234::/48"
+    },
+    {
+      "ip": "2001:db8:1234:5600::1",
+      "ipv6_subnet": 128,
+      "expected_key": "2001:db8:1234:5600::1/128"
+    },
+    {
+      "ip": "2001:db8:1234:5600::1",
+      "ipv6_subnet": false,
+      "expected_key": "2001:db8:1234:5600::1"
+    },
+    {
+      "ip": "2001:db8:1234:56ff:ffff::9",
+      "ipv6_subnet": 56,
+      "expected_key": "2001:db8:1234:5600::/56"
+    },
+    {
+      "ip": "2001:db8:1234:56ff:ffff::9",
+      "ipv6_subnet": 64,
+      "expected_key": "2001:db8:1234:56ff::/64"
+    },
+    {
+      "ip": "2001:db8:1234:56ff:ffff::9",
+      "ipv6_subnet": 48,
+      "expected_key": "2001:db8:1234::/48"
+    },
+    {
+      "ip": "2001:db8:1234:56ff:ffff::9",
+      "ipv6_subnet": 128,
+      "expected_key": "2001:db8:1234:56ff:ffff::9/128"
+    },
+    {
+      "ip": "2001:db8:1234:56ff:ffff::9",
+      "ipv6_subnet": false,
+      "expected_key": "2001:db8:1234:56ff:ffff::9"
+    },
+    {
+      "ip": "fe80::1",
+      "ipv6_subnet": 56,
+      "expected_key": "fe80::/56"
+    },
+    {
+      "ip": "fe80::1",
+      "ipv6_subnet": 64,
+      "expected_key": "fe80::/64"
+    },
+    {
+      "ip": "fe80::1",
+      "ipv6_subnet": 48,
+      "expected_key": "fe80::/48"
+    },
+    {
+      "ip": "fe80::1",
+      "ipv6_subnet": 128,
+      "expected_key": "fe80::1/128"
+    },
+    {
+      "ip": "fe80::1",
+      "ipv6_subnet": false,
+      "expected_key": "fe80::1"
+    },
+    {
+      "ip": "2001:db8::",
+      "ipv6_subnet": 56,
+      "expected_key": "2001:db8::/56"
+    },
+    {
+      "ip": "2001:db8::",
+      "ipv6_subnet": 64,
+      "expected_key": "2001:db8::/64"
+    },
+    {
+      "ip": "2001:db8::",
+      "ipv6_subnet": 48,
+      "expected_key": "2001:db8::/48"
+    },
+    {
+      "ip": "2001:db8::",
+      "ipv6_subnet": 128,
+      "expected_key": "2001:db8::/128"
+    },
+    {
+      "ip": "2001:db8::",
+      "ipv6_subnet": false,
+      "expected_key": "2001:db8::"
+    },
+    {
+      "ip": "2001:0db8:0000:0000:0000:0000:0000:0001",
+      "ipv6_subnet": 56,
+      "expected_key": "2001:db8::/56"
+    },
+    {
+      "ip": "2001:0db8:0000:0000:0000:0000:0000:0001",
+      "ipv6_subnet": 64,
+      "expected_key": "2001:db8::/64"
+    },
+    {
+      "ip": "2001:0db8:0000:0000:0000:0000:0000:0001",
+      "ipv6_subnet": 48,
+      "expected_key": "2001:db8::/48"
+    },
+    {
+      "ip": "2001:0db8:0000:0000:0000:0000:0000:0001",
+      "ipv6_subnet": 128,
+      "expected_key": "2001:db8::1/128"
+    },
+    {
+      "ip": "2001:0db8:0000:0000:0000:0000:0000:0001",
+      "ipv6_subnet": false,
+      "expected_key": "2001:0db8:0000:0000:0000:0000:0000:0001"
+    }
+  ]
+}
