@@ -21,6 +21,11 @@
       "import": "./dist/sanitizers/index.mjs",
       "require": "./dist/sanitizers/index.js"
     },
+    "./html": {
+      "types": "./dist/html/index.d.ts",
+      "import": "./dist/html/index.mjs",
+      "require": "./dist/html/index.js"
+    },
     "./middleware": {
       "types": "./dist/middleware/index.d.ts",
       "import": "./dist/middleware/index.mjs",
@@ -141,7 +146,13 @@
   "author": "Gagan CM",
   "license": "MIT",
   "peerDependencies": {
-    "express": ">=4.0.0"
+    "express": ">=4.0.0",
+    "parse5": "^8.1.0"
+  },
+  "peerDependenciesMeta": {
+    "parse5": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@nestjs/common": "^11.1.28",
