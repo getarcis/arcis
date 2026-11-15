@@ -44,7 +44,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
-import { applyPlanToHeaders, parseForwardedProto, planSecurityHeaders } from './security-headers';
+import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── Hono duck-typed contracts ──────────────────────────────────────────────
 // Mirrors Hono's `Context` and `MiddlewareHandler` shapes closely enough
@@ -140,7 +140,7 @@ function clientIpOf(headers: Headers): string {
 
 function applySecurityHeaders(
   response: Response,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   request: Request,
 ): void {
   let isHttps = parseForwardedProto(request.headers.get('x-forwarded-proto')) === 'https';
@@ -149,7 +149,7 @@ function applySecurityHeaders(
   } catch {
     // Malformed request.url shouldn't crash the security-header pass.
   }
-  applyPlanToHeaders(response.headers, planSecurityHeaders(options, { isHttps }));
+  applyPlanToHeaders(response.headers, policy, policy.plan({ isHttps, request: request, response }));
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -166,6 +166,11 @@ function applySecurityHeaders(
  */
 export function arcisHono(options: ArcisHonoOptions = {}): HonoMiddleware {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Hono',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -230,8 +235,8 @@ export function arcisHono(options: ArcisHonoOptions = {}): HonoMiddleware {
 
     // 4. Apply security headers in-place on c.res. Hono guarantees c.res
     //    is set by the time the chain resumes.
-    if (headersCfg && c.res) {
-      applySecurityHeaders(c.res, typeof headersCfg === 'object' ? headersCfg : {}, request);
+    if (headerPolicy && c.res) {
+      applySecurityHeaders(c.res, headerPolicy, request);
     }
     return undefined;
   };

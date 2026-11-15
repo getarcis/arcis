@@ -75,7 +75,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
-import { applyPlanToHeaders, parseForwardedProto, planSecurityHeaders } from './security-headers';
+import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
@@ -171,7 +171,7 @@ function clientIpOf(request: Request): string {
 
 function applySecurityHeaders(
   response: Response,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   request: Request,
 ): void {
   let isHttps = parseForwardedProto(request.headers.get('x-forwarded-proto')) === 'https';
@@ -180,7 +180,7 @@ function applySecurityHeaders(
   } catch {
     // Malformed request.url: rely on X-Forwarded-Proto alone.
   }
-  applyPlanToHeaders(response.headers, planSecurityHeaders(options, { isHttps }));
+  applyPlanToHeaders(response.headers, policy, policy.plan({ isHttps, request: request, response }));
 }
 
 // ─── Pipeline ───────────────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ function applySecurityHeaders(
  * light.
  */
 interface ResolvedPipeline {
-  headersCfg: boolean | HeaderOptions;
+  headerPolicy: CompiledSecurityHeaders | null;
   limiter: ((key: string) => RateLimitDecision) | null;
   botEnabled: boolean;
   botAllow: Set<string>;
@@ -203,6 +203,11 @@ interface ResolvedPipeline {
 
 function resolvePipeline(options: ArcisNextOptions): ResolvedPipeline {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Next.js',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -213,7 +218,7 @@ function resolvePipeline(options: ArcisNextOptions): ResolvedPipeline {
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions = typeof botCfg === 'object' ? botCfg : {};
   return {
-    headersCfg,
+    headerPolicy,
     limiter,
     botEnabled,
     botAllow: new Set(botOpts.allow ?? ['SEARCH_ENGINE', 'SOCIAL', 'MONITORING']),
@@ -321,10 +326,10 @@ export function arcisProtect<TArgs extends unknown[]>(
     const blocked = checkRequest(request, pipeline);
     if (blocked) return blocked;
     const response = await handler(request, ...args);
-    if (pipeline.headersCfg) {
+    if (pipeline.headerPolicy) {
       applySecurityHeaders(
         response,
-        typeof pipeline.headersCfg === 'object' ? pipeline.headersCfg : {},
+        pipeline.headerPolicy,
         request,
       );
     }

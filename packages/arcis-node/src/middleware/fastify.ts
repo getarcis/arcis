@@ -41,7 +41,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
-import { parseForwardedProto, planSecurityHeaders } from './security-headers';
+import { applyPlanAfterHandler, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── Fastify duck-typed contracts ───────────────────────────────────────────
 // Mirror just enough of the FastifyInstance / FastifyRequest / FastifyReply
@@ -70,6 +70,8 @@ export interface FastifyReplyLike {
   header(name: string, value: string): FastifyReplyLike;
   /** Real Fastify replies expose this; used to strip fingerprinting headers. */
   removeHeader?(name: string): FastifyReplyLike;
+  /** Real Fastify replies expose this; lets route-set headers win in the baseline profile. */
+  hasHeader?(name: string): boolean;
   send(payload: unknown): FastifyReplyLike;
 }
 
@@ -194,16 +196,22 @@ function clientIpOf(request: FastifyRequestLike): string {
 
 function applySecurityHeaders(
   reply: FastifyReplyLike,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   request: FastifyRequestLike,
 ): void {
   // Fastify exposes only a path, so HTTPS is known from a trusted
   // X-Forwarded-Proto. Deployments behind a TLS proxy must set it for HSTS.
   const headers = request.headers ?? request.raw?.headers ?? {};
   const isHttps = parseForwardedProto(headerValue(headers, 'x-forwarded-proto')) === 'https';
-  const plan = planSecurityHeaders(options, { isHttps });
-  for (const [name, value] of plan.set) reply.header(name, value);
-  for (const name of plan.remove) reply.removeHeader?.(name);
+  applyPlanAfterHandler(
+    {
+      has: (name) => reply.hasHeader?.(name) ?? false,
+      set: (name, value) => reply.header(name, value),
+      remove: (name) => reply.removeHeader?.(name),
+    },
+    policy,
+    policy.plan({ isHttps, request, response: reply }),
+  );
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -221,6 +229,11 @@ export async function arcisFastify(
   options: ArcisFastifyOptions = {},
 ): Promise<void> {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Fastify',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -274,14 +287,14 @@ export async function arcisFastify(
     }
   });
 
-  if (headersCfg) {
+  if (headerPolicy) {
     fastify.addHook('onSend', async (request, reply, payload) => {
       // onSend runs after the route handler but before the response is
       // flushed — last chance to mutate headers. Fastify expects the
       // (possibly transformed) payload returned; we don't touch it.
       applySecurityHeaders(
         reply,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
         request,
       );
       return payload;

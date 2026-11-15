@@ -5,11 +5,19 @@
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { HeaderOptions } from '../core/types';
-import { parseForwardedProto, planSecurityHeaders } from './security-headers';
+import { generateCspNonce } from './csp';
+import { compileSecurityHeaders, parseForwardedProto, type SecurityHeaderPlan } from './security-headers';
 
 /**
  * Create Express middleware for security headers.
- * Sets CSP, HSTS, X-Frame-Options, and other security headers.
+ *
+ * Without `profile`, the historical Arcis defaults apply. With
+ * `profile: 'baseline'`, defaults and options match Helmet 8, so
+ * `helmet(options)` can be replaced by `createHeaders({ profile: 'baseline', ...options })`.
+ * Invalid options throw here, at construction.
+ *
+ * Headers are set before the route handler runs, so a header the route sets
+ * itself takes precedence.
  *
  * @param options - Header configuration
  * @returns Express middleware
@@ -19,16 +27,32 @@ import { parseForwardedProto, planSecurityHeaders } from './security-headers';
  *
  * @example
  * app.use(createHeaders({
- *   frameOptions: 'SAMEORIGIN',
- *   contentSecurityPolicy: "default-src 'self'"
+ *   profile: 'baseline',
+ *   contentSecurityPolicy: { nonce: true },
  * }));
+ * // In a view: <script nonce="<%= cspNonce %>">...</script> (res.locals.cspNonce)
  */
 export function createHeaders(options: HeaderOptions = {}): RequestHandler {
+  const policy = compileSecurityHeaders(options);
+
   return (req: Request, res: Response, next: NextFunction) => {
-    const forwardedProto = parseForwardedProto(req.headers['x-forwarded-proto'] as string | undefined);
-    const plan = planSecurityHeaders(options, {
-      isHttps: req.secure || forwardedProto === 'https',
-    });
+    let plan: SecurityHeaderPlan;
+    try {
+      // Expose the nonce before CSP function values run, so they can read it.
+      const nonce = policy.usesNonce ? generateCspNonce() : undefined;
+      if (nonce) res.locals.cspNonce = nonce;
+      const forwardedProto = parseForwardedProto(req.headers['x-forwarded-proto'] as string | undefined);
+      plan = policy.plan({
+        isHttps: req.secure || forwardedProto === 'https',
+        request: req,
+        response: res,
+        nonce,
+      });
+    } catch (err) {
+      // A CSP function value threw or returned an invalid entry (as in Helmet).
+      next(err);
+      return;
+    }
 
     for (const [name, value] of plan.set) res.setHeader(name, value);
     for (const name of plan.remove) res.removeHeader(name);

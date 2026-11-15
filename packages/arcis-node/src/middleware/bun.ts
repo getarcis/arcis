@@ -48,7 +48,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
-import { applyPlanToHeaders, parseForwardedProto, planSecurityHeaders } from './security-headers';
+import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── Bun + Hono duck-typed contracts ────────────────────────────────────────
 
@@ -136,14 +136,14 @@ function botInputFor(headers: Headers): ExpressRequestLike {
 
 function applySecurityHeaders(
   response: Response,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   url: URL,
-  reqHeaders: Headers,
+  request: Request,
 ): void {
   const isHttps =
     url.protocol === 'https:' ||
-    parseForwardedProto(reqHeaders.get('x-forwarded-proto')) === 'https';
-  applyPlanToHeaders(response.headers, planSecurityHeaders(options, { isHttps }));
+    parseForwardedProto(request.headers.get('x-forwarded-proto')) === 'https';
+  applyPlanToHeaders(response.headers, policy, policy.plan({ isHttps, request: request, response }));
 }
 
 interface BotConfig {
@@ -221,6 +221,11 @@ export function arcisBun(
   handler: BunFetchHandler,
 ): BunFetchHandler {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Bun',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const limiter = rateLimitCfg
     ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
@@ -244,12 +249,12 @@ export function arcisBun(
 
     const response = await handler(req, server);
 
-    if (headersCfg) {
+    if (headerPolicy) {
       applySecurityHeaders(
         response,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
         url,
-        req.headers,
+        req,
       );
     }
 
@@ -264,6 +269,11 @@ export function arcisBun(
  */
 export function arcisHono(options: ArcisBunOptions = {}): HonoMiddlewareHandler {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Bun',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const limiter = rateLimitCfg
     ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
@@ -286,12 +296,12 @@ export function arcisHono(options: ArcisBunOptions = {}): HonoMiddlewareHandler 
 
     await next();
 
-    if (headersCfg) {
+    if (headerPolicy) {
       applySecurityHeaders(
         c.res,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
         url,
-        c.req.raw.headers,
+        c.req.raw,
       );
     }
     return;

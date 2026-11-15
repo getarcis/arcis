@@ -22,6 +22,9 @@ export type {
   RateLimiterMiddleware,
   // Headers
   HeaderOptions,
+  LegacyHeaderOptions,
+  BaselineHeaderOptions,
+  ReferrerPolicyToken,
   HstsOptions,
   // Validation
   ValidationConfig,

@@ -39,7 +39,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
-import { applyPlanToHeaders, parseForwardedProto, planSecurityHeaders } from './security-headers';
+import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── Astro duck-typed contracts ─────────────────────────────────────────────
 
@@ -121,13 +121,13 @@ function botInputFor(headers: Headers): ExpressRequestLike {
 
 function applySecurityHeaders(
   response: Response,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   context: AstroAPIContext,
 ): void {
   const isHttps =
     context.url.protocol === 'https:' ||
     parseForwardedProto(context.request.headers.get('x-forwarded-proto')) === 'https';
-  applyPlanToHeaders(response.headers, planSecurityHeaders(options, { isHttps }));
+  applyPlanToHeaders(response.headers, policy, policy.plan({ isHttps, request: context, response }));
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -140,6 +140,11 @@ function applySecurityHeaders(
  */
 export function onRequest(options: ArcisAstroOptions = {}): AstroMiddlewareHandler {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Astro',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -195,8 +200,8 @@ export function onRequest(options: ArcisAstroOptions = {}): AstroMiddlewareHandl
 
     const response = await next();
 
-    if (headersCfg) {
-      applySecurityHeaders(response, typeof headersCfg === 'object' ? headersCfg : {}, context);
+    if (headerPolicy) {
+      applySecurityHeaders(response, headerPolicy, context);
     }
 
     return response;

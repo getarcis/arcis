@@ -34,7 +34,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
-import { planSecurityHeaders } from './security-headers';
+import { compileSecurityHeaders, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── h3 / Nuxt duck-typed contracts ─────────────────────────────────────────
 
@@ -135,9 +135,10 @@ function isHttpsRequest(req: NodeIncomingMessageLike): boolean {
 function applySecurityHeaders(
   res: NodeServerResponseLike,
   req: NodeIncomingMessageLike,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
 ): void {
-  const plan = planSecurityHeaders(options, { isHttps: isHttpsRequest(req) });
+  // Applied before the route handler runs, so a header the route sets wins.
+  const plan = policy.plan({ isHttps: isHttpsRequest(req), request: req, response: res });
   for (const [name, value] of plan.set) res.setHeader(name, value);
   for (const name of plan.remove) res.removeHeader(name);
 }
@@ -153,6 +154,11 @@ function applySecurityHeaders(
  */
 export function arcisHandler(options: ArcisNuxtOptions = {}): ArcisH3Handler {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Nuxt',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -209,8 +215,8 @@ export function arcisHandler(options: ArcisNuxtOptions = {}): ArcisH3Handler {
 
     // 3. Security headers — set up-front so they're sent with the eventual
     // response from the downstream Nuxt route handler.
-    if (headersCfg) {
-      applySecurityHeaders(res, req, typeof headersCfg === 'object' ? headersCfg : {});
+    if (headerPolicy) {
+      applySecurityHeaders(res, req, headerPolicy);
     }
   };
 }

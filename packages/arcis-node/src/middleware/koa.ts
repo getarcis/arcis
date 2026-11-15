@@ -40,7 +40,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
-import { parseForwardedProto, planSecurityHeaders } from './security-headers';
+import { applyPlanAfterHandler, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── Koa duck-typed contracts ───────────────────────────────────────────────
 // Mirrors Koa's `Context` / `Request` / `Response` closely enough that real
@@ -58,6 +58,8 @@ export interface KoaResponseLike {
   status: number;
   body: unknown;
   set(name: string, value: string): void;
+  /** Real Koa exposes `ctx.response.has`; lets route-set headers win in the baseline profile. */
+  has?(name: string): boolean;
 }
 
 export interface KoaContextLike {
@@ -180,15 +182,21 @@ function clientIpOf(ctx: KoaContextLike): string {
 
 function applySecurityHeaders(
   ctx: KoaContextLike,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
 ): void {
   // Koa's request.url is path-only, so HTTPS is known from a trusted
   // X-Forwarded-Proto. Deployments behind a TLS proxy must set it for HSTS.
   const isHttps =
     parseForwardedProto(headerValue(ctx.request.headers ?? {}, 'x-forwarded-proto')) === 'https';
-  const plan = planSecurityHeaders(options, { isHttps });
-  for (const [name, value] of plan.set) ctx.set(name, value);
-  for (const name of plan.remove) ctx.remove?.(name);
+  applyPlanAfterHandler(
+    {
+      has: (name) => ctx.response.has?.(name) ?? false,
+      set: (name, value) => ctx.set(name, value),
+      remove: (name) => ctx.remove?.(name),
+    },
+    policy,
+    policy.plan({ isHttps, request: ctx.request, response: ctx.response }),
+  );
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -206,6 +214,11 @@ function applySecurityHeaders(
  */
 export function arcisKoa(options: ArcisKoaOptions = {}): KoaMiddleware {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Koa',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -263,10 +276,10 @@ export function arcisKoa(options: ArcisKoaOptions = {}): KoaMiddleware {
     await next();
 
     // 4. Security headers — on the way back out, before Koa flushes.
-    if (headersCfg) {
+    if (headerPolicy) {
       applySecurityHeaders(
         ctx,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
       );
     }
   };

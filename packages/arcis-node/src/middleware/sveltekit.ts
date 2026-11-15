@@ -39,7 +39,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
-import { applyPlanToHeaders, parseForwardedProto, planSecurityHeaders } from './security-headers';
+import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── SvelteKit duck-typed contracts ─────────────────────────────────────────
 // Mirrors `@sveltejs/kit`'s `RequestEvent` / `Handle` shape closely enough
@@ -135,13 +135,13 @@ function botInputFor(headers: Headers): ExpressRequestLike {
 
 function applySecurityHeaders(
   response: Response,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   event: SvelteKitRequestEvent,
 ): void {
   const isHttps =
     event.url.protocol === 'https:' ||
     parseForwardedProto(event.request.headers.get('x-forwarded-proto')) === 'https';
-  applyPlanToHeaders(response.headers, planSecurityHeaders(options, { isHttps }));
+  applyPlanToHeaders(response.headers, policy, policy.plan({ isHttps, request: event, response }));
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -154,6 +154,11 @@ function applySecurityHeaders(
  */
 export function arcisHandle(options: ArcisHandleOptions = {}): SvelteKitHandle {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'SvelteKit',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -215,8 +220,8 @@ export function arcisHandle(options: ArcisHandleOptions = {}): SvelteKitHandle {
     const response = await resolve(event);
 
     // 4. Apply security headers (in-place; SvelteKit's response headers are mutable)
-    if (headersCfg) {
-      applySecurityHeaders(response, typeof headersCfg === 'object' ? headersCfg : {}, event);
+    if (headerPolicy) {
+      applySecurityHeaders(response, headerPolicy, event);
     }
 
     return response;
