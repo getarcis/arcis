@@ -333,6 +333,45 @@ Like Helmet, the baseline profile does not send `Cross-Origin-Embedder-Policy` (
 
 ---
 
+## HTML Sanitizer
+
+When your app accepts HTML on purpose (comments, rich text, CMS content), clean it with the parser-backed sanitizer. It produces the same output as DOMPurify 3.4 with the same configuration, built on a standards-compliant HTML5 parser instead of a browser DOM. It is an add-on, so the core packages stay dependency-free.
+
+```js
+// npm install @arcis/node parse5
+import { sanitizeHtml } from '@arcis/node/html';
+
+sanitizeHtml('<p>Hi<img src=x onerror=alert(1)></p>');          // '<p>Hi<img src="x"></p>'
+sanitizeHtml(dirty, { ALLOWED_TAGS: ['b', 'i', 'a'], ALLOWED_ATTR: ['href'] });
+```
+
+```python
+# pip install "arcis[html]"
+from arcis.html import sanitize_html
+
+sanitize_html(dirty, allowed_tags=["b", "i", "a"], allowed_attr=["href"])
+```
+
+```go
+// go get github.com/getarcis/arcis-go/htmlsanitizer
+clean := htmlsanitizer.Sanitize(dirty)
+
+s, err := htmlsanitizer.New(htmlsanitizer.Config{AllowedTags: []string{"b", "i", "a"}})
+```
+
+Moving from DOMPurify: `DOMPurify.sanitize(dirty, cfg)` becomes `sanitizeHtml(dirty, cfg)` with the same option names.
+
+What you get compared with DOMPurify on the server:
+
+- **No jsdom.** DOMPurify needs a full DOM implementation on the server. Arcis needs only the parser, and the Node add-on uses no Node built-ins. It is about 16x faster than DOMPurify on jsdom over the shared cases.
+- **Python and Go.** The same behavior in all three SDKs, checked against the same shared cases.
+- **Misconfiguration fails loudly.** An unknown option (for example a misspelled `ALLOWED_TAG`) throws instead of silently falling back to the default allowlist. Options that only apply to browser DOM objects are rejected the same way.
+- **Explainable output.** `sanitizeHtmlDetailed()` returns the cleaned HTML plus every element and attribute that was removed, for logging or review.
+
+Every SDK must reproduce DOMPurify's exact output on a shared set of 668 cases: DOMPurify's own published test payloads, one case per option, benign rich text, and seeded fuzz cases. Expected values come from running DOMPurify, and the Node suite also compares against DOMPurify directly on every run. Details are in [`spec/API_SPEC.md`](spec/API_SPEC.md#11-html-sanitizer-parser-backed).
+
+---
+
 ## Core Functions (Framework-Agnostic)
 
 Every function below works with plain strings and objects. No `req`, `res`, or framework dependency. Works in Express, Fastify, Koa, Hono, Nest, Bun, Deno, serverless, or anywhere else.
