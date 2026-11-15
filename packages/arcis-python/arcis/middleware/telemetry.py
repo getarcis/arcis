@@ -7,7 +7,7 @@ the WSGI adapter (``arcis.middleware.main.Arcis`` -> Flask) to:
 
 * attach a per-request attribution marker (vector, rule, severity, decision,
   matched_pattern, reason)
-* infer the final decision from the response status when no marker is set
+* preserve Arcis decisions independently of the application's response status
 * build a ``TelemetryEvent`` with the captured latency
 * hand the event to a ``TelemetryClient`` / ``AsyncTelemetryClient``
 """
@@ -56,8 +56,8 @@ class ArcisTelemetryMarker:
     On Starlette/FastAPI: stored at ``request.state._arcis_marker``.
     On Flask:             stored at ``flask.g._arcis_marker``.
 
-    A marker is optional. If absent, the emitter infers ``decision`` from the
-    response status code (see ``infer_decision``).
+    A marker is optional. If absent, the request passed through Arcis, even
+    when the application subsequently returns an error.
     """
 
     vector: Optional[str] = None
@@ -78,15 +78,11 @@ def threat_to_vector(threat_type: str) -> str:
 
 
 def infer_decision(status: int) -> TelemetryDecision:
-    """Default decision when no marker was set.
+    """Pass-through without an Arcis decision, regardless of HTTP status.
 
-    Mirrors Node's inferDecision: 400/403/429 -> ``deny``, everything else
-    treated as ``allow``. The middleware is free to set an explicit decision
-    via the marker for cases that don't fit (e.g. ``challenge`` on a sanitize-
-    in-place rewrite that returned 200).
+    The status argument is retained for compatibility with existing callers.
+    An application error alone is not evidence of an Arcis rejection.
     """
-    if status in (400, 403, 429):
-        return "deny"
     return "allow"
 
 
@@ -127,13 +123,6 @@ def build_event(
         severity = None
         matched_pattern = None
         reason = None
-
-    # Rate-limit fallback attribution: a 429 with no marker should still show
-    # up as a rate-limit denial in the dashboard.
-    if status == 429 and vector is None:
-        vector = "rate-limit"
-        rule = "rate-limit/exceeded"
-        severity = "medium"
 
     return TelemetryEvent(
         ts=ts,

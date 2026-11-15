@@ -37,6 +37,8 @@ export { createRateLimiter, rateLimit } from './middleware/rate-limit';
 export { createSlidingWindowLimiter } from './middleware/rate-limit-sliding';
 export { createTokenBucketLimiter } from './middleware/rate-limit-token';
 export { createHeaders, securityHeaders } from './middleware/headers';
+export { dangerouslyDisableDefaultSrc } from './middleware/csp';
+export type { ContentSecurityPolicyOptions, CspDirectiveValue, CspDirectiveValueEntry } from './middleware/csp';
 export { errorHandler, createErrorHandler } from './middleware/error-handler';
 export { safeCors, createCors } from './middleware/cors';
 export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from './middleware/cookies';
@@ -225,6 +227,9 @@ export type {
   RateLimiterMiddleware,
   // Headers
   HeaderOptions,
+  LegacyHeaderOptions,
+  BaselineHeaderOptions,
+  ReferrerPolicyToken,
   HstsOptions,
   // Validation
   ValidationConfig,

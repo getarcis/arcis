@@ -25,12 +25,20 @@ Usage:
         'csp': None,
         'is_dev': False,  # Set to True for development
     }
+
+    # 'headers' accepts True (legacy profile; 'csp' overrides its
+    # Content-Security-Policy), a dict of SecurityHeaders keyword options, a
+    # SecurityHeaders instance, or False. Baseline (Helmet 8 compatible):
+    ARCIS_CONFIG = {
+        'headers': {'profile': 'baseline', 'content_security_policy': {'nonce': True}},
+    }
+    # With the baseline CSP nonce on, views read it from request.csp_nonce.
 """
 
 import functools
 import json
 import logging
-from typing import Callable, List, Optional, Dict, Any
+from typing import Callable, List, Mapping, Optional, Dict, Any
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -38,7 +46,7 @@ from django.utils.deprecation import MiddlewareMixin
 
 from .sanitizers.sanitize import Sanitizer, scan_threats
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
-from .middleware.headers import SecurityHeaders
+from .middleware.headers import SecurityHeaders, build_security_headers
 from .middleware.error_handler import ErrorHandler
 from .stores.memory import InMemoryStore
 from .logging.safe_logger import SafeLogger
@@ -55,6 +63,27 @@ def get_client_ip(request: HttpRequest) -> str:
     if x_real_ip:
         return x_real_ip
     return request.META.get('REMOTE_ADDR', 'unknown')
+
+
+def _expose_csp_nonce(
+    security_headers: Optional[SecurityHeaders], request: HttpRequest
+) -> Optional[str]:
+    """Generate the baseline CSP nonce and expose it as ``request.csp_nonce``."""
+    nonce = security_headers.new_nonce() if security_headers else None
+    if nonce is not None:
+        request.csp_nonce = nonce
+    return nonce
+
+
+def _remove_fingerprinting_headers(
+    response: HttpResponse, security_headers: Optional[SecurityHeaders]
+) -> None:
+    """Strip Server, and X-Powered-By unless the baseline profile decides it."""
+    if 'Server' in response:
+        del response['Server']
+    baseline = security_headers is not None and security_headers.profile == 'baseline'
+    if not baseline and 'X-Powered-By' in response:
+        del response['X-Powered-By']
 
 
 class ArcisMiddleware(MiddlewareMixin):
@@ -129,14 +158,10 @@ class ArcisMiddleware(MiddlewareMixin):
         self.rate_limiter = ArcisMiddleware._rate_limiter if rate_limit_enabled else None
         
         # Initialize security headers
-        headers_enabled = config.get('headers', True)
-        if headers_enabled:
-            self.security_headers = SecurityHeaders(
-                content_security_policy=config.get('csp'),
-            )
-        else:
-            self.security_headers = None
-        
+        self.security_headers = build_security_headers(
+            config.get('headers', True), config.get('csp')
+        )
+
         # Initialize error handler
         error_handler_enabled = config.get('error_handler', True)
         is_dev = config.get('is_dev', settings.DEBUG)
@@ -146,6 +171,8 @@ class ArcisMiddleware(MiddlewareMixin):
             self.error_handler = None
     
     def __call__(self, request: HttpRequest) -> HttpResponse:
+        csp_nonce = _expose_csp_nonce(self.security_headers, request)
+
         # Rate limiting check
         rate_limit_info = None
         if self.rate_limiter:
@@ -251,21 +278,16 @@ class ArcisMiddleware(MiddlewareMixin):
         
         # Add security headers
         if self.security_headers:
-            for header, value in self.security_headers.get_headers().items():
-                response[header] = value
-        
+            self.security_headers.apply(response, request=request, nonce=csp_nonce)
+
         # Add rate limit headers
         if rate_limit_info:
             response['X-RateLimit-Limit'] = str(rate_limit_info['limit'])
             response['X-RateLimit-Remaining'] = str(rate_limit_info['remaining'])
             response['X-RateLimit-Reset'] = str(rate_limit_info['reset'])
-        
-        # Remove fingerprinting headers
-        if 'Server' in response:
-            del response['Server']
-        if 'X-Powered-By' in response:
-            del response['X-Powered-By']
-        
+
+        _remove_fingerprinting_headers(response, self.security_headers)
+
         return response
 
 
@@ -401,22 +423,20 @@ class ArcisHeadersMiddleware(MiddlewareMixin):
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]):
         self.get_response = get_response
         config = getattr(settings, 'ARCIS_CONFIG', {})
-        self.security_headers = SecurityHeaders(
-            content_security_policy=config.get('csp'),
-        )
-    
+        # This middleware always applies headers; a False 'headers' entry
+        # (meant for ArcisMiddleware) falls back to the legacy profile.
+        headers_option = config.get('headers', True)
+        if not isinstance(headers_option, (Mapping, SecurityHeaders)):
+            headers_option = True
+        self.security_headers = build_security_headers(headers_option, config.get('csp'))
+
     def __call__(self, request: HttpRequest) -> HttpResponse:
+        csp_nonce = _expose_csp_nonce(self.security_headers, request)
         response = self.get_response(request)
-        
-        for header, value in self.security_headers.get_headers().items():
-            response[header] = value
-        
-        # Remove fingerprinting headers
-        if 'Server' in response:
-            del response['Server']
-        if 'X-Powered-By' in response:
-            del response['X-Powered-By']
-        
+
+        self.security_headers.apply(response, request=request, nonce=csp_nonce)
+        _remove_fingerprinting_headers(response, self.security_headers)
+
         return response
 
 

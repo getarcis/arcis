@@ -31,10 +31,9 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
+import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -42,6 +41,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { applyPlanAfterHandler, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── Fastify duck-typed contracts ───────────────────────────────────────────
 // Mirror just enough of the FastifyInstance / FastifyRequest / FastifyReply
@@ -68,6 +68,10 @@ export interface FastifyRequestLike {
 export interface FastifyReplyLike {
   status(code: number): FastifyReplyLike;
   header(name: string, value: string): FastifyReplyLike;
+  /** Real Fastify replies expose this; used to strip fingerprinting headers. */
+  removeHeader?(name: string): FastifyReplyLike;
+  /** Real Fastify replies expose this; lets route-set headers win in the baseline profile. */
+  hasHeader?(name: string): boolean;
   send(payload: unknown): FastifyReplyLike;
 }
 
@@ -192,79 +196,22 @@ function clientIpOf(request: FastifyRequestLike): string {
 
 function applySecurityHeaders(
   reply: FastifyReplyLike,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   request: FastifyRequestLike,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-
-  if (contentSecurityPolicy) {
-    reply.header(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) reply.header('X-XSS-Protection', '0');
-  if (noSniff) reply.header('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) reply.header('X-Frame-Options', frameOptions);
-
-  // HSTS only over HTTPS — sending it over HTTP can brick HTTP-only dev
-  // servers. Trust X-Forwarded-Proto only when it's exactly 'http' or
-  // 'https'; reject malformed values.
+  // Fastify exposes only a path, so HTTPS is known from a trusted
+  // X-Forwarded-Proto. Deployments behind a TLS proxy must set it for HSTS.
   const headers = request.headers ?? request.raw?.headers ?? {};
-  const xfp = headerValue(headers, 'x-forwarded-proto')
-    ?.split(',')[0]
-    ?.trim()
-    ?.toLowerCase();
-  const trustedXfp = xfp === 'https' || xfp === 'http' ? xfp : undefined;
-  // We don't know the protocol from request.url alone (Fastify gives a
-  // path, not a full URL), so fall back to the trusted XFP. Without XFP
-  // and without a way to inspect the listening socket, default to
-  // non-HTTPS — HSTS won't be set. Production deployments behind a TLS-
-  // terminating proxy MUST set X-Forwarded-Proto to get HSTS.
-  const isHttps = trustedXfp === 'https';
-
-  if (hsts && isHttps) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    reply.header('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) reply.header('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) reply.header('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) reply.header('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) reply.header('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) reply.header('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) reply.header('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) reply.header('X-DNS-Prefetch-Control', 'off');
-  reply.header('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    reply.header(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    reply.header('Pragma', 'no-cache');
-    reply.header('Expires', '0');
-  }
+  const isHttps = parseForwardedProto(headerValue(headers, 'x-forwarded-proto')) === 'https';
+  applyPlanAfterHandler(
+    {
+      has: (name) => reply.hasHeader?.(name) ?? false,
+      set: (name, value) => reply.header(name, value),
+      remove: (name) => reply.removeHeader?.(name),
+    },
+    policy,
+    policy.plan({ isHttps, request, response: reply }),
+  );
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -282,6 +229,11 @@ export async function arcisFastify(
   options: ArcisFastifyOptions = {},
 ): Promise<void> {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Fastify',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -335,14 +287,14 @@ export async function arcisFastify(
     }
   });
 
-  if (headersCfg) {
+  if (headerPolicy) {
     fastify.addHook('onSend', async (request, reply, payload) => {
       // onSend runs after the route handler but before the response is
       // flushed — last chance to mutate headers. Fastify expects the
       // (possibly transformed) payload returned; we don't touch it.
       applySecurityHeaders(
         reply,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
         request,
       );
       return payload;

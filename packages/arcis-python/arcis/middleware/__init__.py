@@ -4,7 +4,7 @@ Arcis middleware package.
 
 from .main import Arcis
 from .rate_limit import RateLimiter, RateLimitExceeded
-from .headers import SecurityHeaders
+from .headers import DANGEROUSLY_DISABLE_DEFAULT_SRC, SecurityHeaders
 from .error_handler import ErrorHandler, create_error_handler
 from .cors import SafeCors, create_cors
 from .cookies import SecureCookieDefaults, create_secure_cookies
@@ -19,6 +19,7 @@ __all__ = [
     "RateLimiter",
     "RateLimitExceeded",
     "SecurityHeaders",
+    "DANGEROUSLY_DISABLE_DEFAULT_SRC",
     "ErrorHandler",
     "create_error_handler",
     "SafeCors",

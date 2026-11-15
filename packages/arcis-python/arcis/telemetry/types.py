@@ -38,6 +38,10 @@ class TelemetryEvent:
     reason: Optional[str] = None
     matched_pattern: Optional[str] = None
     latency_ms: Optional[float] = None
+    schema_version: Optional[str] = None
+    sdk: Optional[str] = None
+    route_id: Optional[str] = None
+    policy_id: Optional[str] = None
 
     def to_wire(self) -> dict[str, Any]:
         """Serialize to the JSON shape the dashboard server accepts.
@@ -71,6 +75,14 @@ class TelemetryEvent:
             wire["matchedPattern"] = self.matched_pattern
         if self.latency_ms is not None:
             wire["latencyMs"] = self.latency_ms
+        if self.schema_version is not None:
+            wire["schemaVersion"] = self.schema_version
+        if self.sdk is not None:
+            wire["sdk"] = self.sdk
+        if self.route_id is not None:
+            wire["routeId"] = self.route_id
+        if self.policy_id is not None:
+            wire["policyId"] = self.policy_id
         return wire
 
 
@@ -95,6 +107,9 @@ class TelemetryOptions:
     # Called once per overflow event with the count of events dropped in
     # the current outage window. Resets on successful flush.
     on_queue_overflow: Optional[Callable[[int], None]] = None
+    # Static application labels; never populate from request values.
+    route_id: Optional[str] = None
+    policy_id: Optional[str] = None
 
 
 __all__ = [

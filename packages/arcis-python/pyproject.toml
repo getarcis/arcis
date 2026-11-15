@@ -40,6 +40,8 @@ django = ["django>=3.2"]
 redis = ["redis>=4.0.0"]
 telemetry = ["httpx>=0.24.0"]
 interactive = ["questionary>=2.0.0"]
+# Parser-backed HTML sanitizer (arcis.html). JustHTML needs Python 3.10+.
+html = ["justhtml>=3.17.1,<3.18; python_version >= '3.10'"]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -50,6 +52,7 @@ dev = [
     "flask>=2.0.0",
     "fastapi>=0.68.0",
     "httpx>=0.24.0",
+    "justhtml>=3.17.1,<3.18; python_version >= '3.10'",
 ]
 
 [project.scripts]

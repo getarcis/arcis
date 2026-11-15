@@ -30,10 +30,9 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
+import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -41,6 +40,7 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { applyPlanAfterHandler, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
 
 // ─── Koa duck-typed contracts ───────────────────────────────────────────────
 // Mirrors Koa's `Context` / `Request` / `Response` closely enough that real
@@ -58,6 +58,8 @@ export interface KoaResponseLike {
   status: number;
   body: unknown;
   set(name: string, value: string): void;
+  /** Real Koa exposes `ctx.response.has`; lets route-set headers win in the baseline profile. */
+  has?(name: string): boolean;
 }
 
 export interface KoaContextLike {
@@ -70,6 +72,8 @@ export interface KoaContextLike {
   ip?: string;
   /** `ctx.set` shortcuts to `ctx.response.set` in real Koa. */
   set(name: string, value: string): void;
+  /** `ctx.remove` shortcuts to `ctx.response.remove` in real Koa. */
+  remove?(name: string): void;
   /** Setting `ctx.status` shortcuts to `ctx.response.status`. */
   status: number;
   /** Setting `ctx.body` shortcuts to `ctx.response.body`. */
@@ -178,76 +182,21 @@ function clientIpOf(ctx: KoaContextLike): string {
 
 function applySecurityHeaders(
   ctx: KoaContextLike,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-
-  if (contentSecurityPolicy) {
-    ctx.set(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) ctx.set('X-XSS-Protection', '0');
-  if (noSniff) ctx.set('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) ctx.set('X-Frame-Options', frameOptions);
-
-  // HSTS only over HTTPS — sending it over HTTP can brick HTTP-only dev
-  // servers. Trust X-Forwarded-Proto only when 'http' or 'https'. Koa's
-  // `ctx.request.url` is a path-only string; without a way to read the
-  // listening socket's TLS state from a duck-typed contract, fall back
-  // to XFP. Production deployments behind a TLS-terminating proxy MUST
-  // set X-Forwarded-Proto to receive HSTS — same contract as the Fastify
-  // and Express adapters.
-  const xfp = headerValue(ctx.request.headers ?? {}, 'x-forwarded-proto')
-    ?.split(',')[0]
-    ?.trim()
-    ?.toLowerCase();
-  const trustedXfp = xfp === 'https' || xfp === 'http' ? xfp : undefined;
-  const isHttps = trustedXfp === 'https';
-
-  if (hsts && isHttps) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    ctx.set('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) ctx.set('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) ctx.set('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) ctx.set('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) ctx.set('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) ctx.set('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) ctx.set('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) ctx.set('X-DNS-Prefetch-Control', 'off');
-  ctx.set('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    ctx.set(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    ctx.set('Pragma', 'no-cache');
-    ctx.set('Expires', '0');
-  }
+  // Koa's request.url is path-only, so HTTPS is known from a trusted
+  // X-Forwarded-Proto. Deployments behind a TLS proxy must set it for HSTS.
+  const isHttps =
+    parseForwardedProto(headerValue(ctx.request.headers ?? {}, 'x-forwarded-proto')) === 'https';
+  applyPlanAfterHandler(
+    {
+      has: (name) => ctx.response.has?.(name) ?? false,
+      set: (name, value) => ctx.set(name, value),
+      remove: (name) => ctx.remove?.(name),
+    },
+    policy,
+    policy.plan({ isHttps, request: ctx.request, response: ctx.response }),
+  );
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -265,6 +214,11 @@ function applySecurityHeaders(
  */
 export function arcisKoa(options: ArcisKoaOptions = {}): KoaMiddleware {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Koa',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
@@ -322,10 +276,10 @@ export function arcisKoa(options: ArcisKoaOptions = {}): KoaMiddleware {
     await next();
 
     // 4. Security headers — on the way back out, before Koa flushes.
-    if (headersCfg) {
+    if (headerPolicy) {
       applySecurityHeaders(
         ctx,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
       );
     }
   };
