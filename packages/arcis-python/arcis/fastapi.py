@@ -16,7 +16,7 @@ from starlette.responses import Response, JSONResponse
 
 from .sanitizers.sanitize import Sanitizer, scan_threats
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
-from .middleware.headers import SecurityHeaders
+from .middleware.headers import HeadersOption, SecurityHeaders, build_security_headers
 from .middleware.error_handler import ErrorHandler
 from .middleware.bot_detection import BotProtection, BotDenied
 from .middleware.sensitive_paths import detect_sensitive_path, SENSITIVE_PATH_PATTERNS
@@ -272,8 +272,13 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # disables.
         forwarded_headers: bool = True,
         trusted_hosts: Optional[List[str]] = None,
-        # Security headers options
-        headers: bool = True,
+        # Security headers options. headers=True applies the legacy profile
+        # (csp overrides its Content-Security-Policy); a dict is passed to
+        # SecurityHeaders, e.g. {"profile": "baseline", "x_frame_options":
+        # {"action": "deny"}}; a SecurityHeaders instance is used as is;
+        # False disables. With the baseline CSP nonce on, the per-request
+        # nonce is at request.state.csp_nonce before the route runs.
+        headers: HeadersOption = True,
         csp: Optional[str] = None,
         # Error handler options
         error_handling: bool = True,
@@ -341,9 +346,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                     window_ms=rate_limit_window_ms,
                 )
         
-        self.security_headers = security_headers or (SecurityHeaders(
-            content_security_policy=csp,
-        ) if headers else None)
+        self.security_headers = security_headers or build_security_headers(headers, csp)
 
         # Bot UA classification (v1.7 W1 wire-up). Constructed only when
         # bot=True, kept as instance attribute so dispatch can call it on
@@ -548,6 +551,12 @@ class ArcisMiddleware(BaseHTTPMiddleware):
             # ``request.state.__arcis`` would be mangled to
             # ``request.state._ArcisMiddleware__arcis`` inside this class.
             setattr(request.state, ARCIS_MARKER_ATTR, ArcisTelemetryMarker())
+
+        # Baseline CSP nonce: exposed before the route runs so templates can
+        # read request.state.csp_nonce; the same value goes in the header.
+        csp_nonce = self.security_headers.new_nonce() if self.security_headers else None
+        if csp_nonce is not None:
+            request.state.csp_nonce = csp_nonce
 
         # Forwarded-header inspection (v1.7 W7). Loopback in a forwarded /
         # client-IP header is a spoof; optional trusted-host allowlist on
@@ -1080,11 +1089,11 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 self._maybe_record(request, None, telemetry_start)
                 raise
         
-        # Add security headers
+        # Add security headers. Legacy overwrites; baseline keeps headers the
+        # route set and removes X-Powered-By unless configured otherwise.
         if self.security_headers:
-            for header, value in self.security_headers.get_headers().items():
-                response.headers[header] = value
-        
+            self.security_headers.apply(response, request=request, nonce=csp_nonce)
+
         # Add rate limit headers
         if rate_limit_info:
             response.headers["X-RateLimit-Limit"] = str(rate_limit_info["limit"])

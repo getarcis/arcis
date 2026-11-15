@@ -9,7 +9,7 @@ from typing import Optional
 from ..sanitizers.sanitize import Sanitizer
 from ..core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS
 from .rate_limit import RateLimiter, RateLimitExceeded
-from .headers import SecurityHeaders
+from .headers import HeadersOption, build_security_headers
 from .error_handler import ErrorHandler
 from ..logging.safe_logger import SafeLogger
 
@@ -25,6 +25,14 @@ class Arcis:
 
         # Or configure:
         Arcis(app, rate_limit_max=50, sanitize_sql=False)
+
+        # Baseline (Helmet 8 compatible) security headers:
+        Arcis(app, headers={"profile": "baseline", "content_security_policy": {"nonce": True}})
+
+    ``headers`` accepts True (legacy profile; ``csp`` overrides its
+    Content-Security-Policy), a dict of ``SecurityHeaders`` keyword options,
+    a ``SecurityHeaders`` instance, or False. With the baseline CSP nonce on,
+    Flask views read the per-request nonce from ``flask.g.csp_nonce``.
     """
 
     def __init__(
@@ -48,7 +56,7 @@ class Arcis:
         rate_limit_max: int = DEFAULT_MAX_REQUESTS,
         rate_limit_window_ms: int = DEFAULT_WINDOW_MS,
         # Security headers options
-        headers: bool = True,
+        headers: HeadersOption = True,
         csp: Optional[str] = None,
         # Logger
         safe_logging: bool = True,
@@ -69,9 +77,7 @@ class Arcis:
             window_ms=rate_limit_window_ms,
         ) if rate_limit else None
 
-        self.security_headers = SecurityHeaders(
-            content_security_policy=csp,
-        ) if headers else None
+        self.security_headers = build_security_headers(headers, csp)
 
         self.logger = SafeLogger() if safe_logging else None
 
@@ -110,6 +116,13 @@ class Arcis:
 
         @app.before_request
         def arcis_before_request():
+            # Baseline CSP nonce: exposed before the view runs; after_request
+            # puts the same value in the header.
+            if self.security_headers is not None:
+                nonce = self.security_headers.new_nonce()
+                if nonce is not None:
+                    g.csp_nonce = nonce
+
             # Rate limiting
             if self.rate_limiter:
                 try:
@@ -134,7 +147,9 @@ class Arcis:
         def arcis_after_request(response):
             # Add security headers
             if self.security_headers:
-                self.security_headers.apply(response)
+                self.security_headers.apply(
+                    response, request=request, nonce=g.get('csp_nonce')
+                )
 
             # Add rate limit headers
             if hasattr(g, 'rate_limit_info'):
@@ -143,9 +158,11 @@ class Arcis:
                 response.headers['X-RateLimit-Remaining'] = str(info['remaining'])
                 response.headers['X-RateLimit-Reset'] = str(info['reset'])
 
-            # Remove fingerprinting headers
+            # Remove fingerprinting headers. The baseline profile handles
+            # X-Powered-By itself (x_powered_by=False keeps it).
             response.headers.pop('Server', None)
-            response.headers.pop('X-Powered-By', None)
+            if self.security_headers is None or self.security_headers.profile != "baseline":
+                response.headers.pop('X-Powered-By', None)
 
             return response
 
@@ -162,7 +179,9 @@ class Arcis:
             ArcisMiddleware,
             sanitizer=self.sanitizer,
             rate_limiter=self.rate_limiter,
-            security_headers=self.security_headers,
+            # None means headers were disabled; passing it as security_headers
+            # would make the middleware fall back to its default headers.
+            headers=self.security_headers if self.security_headers is not None else False,
             error_handler=self.error_handler,
             block=self.block,
         )

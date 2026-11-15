@@ -36,7 +36,7 @@ import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs
 
-from .middleware.headers import SecurityHeaders
+from .middleware.headers import HeadersOption, SecurityHeaders, build_security_headers
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
 from .sanitizers.sanitize import Sanitizer, scan_threats
 
@@ -174,6 +174,42 @@ def _json_response(status: int, payload: Dict[str, Any], extra_headers: Optional
     )
 
 
+def _request_for_callables(scope: Scope) -> Any:
+    """Request object handed to callable CSP directive values."""
+    try:
+        from litestar import Request
+    except ImportError:
+        return scope
+    return Request(scope)
+
+
+def _baseline_send(
+    security_headers: SecurityHeaders, scope: Scope, send: Send, nonce: Optional[str]
+) -> Send:
+    """Wrap ``send`` to merge the baseline header plan into the response start.
+
+    Headers the route already set are kept and ``X-Powered-By`` is stripped
+    unless the profile is configured to keep it.
+    """
+
+    async def wrapped_send(message: Message) -> None:
+        if message.get("type") == "http.response.start":
+            plan = security_headers.plan(_request_for_callables(scope), nonce)
+            remove = {name.lower().encode("latin-1") for name in plan.remove}
+            merged = [
+                (k, v) for k, v in message.get("headers") or [] if bytes(k).lower() not in remove
+            ]
+            existing = {bytes(k).lower() for k, _ in merged}
+            for name, value in plan.headers:
+                key = name.lower().encode("latin-1")
+                if key not in existing:
+                    merged.append((key, value.encode("latin-1")))
+            message = {**message, "headers": merged}
+        await send(message)
+
+    return wrapped_send
+
+
 class ArcisMiddleware:
     """
     Pure ASGI middleware that runs the Arcis pipeline before every HTTP
@@ -195,9 +231,15 @@ class ArcisMiddleware:
     rate_limit_max : int
     rate_limit_window_ms : int
         Rate-limit configuration. Defaults match the FastAPI adapter.
-    headers : bool
-        When True, attach the standard security-header set to every
-        outgoing response.
+    headers : bool | dict | SecurityHeaders
+        True attaches the legacy security-header set to every outgoing
+        response. A dict is passed to ``SecurityHeaders``, for example
+        ``{"profile": "baseline", "content_security_policy": {"nonce": True}}``;
+        a ``SecurityHeaders`` instance is used as is; False disables. With
+        the baseline CSP nonce on, handlers read the per-request nonce from
+        ``request.state.csp_nonce``. Callable CSP directive values receive a
+        Litestar ``Request`` (the raw ASGI scope when Litestar is not
+        installed).
     bot : bool
         When True, run the lightweight bot classifier.
     bot_allow : tuple[str, ...]
@@ -205,7 +247,7 @@ class ArcisMiddleware:
         Bot categories. Defaults: allow SEARCH_ENGINE / SOCIAL /
         MONITORING; deny AUTOMATED.
     csp : str | None
-        Override the default Content-Security-Policy.
+        Override the default Content-Security-Policy (legacy profile only).
     """
 
     def __init__(
@@ -219,7 +261,7 @@ class ArcisMiddleware:
         rate_limit: bool = True,
         rate_limit_max: int = 100,
         rate_limit_window_ms: int = 60_000,
-        headers: bool = True,
+        headers: HeadersOption = True,
         bot: bool = False,
         bot_allow: Tuple[str, ...] = _DEFAULT_BOT_ALLOW,
         bot_deny: Tuple[str, ...] = _DEFAULT_BOT_DENY,
@@ -243,9 +285,7 @@ class ArcisMiddleware:
             if rate_limit
             else None
         )
-        self._headers: Optional[SecurityHeaders] = (
-            SecurityHeaders(content_security_policy=csp) if headers else None
-        )
+        self._headers: Optional[SecurityHeaders] = build_security_headers(headers, csp)
         self._bot_enabled = bot
         self._bot_allow = set(bot_allow)
         self._bot_deny = set(bot_deny)
@@ -276,6 +316,12 @@ class ArcisMiddleware:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
+
+        # Baseline CSP nonce: request.state reads scope["state"] in both
+        # Litestar and Starlette, so handlers see it before they run.
+        csp_nonce = self._headers.new_nonce() if self._headers is not None else None
+        if csp_nonce is not None:
+            scope.setdefault("state", {})["csp_nonce"] = csp_nonce
 
         # 1. Rate limit. The sync RateLimiter is in-memory + threading
         #    Lock; the critical section is microsecond-scale so it's
@@ -462,7 +508,11 @@ class ArcisMiddleware:
         # 4. Wrap send so we can splice security headers into the
         #    response start message before the inner app's bytes flush
         #    to the wire.
-        if self._headers is not None:
+        if self._headers is not None and self._headers.profile == "baseline":
+            await self.app(
+                scope, wrapped_receive, _baseline_send(self._headers, scope, send, csp_nonce)
+            )
+        elif self._headers is not None:
             extra = self._headers.get_headers()
             extra_pairs: List[Tuple[bytes, bytes]] = [
                 (k.lower().encode("latin-1"), v.encode("latin-1"))
