@@ -304,8 +304,19 @@ export interface RateLimiterMiddleware extends RequestHandler {
 // SECURITY HEADERS
 // =============================================================================
 
-/** Security headers configuration */
-export interface HeaderOptions {
+/**
+ * Security headers configuration.
+ *
+ * Without `profile`, the historical Arcis defaults apply (`LegacyHeaderOptions`).
+ * `profile: 'baseline'` selects Helmet 8 compatible defaults and option names
+ * plus Arcis extensions (`BaselineHeaderOptions`).
+ */
+export type HeaderOptions = LegacyHeaderOptions | BaselineHeaderOptions;
+
+/** Historical Arcis header defaults (the default profile in 1.x). */
+export interface LegacyHeaderOptions {
+  /** Omit or set 'legacy' for the historical defaults. */
+  profile?: 'legacy';
   /** Content Security Policy. true = default, string = custom, false = disabled */
   contentSecurityPolicy?: boolean | string;
   /** Enable X-XSS-Protection header. Default: true (sends '0' to disable legacy XSS auditor) */
@@ -332,6 +343,91 @@ export interface HeaderOptions {
   originAgentCluster?: boolean;
   /** X-DNS-Prefetch-Control value. Default: true (sends 'off'). false to disable. */
   dnsPrefetchControl?: boolean;
+}
+
+/** Referrer-Policy tokens accepted by the baseline profile. */
+export type ReferrerPolicyToken =
+  | 'no-referrer'
+  | 'no-referrer-when-downgrade'
+  | 'same-origin'
+  | 'origin'
+  | 'strict-origin'
+  | 'origin-when-cross-origin'
+  | 'strict-origin-when-cross-origin'
+  | 'unsafe-url'
+  | '';
+
+/**
+ * `profile: 'baseline'` options. Names and shapes match Helmet 8, so an
+ * existing `helmet(options)` call becomes `createHeaders({ profile: 'baseline',
+ * ...options })` with the same response headers. For each option, `true` or
+ * omission uses the default, `false` disables the header, and an object
+ * configures it. Invalid values throw when the middleware is created.
+ */
+export interface BaselineHeaderOptions {
+  profile: 'baseline';
+  /** Default: enabled with Helmet's default directives. */
+  contentSecurityPolicy?: boolean | import('../middleware/csp').ContentSecurityPolicyOptions;
+  /** Default: disabled. `true` sends `require-corp`. */
+  crossOriginEmbedderPolicy?: boolean | { policy?: 'require-corp' | 'credentialless' | 'unsafe-none' };
+  /** Default: `same-origin`. */
+  crossOriginOpenerPolicy?:
+    | boolean
+    | { policy?: 'same-origin' | 'same-origin-allow-popups' | 'noopener-allow-popups' | 'unsafe-none' };
+  /** Default: `same-origin`. */
+  crossOriginResourcePolicy?: boolean | { policy?: 'same-origin' | 'same-site' | 'cross-origin' };
+  /** Default: `?1`. */
+  originAgentCluster?: boolean;
+  /** Default: `no-referrer`. */
+  referrerPolicy?: boolean | { policy?: ReferrerPolicyToken | ReferrerPolicyToken[] };
+  /** Default: `max-age=31536000; includeSubDomains`, sent on every response. */
+  strictTransportSecurity?: boolean | HstsOptions;
+  /** Default: `nosniff`. */
+  xContentTypeOptions?: boolean;
+  /** Default: `off`. */
+  xDnsPrefetchControl?: boolean | { allow?: boolean };
+  /** Default: `noopen`. */
+  xDownloadOptions?: boolean;
+  /** Default: `SAMEORIGIN`. */
+  xFrameOptions?: boolean | { action?: 'deny' | 'sameorigin' | 'DENY' | 'SAMEORIGIN' };
+  /** Default: `none`. */
+  xPermittedCrossDomainPolicies?:
+    | boolean
+    | { permittedPolicies?: 'none' | 'master-only' | 'by-content-type' | 'all' };
+  /** Default: removes `X-Powered-By`. */
+  xPoweredBy?: boolean;
+  /** Default: `0`. */
+  xXssProtection?: boolean;
+
+  /** Helmet alias of `strictTransportSecurity`. */
+  hsts?: BaselineHeaderOptions['strictTransportSecurity'];
+  /** Helmet alias of `xContentTypeOptions`. */
+  noSniff?: boolean;
+  /** Helmet alias of `xDnsPrefetchControl`. */
+  dnsPrefetchControl?: BaselineHeaderOptions['xDnsPrefetchControl'];
+  /** Helmet alias of `xDownloadOptions`. */
+  ieNoOpen?: boolean;
+  /** Helmet alias of `xFrameOptions`. */
+  frameguard?: BaselineHeaderOptions['xFrameOptions'];
+  /** Helmet alias of `xPermittedCrossDomainPolicies`. */
+  permittedCrossDomainPolicies?: BaselineHeaderOptions['xPermittedCrossDomainPolicies'];
+  /** Helmet alias of `xPoweredBy`. */
+  hidePoweredBy?: boolean;
+  /** Helmet alias of `xXssProtection`. */
+  xssFilter?: boolean;
+
+  /**
+   * Arcis extension, off by default. Feature name to allowlist, e.g.
+   * `{ camera: [], geolocation: ['self', 'https://maps.example.com'] }` sends
+   * `camera=(), geolocation=(self "https://maps.example.com")`.
+   */
+  permissionsPolicy?: false | Record<string, readonly string[]>;
+  /**
+   * Arcis extension, off by default. Endpoint name to HTTPS URL for the
+   * `Reporting-Endpoints` header, e.g. `{ csp: 'https://example.com/csp' }`.
+   * Reference a name from a CSP `report-to` directive.
+   */
+  reportingEndpoints?: false | Record<string, string>;
 }
 
 /** HSTS (HTTP Strict Transport Security) options */

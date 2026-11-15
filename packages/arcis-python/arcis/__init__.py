@@ -88,6 +88,8 @@ from .core import (
     validate_uuid,
 )
 
+from .middleware.headers import DANGEROUSLY_DISABLE_DEFAULT_SRC
+
 from .validation.url import (
     validate_url_ssrf,
     is_url_safe,
@@ -230,6 +232,7 @@ __all__ = [
     "RateLimitEntry",
     "InMemoryStore",
     "SecurityHeaders",
+    "DANGEROUSLY_DISABLE_DEFAULT_SRC",
     "Validator",
     "ValidationError",
     "SafeLogger",

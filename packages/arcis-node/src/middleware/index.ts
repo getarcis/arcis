@@ -12,6 +12,8 @@ export { createRateLimiter, rateLimit } from './rate-limit';
 export { createSlidingWindowLimiter } from './rate-limit-sliding';
 export { createTokenBucketLimiter } from './rate-limit-token';
 export { createHeaders, securityHeaders } from './headers';
+export { dangerouslyDisableDefaultSrc } from './csp';
+export type { ContentSecurityPolicyOptions, CspDirectiveValue, CspDirectiveValueEntry } from './csp';
 export { errorHandler, createErrorHandler } from './error-handler';
 export { safeCors, createCors } from './cors';
 export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from './cookies';

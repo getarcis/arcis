@@ -25,8 +25,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from ipaddress import ip_address
 import logging
 import queue
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -71,6 +73,14 @@ def _clamp(value: int, lo: int, hi: int) -> int:
     return value
 
 
+def _metadata_label(value: Optional[str], field: str) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value):
+        raise ValueError(f"TelemetryClient: invalid {field}")
+    return value
+
+
 def _build_headers(opts: TelemetryOptions) -> dict[str, str]:
     headers = {"content-type": "application/json"}
     if opts.api_key:
@@ -83,6 +93,24 @@ def _build_headers(opts: TelemetryOptions) -> dict[str, str]:
 def _serialize_batch(events: list[TelemetryEvent]) -> bytes:
     payload = {"events": [e.to_wire() for e in events]}
     return json.dumps(payload).encode("utf-8")
+
+
+def _redact_event(
+    event: TelemetryEvent, route_id: Optional[str], policy_id: Optional[str],
+) -> TelemetryEvent:
+    """Copy metadata before queueing; never retain caller-owned evidence."""
+    try:
+        ip_address(event.ip)
+        ip = event.ip if "%" not in event.ip else "0.0.0.0"
+    except ValueError:
+        ip = "0.0.0.0"
+    return TelemetryEvent(
+        ts=event.ts, ip=ip, method=event.method, path="[redacted]",
+        decision=event.decision, vector=event.vector, rule=event.rule,
+        severity=event.severity, country=event.country, status=event.status,
+        latency_ms=event.latency_ms,
+        schema_version="1.1", sdk="python", route_id=route_id, policy_id=policy_id,
+    )
 
 
 def _post_sync_urllib(
@@ -154,6 +182,8 @@ class TelemetryClient:
 
         self._endpoint = options.endpoint
         self._headers = _build_headers(options)
+        self._route_id = _metadata_label(options.route_id, "route_id")
+        self._policy_id = _metadata_label(options.policy_id, "policy_id")
         self._batch_size = _clamp(
             options.batch_size if options.batch_size is not None else _DEFAULT_BATCH_SIZE,
             1,
@@ -199,6 +229,7 @@ class TelemetryClient:
         if self._closed.is_set():
             return
         try:
+            event = _redact_event(event, self._route_id, self._policy_id)
             self._queue.put_nowait(event)
         except queue.Full:
             # Drop the oldest event to make room for the freshest one.
@@ -326,6 +357,8 @@ class AsyncTelemetryClient:
 
         self._endpoint = options.endpoint
         self._headers = _build_headers(options)
+        self._route_id = _metadata_label(options.route_id, "route_id")
+        self._policy_id = _metadata_label(options.policy_id, "policy_id")
         self._batch_size = _clamp(
             options.batch_size if options.batch_size is not None else _DEFAULT_BATCH_SIZE,
             1,
@@ -364,6 +397,7 @@ class AsyncTelemetryClient:
         if self._closed:
             return
         try:
+            event = _redact_event(event, self._route_id, self._policy_id)
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
             try:

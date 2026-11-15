@@ -132,7 +132,7 @@ At the checkpoint, Arcis:
 | **GraphQL Abuse** | `graphqlGuard` rejects oversize queries, deep selection sets, introspection in production, and (v1.6) alias bombs + fragment cycles via `max_aliases` and `block_fragment_cycles`. |
 | **Stateful correlation (v1.6)** | `CorrelationWindow` middleware tracks a 60s rolling window per IP. Detects active scanners (`distinct_vectors >= 3 AND requests >= 20`), credential stuffing (`>= 10 distinct usernames on /login in 60s`), and race-window probes (route-pair within 200ms). Pairs with `protectLogin / protectApi`. |
 | **LLM Token Budget** | Per-key sliding-window token cap with optional per-request size limit. Custom estimator hook for tiktoken or your own counter. `X-Token-Budget-*` headers on every response |
-| **Security Headers** | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control (16 headers) |
+| **Security Headers** | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control and more. A `baseline` profile matches Helmet 8 defaults and options, plus a per-request CSP nonce. See [Security Headers](#security-headers) |
 | **Error Leakage** | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
 | **CORS** | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
 | **Cookie Security** | HttpOnly, Secure, SameSite enforced on all cookies |
@@ -283,6 +283,53 @@ app.use('*', async (c, next) => {
 ```
 
 > Built-in adapters now ship for Fastify (`@arcis/node/fastify`), Koa (`@arcis/node/koa`), and Hono (`@arcis/node/hono`) alongside the existing Express, Next.js, NestJS, SvelteKit, Astro, Nuxt, and Bun adapters.
+
+---
+
+## Security Headers
+
+Arcis has two header profiles. The default (`legacy`) keeps the headers Arcis has always sent, so upgrading changes nothing. The `baseline` profile matches Helmet 8: the same default headers, the same option names and the same validation. A test suite runs every shared header case against the real `helmet@8.3.0` package and fails on any difference.
+
+```js
+// Before
+app.use(helmet({ contentSecurityPolicy: { directives: { scriptSrc: ["'self'", 'cdn.example.com'] } } }));
+
+// After: same headers
+app.use(arcis({
+  headers: { profile: 'baseline', contentSecurityPolicy: { directives: { scriptSrc: ["'self'", 'cdn.example.com'] } } },
+}));
+```
+
+The same profile in Python and Go:
+
+```python
+# FastAPI / Starlette (Flask: Arcis(app, headers=...), Django: ARCIS_CONFIG["headers"])
+app.add_middleware(ArcisMiddleware, headers={
+    "profile": "baseline",
+    "content_security_policy": {"nonce": True},
+})
+# In a route: request.state.csp_nonce (Flask: g.csp_nonce, Django: request.csp_nonce)
+```
+
+```go
+cfg := arcisgin.DefaultConfig()
+cfg.HeaderProfile = arcis.HeaderProfileBaseline
+cfg.BaselineHeaders = arcis.BaselineHeaderOptions{
+	ContentSecurityPolicy: arcis.CSPOptions{Nonce: true},
+}
+r.Use(arcisgin.MiddlewareWithConfig(cfg))
+// In a handler: arcis.CSPNonce(c.Request.Context())
+```
+
+What the baseline profile adds on top of Helmet:
+
+- **Per-request CSP nonce.** `contentSecurityPolicy: { nonce: true }` generates a fresh nonce for each response, adds it to `script-src`, and exposes it to your templates (`res.locals.cspNonce` in Express). With Helmet you write that middleware yourself.
+- **Python and Go.** The same profile, defaults and validation ship in the Python and Go SDKs, checked against the same shared fixtures.
+- **Every Node adapter.** Express, Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt and Bun send identical headers. Headers a route sets itself are kept.
+- **Permissions-Policy and Reporting-Endpoints builders**, off by default: `permissionsPolicy: { camera: [], geolocation: ['self'] }`, `reportingEndpoints: { csp: 'https://reports.example.com/csp' }`.
+- **Fails at startup, not per request.** A CR or LF in a CSP value is rejected when the middleware is created. Helmet accepts it, and then every response fails.
+
+Like Helmet, the baseline profile does not send `Cross-Origin-Embedder-Policy` (it breaks third-party embeds) or any `Cache-Control` header unless you ask for them. The full option table is in [`spec/API_SPEC.md`](spec/API_SPEC.md#baseline-profile-helmet-8-compatible).
 
 ---
 
