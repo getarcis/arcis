@@ -378,21 +378,19 @@ describe('TelemetryClient', () => {
         ts: '2026-04-23T04:00:00.000Z',
         ip: '1.2.3.4',
         method: 'POST',
-        path: '/api/login',
+        path: '[redacted]',
         decision: 'deny',
         vector: 'sql',
         rule: 'sql/union-select',
         severity: 'critical',
         country: 'RU',
-        reason: 'UNION SELECT pattern in body',
         status: 403,
-        matchedPattern: 'UNION SELECT',
         latencyMs: 0.42,
       });
       await client.close();
     });
 
-    it('does not drop a spec-defined field from TelemetryEvent', async () => {
+    it('preserves metadata and omits legacy request evidence', async () => {
       const client = new TelemetryClient({ endpoint: ENDPOINT, batchSize: 1 });
       const allFields: TelemetryEvent = {
         ts: '2026-04-23T04:00:00.000Z',
@@ -414,8 +412,12 @@ describe('TelemetryClient', () => {
 
       await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
       const body = JSON.parse(fetchSpy.mock.calls[0]![1].body as string);
-      // every key we wrote must round-trip through JSON.stringify intact
-      expect(body.events[0]).toEqual(allFields);
+      expect(body.events[0]).toEqual({
+        ts: '2026-04-23T04:00:00.000Z', ip: '9.9.9.9', method: 'PUT',
+        path: '[redacted]', decision: 'challenge', vector: 'bot',
+        rule: 'bot/scanner', severity: 'medium', country: 'DE',
+        status: 429, latencyMs: 0.77, schemaVersion: '1.1', sdk: 'node',
+      });
       await client.close();
     });
   });

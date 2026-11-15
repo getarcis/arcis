@@ -24,9 +24,9 @@ class TestInferDecision:
         [
             (200, "allow"),
             (302, "allow"),
-            (400, "deny"),
-            (403, "deny"),
-            (429, "deny"),
+            (400, "allow"),
+            (403, "allow"),
+            (429, "allow"),
             (500, "allow"),  # 5xx is server error, not a security decision
         ],
     )
@@ -84,7 +84,7 @@ class TestBuildEvent:
         assert event.matched_pattern == "<script>"
         assert event.reason == "caught script tag"
 
-    def test_429_without_marker_attributes_to_rate_limit(self) -> None:
+    def test_429_without_marker_is_application_outcome(self) -> None:
         event = build_event(
             ip="1.2.3.4",
             method="GET",
@@ -94,10 +94,10 @@ class TestBuildEvent:
             latency_ms=0.0,
             marker=None,
         )
-        assert event.decision == "deny"
-        assert event.vector == "rate-limit"
-        assert event.rule == "rate-limit/exceeded"
-        assert event.severity == "medium"
+        assert event.decision == "allow"
+        assert event.vector is None
+        assert event.rule is None
+        assert event.severity is None
 
     def test_negative_latency_clamped(self) -> None:
         event = build_event(
@@ -252,6 +252,6 @@ class TestMiddlewareTelemetry:
         assert len(captured) >= 1
         payload = captured[0].decode()
         assert '"events"' in payload
-        assert '"path": "/api"' in payload
+        assert '"path": "[redacted]"' in payload
         assert '"method": "GET"' in payload
         assert '"decision": "allow"' in payload

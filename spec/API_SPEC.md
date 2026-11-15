@@ -386,19 +386,93 @@ TelemetryEvent {
   ts?: string               // ISO-8601 timestamp. SDK should populate; server generates if missing.
   ip: string                // Client IP extracted by SDK (Required)
   method: string            // HTTP method: GET/POST/PUT/PATCH/DELETE (Required)
-  path: string              // Request path, query string excluded (Required)
+  path: string              // "[redacted]" for current producers; legacy producers sent concrete paths
   decision: "allow" | "deny" | "challenge" | "would_deny"  // Final or observed middleware decision (Required)
   vector?: string           // Attack family: "xss", "sql", "ssrf", etc. Optional for allowed requests.
   rule?: string             // Specific rule fired, e.g. "sql/union-select"
   severity?: "critical" | "high" | "medium" | "low"
   country?: string          // ISO 3166-1 alpha-2 country code. Optional — filled by server if SDK skips.
-  userAgent?: string        // Request User-Agent. Defaults to "" server-side if missing.
-  reason?: string           // Human-readable explanation shown in the dashboard's detail drawer
-  status: number            // HTTP status code the middleware returned (default: 200)
-  matchedPattern?: string   // Exact token that triggered the rule (e.g. "UNION SELECT")
+  userAgent?: string        // Legacy input only; current clients omit it
+  reason?: string           // Legacy input only; current clients omit free-form explanations
+  status: number            // Actual final HTTP response status; 0 means unavailable
+  matchedPattern?: string   // Legacy input only; current clients omit matched request evidence
   latencyMs?: number        // Middleware processing time in milliseconds, measured by the SDK
+  schemaVersion?: "1.1"     // Current producer contract; absent on legacy events
+  sdk?: "node" | "python" | "go" // Set by the client, never inferred from request data
+  routeId?: string          // Optional application-configured stable route label
+  policyId?: string         // Optional application-configured policy revision label
 }
 ```
+
+For a given finding, observation and enforcement MUST carry the same stable
+`vector`, `rule`, and `severity`. These identifiers must be attached by the
+detecting policy, not inferred from its HTTP response. Shared examples live
+under `telemetry.finding_attribution` in `TEST_VECTORS.json`.
+Sensitive scanner-path findings use `scanner-path/sensitive` with medium
+severity across SDKs. Earlier Go producers used `scanner-path/probe` and high
+severity; ingestion must still accept those historical values without
+rewriting stored events during the v1.x compatibility window.
+
+### Telemetry privacy
+
+Current SDK clients MUST create a separate, redacted event before queueing.
+The caller's event and the application's request MUST remain unchanged.
+The same redaction applies to allow, deny, challenge and would_deny:
+
+- Omit `matchedPattern`, `reason` and `userAgent`. Matched text and free-form
+  explanations can contain request values, and User-Agent is caller-controlled.
+- Replace every concrete `path` with the literal `[redacted]`. Removing a
+  query string alone does not protect credentials or identifiers in URL paths.
+- Serialize only declared contract fields. Never forward extra object
+  properties such as bodies, headers, cookies or authorization.
+- Preserve the decision, rule, vector, severity and actual HTTP outcome.
+  Redaction must not turn an observation into an enforced block.
+- Emit `ip` only when it is an IPv4 or IPv6 literal without a zone identifier.
+  Use `0.0.0.0` for invalid values so an arbitrary forwarded-header value cannot
+  carry secrets into the IP field. This validates syntax only; it does not
+  establish proxy trust or prove caller identity.
+
+These are intentional reductions in diagnostic detail. A rule identifies the
+finding without shipping the triggering request text. The API key configured
+for collector authentication is still sent in the transport Authorization
+header; it is separate from the protected request's authorization header.
+
+This does not make telemetry anonymous. A valid client IP and timestamp remain
+part of the contract. Deployers must choose a collector and retention policy
+appropriate to that data. Current clients do not offer a raw-evidence opt-out.
+Legacy evidence fields remain accepted throughout v1.x for older producers,
+but current clients omit them even when a manually supplied event contains
+them. Stored historical events are not silently rewritten.
+Shared collector fixtures live under `telemetry.privacy`.
+
+### Stable producer and policy identifiers
+
+Current clients set `schemaVersion: "1.1"` and their own `sdk` identifier.
+They ignore producer identifiers supplied on an event. This identifies the
+emitting SDK family and contract, not a verified package version.
+
+Telemetry configuration accepts optional `routeId` and `policyId`
+(`route_id` / `policy_id` in Python, `RouteID` / `PolicyID` in Go).
+These are static labels chosen by the application, for example
+`invoice-write` and `invoice-policy-v3`. Use a route-scoped middleware/client
+to attribute one route; a client shared across routes should omit `routeId`.
+Do not populate them from request values, customer identifiers or secrets.
+An omitted label remains omitted, meaning unknown, with no inferred default.
+The same configured labels apply in enforcement and observation modes.
+
+Labels must be 1-128 ASCII letters, digits, dots, underscores or hyphens,
+starting with a letter or digit. Empty/unset labels are omitted. Invalid
+configuration fails at client construction with an error that does not echo
+the supplied value. Clients snapshot the labels at construction and ignore
+per-event overrides. Concrete paths remain redacted even when a route label
+is configured.
+
+Legacy v1.x producers may omit these fields and retain the original decision
+values. Consumers must accept that omission, show unknown metadata, and
+preserve observed/enforced semantics per event in a mixed batch. Schema 1.1
+adds optional metadata and reduces emitted evidence; it does not rename
+decisions or require a destructive storage migration. Consumer support must
+be verified separately before claiming dashboard storage/display parity.
 
 ### Batch Ingest Contract
 
@@ -447,12 +521,68 @@ The middleware SHOULD emit a `TelemetryEvent` after each of these decision point
 
 Latency MUST be measured from the start of the Arcis middleware chain to the emit call, in milliseconds (fractional).
 
+### Observation and HTTP outcome accounting
+
+The decision and the application response are independent facts. `would_deny`
+means Arcis observed a finding without enforcing a rejection. It MUST NOT be
+rewritten to `deny` when the application itself returns 4xx or 5xx. Conversely,
+an observed finding MUST NOT imply that the application request succeeded.
+
+- `status` records the actual final response, including application errors and
+  redirects. SDKs MUST NOT substitute a hypothetical 403 or 429 during dry-run.
+- When an exception or returned error escapes to an outer application handler
+  before the response is finalized, emit `status: 0` if the adapter cannot
+  observe that handler's final response. Do not infer a status from the error,
+  a provisional response, or the framework's default 200. Preserve the Arcis
+  decision and finding, and propagate the original error without invoking,
+  replacing, or bypassing the application's error handling.
+  Express observes response completion and can report the final status.
+  Starlette's outer server-error handler and Echo/Fiber's outer error handlers
+  run outside the middleware's reporting scope. Their unresolved responses
+  use 0. Echo responses already committed before an error retain their known
+  status. An unavailable status is not a successful request.
+- The same rule applies when a Go application panics before committing a
+  response and an outer recovery handler later writes it. Preserve the panic
+  for that handler and retain any observed finding with status 0. If the
+  adapter has already observed a committed response, retain its known status.
+  Fiber responses remain buffered until the outer handler completes.
+- Only an explicit Arcis enforcement decision may produce `deny`. An
+  application-generated 400, 403 or 429 without an Arcis finding is `allow`
+  with that actual status, not an Arcis block. SDKs MUST NOT invent rate-limit
+  metadata from a 429 response. Genuine Arcis rate-limit rejections retain
+  explicit `deny`, vector `rate-limit`, rule `rate-limit/exceeded` and medium
+  severity, including when a custom rejection status is configured.
+- Successful-request accounting includes only `allow` or `would_deny` events
+  with a known final status from 200 through 399. Status 0 (unavailable), 1xx,
+  4xx and 5xx do not contribute. A successful redirect is not an Arcis challenge.
+- `allowed`, `observed`, `blocked` and `challenged` count their respective Arcis
+  decisions, independent of HTTP status. Only `deny` contributes to actual-block
+  totals. All `would_deny` events contribute to `observed` and stay out of
+  attacker rankings. Existing challenge classification remains unchanged.
+- For compatibility, the dashboard API field `allowRate` is the percentage of
+  successful requests as defined above, not the complement of `blockRate`.
+  Its denominator is all events in the same workspace and reporting window.
+  Current and previous 24-hour statistics and the `allow` trend use this same
+  definition. A separate `observed` trend counts observations of every status.
+- Legacy `allow`, `deny` and `challenge` producers remain accepted throughout
+  the v1.x compatibility window. Their omitted status retains the historical
+  server default of 200; this is a compatibility assumption, not proof of the
+  response. New `would_deny` events without a status use 0, never an invented
+  success. Existing stored events are not rewritten or reclassified.
+- Unknown historical decisions remain visible as unknown, without being
+  counted as an allow, observation, challenge or block. New unknown decision
+  values are rejected at ingestion rather than silently coerced.
+
+Shared accounting examples live in `TEST_VECTORS.json` under
+`telemetry.observation_accounting`.
+
 ### Guarantees
 
 - **Zero-overhead when disabled.** If no `telemetry` option is passed to `arcis({...})`, the SDK MUST NOT allocate a queue, start a timer, or open any network connection.
 - **Fail-open by design.** Telemetry failures MUST never cause the protected request to fail or slow down.
 - **Parity across SDKs.** Node, Python, and Go implementations MUST produce identical event shapes for the same input. See `spec/TEST_VECTORS.json` → `telemetry`.
-- **No PII beyond what's already in the request.** The SDK MUST NOT read request bodies, cookies, or auth headers to populate `TelemetryEvent` fields.
+- **Minimized request data.** The SDK MUST apply the telemetry privacy rules
+  above before queueing. Request secrets must not be sent as finding evidence.
 
 ---
 

@@ -124,6 +124,10 @@ export function createRateLimiter(options: RateLimitOptions = {}): RateLimiterMi
       res.setHeader('X-RateLimit-Reset', resetSeconds.toString());
 
       if (count > max) {
+        req.__arcis = {
+          decision: 'deny', vector: 'rate-limit',
+          rule: 'rate-limit/exceeded', severity: 'medium',
+        };
         res.setHeader('Retry-After', resetSeconds.toString());
         res.status(statusCode).json({
           error: message,
@@ -148,6 +152,10 @@ export function createRateLimiter(options: RateLimitOptions = {}): RateLimiterMi
         }
         const count = inMemoryStore[key].count;
         if (count > max) {
+          req.__arcis = {
+            decision: 'deny', vector: 'rate-limit',
+            rule: 'rate-limit/exceeded', severity: 'medium',
+          };
           const resetSeconds = Math.ceil((inMemoryStore[key].resetTime - now) / 1000);
           res.setHeader('Retry-After', resetSeconds.toString());
           res.status(statusCode).json({ error: message, retryAfter: resetSeconds });
