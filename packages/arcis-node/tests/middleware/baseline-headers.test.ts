@@ -276,3 +276,47 @@ describe('baseline profile: request handling', () => {
     expect(headers['X-Download-Options']).toBeUndefined();
   });
 });
+
+describe('baseline profile: real Express server through arcis()', () => {
+  async function serve(app: import('express').Express): Promise<{ url: string; close: () => Promise<void> }> {
+    const server = await new Promise<import('node:http').Server>((resolveServer) => {
+      const s = app.listen(0, '127.0.0.1', () => resolveServer(s));
+    });
+    const { port } = server.address() as import('node:net').AddressInfo;
+    return {
+      url: `http://127.0.0.1:${port}`,
+      close: () => new Promise((done) => server.close(() => done())),
+    };
+  }
+
+  it('sends the Helmet default headers on the wire and exposes the nonce to the route', async () => {
+    const { default: express } = await import('express');
+    const { arcis: arcisMiddleware } = await import('../../src/middleware/main');
+    const app = express();
+    app.use(
+      arcisMiddleware({
+        headers: { profile: 'baseline', contentSecurityPolicy: { nonce: true } },
+        rateLimit: false,
+      }),
+    );
+    app.get('/', (_req, res) => {
+      res.json({ nonce: res.locals.cspNonce });
+    });
+
+    const server = await serve(app);
+    try {
+      const response = await fetch(server.url + '/');
+      const body = (await response.json()) as { nonce: string };
+      const defaults = baseline.cases.find((c) => c.name === 'defaults')!.expected_headers;
+      for (const [name, value] of Object.entries(defaults)) {
+        if (name === 'Content-Security-Policy') continue;
+        expect(response.headers.get(name), name).toBe(value);
+      }
+      expect(response.headers.get('content-security-policy')).toContain(`script-src 'self' 'nonce-${body.nonce}'`);
+      expect(response.headers.get('x-powered-by')).toBeNull();
+      expect(response.headers.get('cache-control')).toBeNull();
+    } finally {
+      await server.close();
+    }
+  });
+});
