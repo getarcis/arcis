@@ -38,10 +38,8 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -49,6 +47,18 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter, type ClientIpResolver } from '../utils/client-ip';
+import {
+  adapterKey,
+  buildAdapterLimiter,
+  honoPeerAddress,
+  mergeClientIpOptions,
+  userClientIp,
+  type AdapterRateLimitDecision,
+  type AdapterRateLimiter,
+  type FetchClientIpOptions,
+} from './rate-limit-shared';
 
 // ─── Bun + Hono duck-typed contracts ────────────────────────────────────────
 
@@ -70,6 +80,8 @@ interface HonoRequestLike {
 export interface HonoContextLike {
   req: HonoRequestLike;
   res: Response;
+  /** Hono on Bun passes the Bun server here; it supplies the peer address. */
+  env?: unknown;
   json(object: unknown, status?: number): Response;
 }
 
@@ -81,7 +93,13 @@ export type HonoMiddlewareHandler = (
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
-export interface ArcisBunOptions {
+/**
+ * Adapter options. Client IP resolution: `getClientIp` when it returns a
+ * valid address; else the peer address (`server.requestIP()`) with the
+ * `trustedProxies` walk; else, without a peer, `clientIpHeader` or the
+ * platform header; else one shared `unknown` key.
+ */
+export interface ArcisBunOptions extends FetchClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -91,37 +109,6 @@ export interface ArcisBunOptions {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key) => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
 
 function botInputFor(headers: Headers): ExpressRequestLike {
   const h: Record<string, string | undefined> = {
@@ -136,75 +123,14 @@ function botInputFor(headers: Headers): ExpressRequestLike {
 
 function applySecurityHeaders(
   response: Response,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   url: URL,
-  reqHeaders: Headers,
+  request: Request,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-  const h = response.headers;
-
-  if (contentSecurityPolicy) {
-    h.set(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) h.set('X-XSS-Protection', '0');
-  if (noSniff) h.set('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) h.set('X-Frame-Options', frameOptions);
-
-  const xfp = reqHeaders
-    .get('x-forwarded-proto')
-    ?.split(',')[0]
-    ?.trim()
-    ?.toLowerCase();
-  const trustedXfp = xfp === 'https' || xfp === 'http' ? xfp : undefined;
-  const isHttps = url.protocol === 'https:' || trustedXfp === 'https';
-
-  if (hsts && isHttps) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    h.set('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) h.set('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) h.set('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) h.set('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) h.set('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) h.set('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) h.set('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) h.set('X-DNS-Prefetch-Control', 'off');
-  h.set('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    h.set(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    h.set('Pragma', 'no-cache');
-    h.set('Expires', '0');
-  }
-
-  h.delete('X-Powered-By');
+  const isHttps =
+    url.protocol === 'https:' ||
+    parseForwardedProto(request.headers.get('x-forwarded-proto')) === 'https';
+  applyPlanToHeaders(response.headers, policy, policy.plan({ isHttps, request: request, response }));
 }
 
 interface BotConfig {
@@ -228,16 +154,21 @@ function buildBotConfig(botCfg: ArcisBunOptions['bot']): BotConfig {
   };
 }
 
-function clientIpFromHeaders(headers: Headers, fallback: string): string {
-  const xff = headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return fallback;
+interface RateLimitSetup {
+  limiter: AdapterRateLimiter | null;
+  resolver: ClientIpResolver;
 }
 
-function rateLimitedResponse(decision: RateLimitDecision): Response {
+function buildRateLimit(options: ArcisBunOptions, owner: string): RateLimitSetup {
+  const rateLimitCfg = options.rateLimit ?? true;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  return {
+    limiter: rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, owner) : null,
+    resolver: createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts)),
+  };
+}
+
+function rateLimitedResponse(decision: AdapterRateLimitDecision): Response {
   return new Response(
     JSON.stringify({
       error: 'Too many requests, please try again later.',
@@ -282,19 +213,22 @@ export function arcisBun(
   handler: BunFetchHandler,
 ): BunFetchHandler {
   const headersCfg = options.headers ?? true;
-  const rateLimitCfg = options.rateLimit ?? true;
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Bun',
+      })
     : null;
+  const { limiter, resolver } = buildRateLimit(options, 'arcisBun');
   const botCfg = buildBotConfig(options.bot);
 
   return async (req, server) => {
     const url = new URL(req.url);
-    const fallbackIp = server?.requestIP(req)?.address ?? 'unknown';
-    const ip = clientIpFromHeaders(req.headers, fallbackIp);
 
     if (limiter) {
-      const decision = limiter(ip);
+      const ip =
+        userClientIp(options.getClientIp, req) ??
+        resolver.resolve(server?.requestIP(req)?.address, toHeaderGetter(req.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisBun'));
       if (!decision.allowed) return rateLimitedResponse(decision);
     }
 
@@ -305,12 +239,12 @@ export function arcisBun(
 
     const response = await handler(req, server);
 
-    if (headersCfg) {
+    if (headerPolicy) {
       applySecurityHeaders(
         response,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
         url,
-        req.headers,
+        req,
       );
     }
 
@@ -325,18 +259,23 @@ export function arcisBun(
  */
 export function arcisHono(options: ArcisBunOptions = {}): HonoMiddlewareHandler {
   const headersCfg = options.headers ?? true;
-  const rateLimitCfg = options.rateLimit ?? true;
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Bun',
+      })
     : null;
+  const { limiter, resolver } = buildRateLimit(options, 'arcisHono');
   const botCfg = buildBotConfig(options.bot);
 
   return async (c, next) => {
     const url = new URL(c.req.url);
-    const ip = clientIpFromHeaders(c.req.raw.headers, 'unknown');
 
     if (limiter) {
-      const decision = limiter(ip);
+      const request = c.req.raw;
+      const ip =
+        userClientIp(options.getClientIp, request) ??
+        resolver.resolve(honoPeerAddress(c.env, request), toHeaderGetter(request.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisHono'));
       if (!decision.allowed) return rateLimitedResponse(decision);
     }
 
@@ -347,12 +286,12 @@ export function arcisHono(options: ArcisBunOptions = {}): HonoMiddlewareHandler 
 
     await next();
 
-    if (headersCfg) {
+    if (headerPolicy) {
       applySecurityHeaders(
         c.res,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
         url,
-        c.req.raw.headers,
+        c.req.raw,
       );
     }
     return;

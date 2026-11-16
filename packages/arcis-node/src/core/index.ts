@@ -17,11 +17,16 @@ export type {
   // Rate limiting
   RateLimitOptions,
   RateLimitStore,
+  RateLimitIncrement,
+  LegacyRateLimitStore,
   RateLimitEntry,
   RateLimitResult,
   RateLimiterMiddleware,
   // Headers
   HeaderOptions,
+  LegacyHeaderOptions,
+  BaselineHeaderOptions,
+  ReferrerPolicyToken,
   HstsOptions,
   // Validation
   ValidationConfig,

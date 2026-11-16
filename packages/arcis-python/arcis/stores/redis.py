@@ -2,16 +2,16 @@
 Arcis Redis Rate Limit Store
 ==============================
 
-Distributed rate limiting using Redis as the backing store.
-Enables consistent rate limiting across multiple server instances.
+Distributed rate limiting using Redis as the backing store. Every counted
+request is one atomic round trip: a Lua script runs ``INCR``, ``PEXPIRE``
+on the first hit and ``PTTL``, so concurrent requests from any number of
+server instances never admit more than the limit.
 
-Time unit contract:
-    The RateLimiter interface uses SECONDS for reset_time (Unix timestamp).
-    Internally, this store converts to/from milliseconds for Redis storage
-    to maintain precision. The Lua script also uses milliseconds internally.
-    All conversions happen at the store boundary — callers always use seconds.
+Errors are raised, not swallowed. The limiter decides what happens on an
+outage (the sync ``RateLimiter`` falls back to memory, ``AsyncRateLimiter``
+allows the request) and logs the error at most once per window.
 
-Usage (sync — Flask, Django):
+Usage (sync: Flask, Django):
     from redis import Redis
     from arcis.stores.redis import RedisRateLimitStore
     from arcis import RateLimiter
@@ -20,28 +20,25 @@ Usage (sync — Flask, Django):
     store = RedisRateLimitStore(redis_client)
     limiter = RateLimiter(max_requests=100, window_ms=60000, store=store)
 
-Usage (async — FastAPI):
+Usage (async: FastAPI):
     import redis.asyncio as redis
     from arcis.stores.redis import AsyncRedisRateLimitStore
-    from arcis.fastapi import ArcisMiddleware
+    from arcis.fastapi import ArcisMiddleware, AsyncRateLimiter
 
     redis_client = redis.Redis(host='localhost', port=6379)
     store = AsyncRedisRateLimitStore(redis_client)
-    app.add_middleware(ArcisMiddleware, store=store)
+    app.add_middleware(ArcisMiddleware, async_rate_limiter=AsyncRateLimiter(store=store))
 
 Requires:
     pip install arcis[redis]
     # or: pip install redis
 """
 
-import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional, Tuple
 
 from ..core.types import RateLimitEntry
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -52,48 +49,64 @@ class RedisStoreOptions:
     """Prefix applied to all Redis keys."""
 
     window_ms: int = 60000
-    """Rate limit window in milliseconds (used for TTL calculation)."""
+    """Unused. The limiter passes its window on every increment."""
 
     ttl_buffer_seconds: int = 1
-    """Extra seconds added to TTL to avoid edge-case expiry races."""
+    """Unused. Keys expire exactly when their window ends."""
 
     use_lua_script: bool = True
-    """Use a Lua script for atomic increment-or-create. Recommended."""
+    """Unused. The atomic Lua script is always used."""
 
 
-# Lua script: atomic increment-or-create in a single round-trip.
-_INCR_SCRIPT = """
-local key = KEYS[1]
-local window_ms = tonumber(ARGV[1])
-local now = tonumber(ARGV[2])
-
-local count = redis.call('HGET', key, 'count')
-local reset_time = redis.call('HGET', key, 'reset_time')
-
-count = tonumber(count) or 0
-reset_time = tonumber(reset_time) or 0
-
-if reset_time == 0 or reset_time < now then
-    count = 1
-    reset_time = now + window_ms
-    redis.call('HSET', key, 'count', count, 'reset_time', reset_time)
-    redis.call('PEXPIRE', key, window_ms + 1000)
-else
-    count = redis.call('HINCRBY', key, 'count', 1)
+# KEYS[1] = counter key, ARGV[1] = window in milliseconds.
+# Returns {total_hits, ttl_ms}.
+_INCREMENT_SCRIPT = """
+local hits = redis.pcall('INCR', KEYS[1])
+if type(hits) == 'table' and hits['err'] then
+  -- An entry in the older hash format: replace it with a counter.
+  redis.call('DEL', KEYS[1])
+  hits = redis.call('INCR', KEYS[1])
 end
-
-return {count, reset_time}
+if hits == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+  ttl = tonumber(ARGV[1])
+end
+return {hits, ttl}
 """
+
+# Decrement floored at zero.
+_DECREMENT_SCRIPT = """
+local hits = tonumber(redis.call('GET', KEYS[1]))
+if hits and hits > 0 then
+  return redis.call('DECR', KEYS[1])
+end
+return 0
+"""
+
+
+def _to_result(raw: Any) -> Tuple[int, float]:
+    hits, ttl_ms = raw
+    return int(hits), time.time() + int(ttl_ms) / 1000
+
+
+def _to_entry(value: Any, ttl_ms: Any) -> Optional[RateLimitEntry]:
+    # PTTL is -2 for a missing key and -1 for a key without expiry.
+    if value is None or ttl_ms is None or int(ttl_ms) <= 0:
+        return None
+    return RateLimitEntry(count=int(value), reset_time=time.time() + int(ttl_ms) / 1000)
 
 
 class RedisRateLimitStore:
     """
     Redis-backed rate limit store for sync frameworks (Flask, Django).
 
-    Features:
-    - Atomic increment via Lua script (single round-trip, no race conditions)
-    - Automatic key expiration via Redis TTL (no cleanup thread needed)
-    - Graceful degradation on Redis errors (fails open)
+    - One atomic round trip per counted request (Lua: INCR, PEXPIRE, PTTL)
+    - Keys expire with their window (no cleanup thread needed)
+    - Raises Redis errors so the limiter's fallback and reporting run
     - Thread-safe for multi-threaded WSGI servers
 
     Example:
@@ -112,93 +125,51 @@ class RedisRateLimitStore:
         key_prefix: Optional[str] = None,
         window_ms: Optional[int] = None,
     ):
-        self._redis = redis_client
-        self._closed = False
+        """Create the store.
 
+        Args:
+            redis_client: A ``redis.Redis`` client.
+            options: Store options; only ``key_prefix`` is used.
+            key_prefix: Overrides ``options.key_prefix``.
+            window_ms: Unused; the limiter passes its window on each call.
+        """
+        self._redis = redis_client
         opts = options or RedisStoreOptions()
         self._key_prefix = key_prefix or opts.key_prefix
-        self._window_ms = window_ms or opts.window_ms
-        self._ttl_buffer = opts.ttl_buffer_seconds
-        self._use_lua = opts.use_lua_script
-
-        self._incr_script = None
-        if self._use_lua:
-            self._incr_script = self._redis.register_script(_INCR_SCRIPT)
+        self._increment_script = self._redis.register_script(_INCREMENT_SCRIPT)
+        self._decrement_script = self._redis.register_script(_DECREMENT_SCRIPT)
 
     def _key(self, key: str) -> str:
         return f"{self._key_prefix}{key}"
 
+    def increment(self, key: str, window_ms: int) -> Tuple[int, float]:
+        """Count one hit atomically; return ``(total_hits, reset_time)`` in seconds."""
+        return _to_result(self._increment_script(keys=[self._key(key)], args=[int(window_ms)]))
+
+    def decrement(self, key: str) -> None:
+        """Remove one hit, floored at zero."""
+        self._decrement_script(keys=[self._key(key)])
+
+    def reset_key(self, key: str) -> None:
+        """Delete the counter for ``key``."""
+        self._redis.delete(self._key(key))
+
     def get(self, key: str) -> Optional[RateLimitEntry]:
-        """Get rate limit entry. Returns RateLimitEntry with reset_time in seconds."""
-        if self._closed:
-            return None
-        try:
-            data = self._redis.hgetall(self._key(key))
-            if not data:
-                return None
-
-            # Decode bytes keys/values — Redis returns bytes by default
-            decoded = {(k.decode() if isinstance(k, bytes) else k): v for k, v in data.items()}
-            count_raw = decoded.get("count")
-            reset_time_raw = decoded.get("reset_time")
-            if count_raw is None or reset_time_raw is None:
-                return None
-
-            # reset_time is stored in milliseconds, convert to seconds for comparison
-            reset_time_ms = float(reset_time_raw)
-            now_ms = time.time() * 1000
-            if reset_time_ms < now_ms:
-                return None
-
-            # Return RateLimitEntry with reset_time in seconds to match RateLimiter interface
-            return RateLimitEntry(count=int(count_raw), reset_time=reset_time_ms / 1000)
-        except Exception as e:
-            logger.error("RedisRateLimitStore.get error: %s", e)
-            return None
-
-    def set(self, key: str, count: int, reset_time: float) -> None:
-        """Store rate limit entry. reset_time should be in seconds (Unix timestamp)."""
-        if self._closed:
-            return
-        try:
-            full_key = self._key(key)
-            # Convert reset_time from seconds to milliseconds for storage
-            reset_time_ms = int(reset_time * 1000)
-            now_ms = int(time.time() * 1000)
-            ttl_ms = max(reset_time_ms - now_ms, self._window_ms) + (self._ttl_buffer * 1000)
-
-            pipe = self._redis.pipeline()
-            pipe.hset(full_key, mapping={"count": count, "reset_time": reset_time_ms})
-            pipe.pexpire(full_key, ttl_ms)
-            pipe.execute()
-        except Exception as e:
-            logger.error("RedisRateLimitStore.set error: %s", e)
-
-    def increment(self, key: str) -> int:
-        if self._closed:
-            return 1
-        try:
-            now_ms = int(time.time() * 1000)
-            if self._use_lua and self._incr_script:
-                result = self._incr_script(
-                    keys=[self._key(key)],
-                    args=[self._window_ms, now_ms],
-                )
-                return int(result[0])
-            return self._redis.hincrby(self._key(key), "count", 1)
-        except Exception as e:
-            logger.error("RedisRateLimitStore.increment error: %s", e)
-            return 1  # fail open
+        """Return the current entry with ``reset_time`` in seconds, or None."""
+        pipe = self._redis.pipeline()
+        pipe.get(self._key(key))
+        pipe.pttl(self._key(key))
+        value, ttl_ms = pipe.execute()
+        return _to_entry(value, ttl_ms)
 
     def cleanup(self) -> None:
-        """No-op — Redis TTL handles expiry automatically."""
-        pass
+        """No-op: Redis TTL handles expiry."""
 
     def close(self) -> None:
-        """Mark store as closed. Does not close the Redis client."""
-        self._closed = True
+        """No-op: the Redis client belongs to the caller and stays open."""
 
     def ping(self) -> bool:
+        """Return True when Redis answers a PING."""
         try:
             return bool(self._redis.ping())
         except Exception:
@@ -209,15 +180,16 @@ class AsyncRedisRateLimitStore:
     """
     Async Redis-backed rate limit store for async frameworks (FastAPI, aiohttp).
 
-    Uses redis.asyncio for non-blocking operations.
+    Uses ``redis.asyncio``. Same atomic script and error behavior as
+    :class:`RedisRateLimitStore`.
 
     Example:
         import redis.asyncio as redis
         from arcis.stores.redis import AsyncRedisRateLimitStore
-        from arcis.fastapi import ArcisMiddleware
+        from arcis.fastapi import ArcisMiddleware, AsyncRateLimiter
 
         store = AsyncRedisRateLimitStore(redis.Redis(host='localhost', port=6379))
-        app.add_middleware(ArcisMiddleware, store=store)
+        app.add_middleware(ArcisMiddleware, async_rate_limiter=AsyncRateLimiter(store=store))
     """
 
     def __init__(
@@ -227,93 +199,52 @@ class AsyncRedisRateLimitStore:
         key_prefix: Optional[str] = None,
         window_ms: Optional[int] = None,
     ):
-        self._redis = redis_client
-        self._closed = False
+        """Create the store.
 
+        Args:
+            redis_client: A ``redis.asyncio.Redis`` client.
+            options: Store options; only ``key_prefix`` is used.
+            key_prefix: Overrides ``options.key_prefix``.
+            window_ms: Unused; the limiter passes its window on each call.
+        """
+        self._redis = redis_client
         opts = options or RedisStoreOptions()
         self._key_prefix = key_prefix or opts.key_prefix
-        self._window_ms = window_ms or opts.window_ms
-        self._ttl_buffer = opts.ttl_buffer_seconds
-        self._use_lua = opts.use_lua_script
-
-        self._incr_script = None
-        if self._use_lua:
-            self._incr_script = self._redis.register_script(_INCR_SCRIPT)
+        self._increment_script = self._redis.register_script(_INCREMENT_SCRIPT)
+        self._decrement_script = self._redis.register_script(_DECREMENT_SCRIPT)
 
     def _key(self, key: str) -> str:
         return f"{self._key_prefix}{key}"
 
+    async def increment(self, key: str, window_ms: int) -> Tuple[int, float]:
+        """Count one hit atomically; return ``(total_hits, reset_time)`` in seconds."""
+        raw = await self._increment_script(keys=[self._key(key)], args=[int(window_ms)])
+        return _to_result(raw)
+
+    async def decrement(self, key: str) -> None:
+        """Remove one hit, floored at zero."""
+        await self._decrement_script(keys=[self._key(key)])
+
+    async def reset_key(self, key: str) -> None:
+        """Delete the counter for ``key``."""
+        await self._redis.delete(self._key(key))
+
     async def get(self, key: str) -> Optional[RateLimitEntry]:
-        """Get rate limit entry. Returns RateLimitEntry with reset_time in seconds."""
-        if self._closed:
-            return None
-        try:
-            data = await self._redis.hgetall(self._key(key))
-            if not data:
-                return None
-
-            # Decode bytes keys/values — Redis returns bytes by default
-            decoded = {(k.decode() if isinstance(k, bytes) else k): v for k, v in data.items()}
-            count_raw = decoded.get("count")
-            reset_time_raw = decoded.get("reset_time")
-            if count_raw is None or reset_time_raw is None:
-                return None
-
-            # reset_time is stored in milliseconds, convert to seconds for comparison
-            reset_time_ms = float(reset_time_raw)
-            now_ms = time.time() * 1000
-            if reset_time_ms < now_ms:
-                return None
-
-            # Return RateLimitEntry with reset_time in seconds to match RateLimiter interface
-            return RateLimitEntry(count=int(count_raw), reset_time=reset_time_ms / 1000)
-        except Exception as e:
-            logger.error("AsyncRedisRateLimitStore.get error: %s", e)
-            return None
-
-    async def set(self, key: str, count: int, reset_time: float) -> None:
-        """Store rate limit entry. reset_time should be in seconds (Unix timestamp)."""
-        if self._closed:
-            return
-        try:
-            full_key = self._key(key)
-            # Convert reset_time from seconds to milliseconds for storage
-            reset_time_ms = int(reset_time * 1000)
-            now_ms = int(time.time() * 1000)
-            ttl_ms = max(reset_time_ms - now_ms, self._window_ms) + (self._ttl_buffer * 1000)
-
-            pipe = self._redis.pipeline()
-            pipe.hset(full_key, mapping={"count": count, "reset_time": reset_time_ms})
-            pipe.pexpire(full_key, ttl_ms)
-            await pipe.execute()
-        except Exception as e:
-            logger.error("AsyncRedisRateLimitStore.set error: %s", e)
-
-    async def increment(self, key: str) -> int:
-        if self._closed:
-            return 1
-        try:
-            now_ms = int(time.time() * 1000)
-            if self._use_lua and self._incr_script:
-                result = await self._incr_script(
-                    keys=[self._key(key)],
-                    args=[self._window_ms, now_ms],
-                )
-                return int(result[0])
-            return await self._redis.hincrby(self._key(key), "count", 1)
-        except Exception as e:
-            logger.error("AsyncRedisRateLimitStore.increment error: %s", e)
-            return 1  # fail open
+        """Return the current entry with ``reset_time`` in seconds, or None."""
+        pipe = self._redis.pipeline()
+        pipe.get(self._key(key))
+        pipe.pttl(self._key(key))
+        value, ttl_ms = await pipe.execute()
+        return _to_entry(value, ttl_ms)
 
     async def cleanup(self) -> None:
-        """No-op — Redis TTL handles expiry automatically."""
-        pass
+        """No-op: Redis TTL handles expiry."""
 
     async def close(self) -> None:
-        """Mark store as closed. Does not close the Redis client."""
-        self._closed = True
+        """No-op: the Redis client belongs to the caller and stays open."""
 
     async def ping(self) -> bool:
+        """Return True when Redis answers a PING."""
         try:
             return bool(await self._redis.ping())
         except Exception:

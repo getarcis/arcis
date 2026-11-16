@@ -168,13 +168,23 @@ class TestSlidingWindowClose:
 class TestSlidingWindowValidation:
     """Test constructor validation."""
 
-    def test_max_requests_zero_raises(self):
-        with pytest.raises(ValueError, match="max_requests must be >= 1"):
-            SlidingWindowLimiter(max_requests=0, window='1m')
+    def test_max_requests_zero_blocks_everything(self):
+        limiter = SlidingWindowLimiter(max_requests=0, window='1m')
+        try:
+            with pytest.raises(RateLimitExceeded):
+                limiter.check(MockRequest())
+        finally:
+            limiter.close()
 
-    def test_max_requests_negative_raises(self):
-        with pytest.raises(ValueError, match="max_requests must be >= 1"):
-            SlidingWindowLimiter(max_requests=-1, window='1m')
+    @pytest.mark.parametrize("bad", [-1, 1.5, True, "5"])
+    def test_invalid_max_requests_raises(self, bad):
+        with pytest.raises(ValueError, match="max_requests must be a non-negative integer"):
+            SlidingWindowLimiter(max_requests=bad, window='1m')
+
+    @pytest.mark.parametrize("bad", [0, 1.5, 2**31, '0ms', '30d'])
+    def test_out_of_range_window_raises(self, bad):
+        with pytest.raises(ValueError):
+            SlidingWindowLimiter(max_requests=10, window=bad)
 
     def test_invalid_window_raises(self):
         with pytest.raises(ValueError):
@@ -215,3 +225,77 @@ class TestSlidingWindowThreadSafety:
         limiter.close()
         assert errors == [], f"Thread errors: {errors}"
         assert len(results) > 0
+
+
+class _FakeClock:
+    """Stands in for the ``time`` module inside rate_limit_sliding."""
+
+    def __init__(self, now: float) -> None:
+        self.now = now
+
+    def time(self) -> float:
+        return self.now
+
+
+class TestSlidingWindowPreviousWindow:
+    """The previous window counts only when it immediately precedes the current one."""
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        from arcis.middleware import rate_limit_sliding
+
+        fake = _FakeClock(1_000_000.0)  # aligned to a 10 s window boundary
+        monkeypatch.setattr(rate_limit_sliding, "time", fake)
+        return fake
+
+    def test_adjacent_previous_window_is_weighted(self, clock):
+        limiter = SlidingWindowLimiter(max_requests=3, window=10_000)
+        try:
+            for _ in range(3):
+                limiter.check(MockRequest())
+            clock.now += 10.5  # 5% into the next window: previous weight 0.95
+            with pytest.raises(RateLimitExceeded):
+                limiter.check(MockRequest())
+        finally:
+            limiter.close()
+
+    def test_key_idle_for_a_full_window_starts_from_zero(self, clock):
+        limiter = SlidingWindowLimiter(max_requests=3, window=10_000)
+        try:
+            for _ in range(3):
+                limiter.check(MockRequest())
+            clock.now += 20.5  # skipped one whole window
+            for _ in range(3):
+                assert limiter.check(MockRequest())["allowed"] is True
+        finally:
+            limiter.close()
+
+    def test_stale_previous_is_not_reused_after_rotation(self, clock):
+        limiter = SlidingWindowLimiter(max_requests=3, window=10_000)
+        try:
+            for _ in range(3):
+                limiter.check(MockRequest())
+            clock.now += 10.5
+            with pytest.raises(RateLimitExceeded):
+                limiter.check(MockRequest())
+            clock.now += 10  # window after next: the full one is no longer adjacent
+            for _ in range(3):
+                assert limiter.check(MockRequest())["allowed"] is True
+        finally:
+            limiter.close()
+
+
+class TestSlidingWindowClientKey:
+    def test_public_peer_cannot_rotate_forwarded_for(self):
+        class Req:
+            def __init__(self, xff):
+                self.remote_addr = "203.0.113.5"
+                self.headers = {"x-forwarded-for": xff}
+
+        limiter = SlidingWindowLimiter(max_requests=1, window='1m')
+        try:
+            limiter.check(Req("1.1.1.1"))
+            with pytest.raises(RateLimitExceeded):
+                limiter.check(Req("2.2.2.2"))
+        finally:
+            limiter.close()

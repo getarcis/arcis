@@ -24,9 +24,9 @@ class TestInferDecision:
         [
             (200, "allow"),
             (302, "allow"),
-            (400, "deny"),
-            (403, "deny"),
-            (429, "deny"),
+            (400, "allow"),
+            (403, "allow"),
+            (429, "allow"),
             (500, "allow"),  # 5xx is server error, not a security decision
         ],
     )
@@ -84,7 +84,7 @@ class TestBuildEvent:
         assert event.matched_pattern == "<script>"
         assert event.reason == "caught script tag"
 
-    def test_429_without_marker_attributes_to_rate_limit(self) -> None:
+    def test_429_without_marker_is_application_outcome(self) -> None:
         event = build_event(
             ip="1.2.3.4",
             method="GET",
@@ -94,10 +94,10 @@ class TestBuildEvent:
             latency_ms=0.0,
             marker=None,
         )
-        assert event.decision == "deny"
-        assert event.vector == "rate-limit"
-        assert event.rule == "rate-limit/exceeded"
-        assert event.severity == "medium"
+        assert event.decision == "allow"
+        assert event.vector is None
+        assert event.rule is None
+        assert event.severity is None
 
     def test_negative_latency_clamped(self) -> None:
         event = build_event(
@@ -150,13 +150,23 @@ class _StubRequest:
 
 
 class TestExtractIp:
-    def test_x_forwarded_for_first_hop(self) -> None:
-        req = _StubRequest({"x-forwarded-for": "203.0.113.5, 10.0.0.1, 10.0.0.2"})
+    def test_x_forwarded_for_from_trusted_peer(self) -> None:
+        req = _StubRequest(
+            {"x-forwarded-for": "203.0.113.5, 10.0.0.1, 10.0.0.2"}, client_host="10.0.0.3"
+        )
         assert extract_starlette_ip(req) == "203.0.113.5"
 
-    def test_x_real_ip(self) -> None:
+    def test_x_forwarded_for_from_public_peer_ignored(self) -> None:
+        req = _StubRequest({"x-forwarded-for": "1.1.1.1"}, client_host="198.51.100.10")
+        assert extract_starlette_ip(req) == "198.51.100.10"
+
+    def test_x_forwarded_for_with_trusted_proxies_override(self) -> None:
+        req = _StubRequest({"x-forwarded-for": "203.0.113.5"}, client_host="10.0.0.3")
+        assert extract_starlette_ip(req, trusted_proxies=[]) == "10.0.0.3"
+
+    def test_x_real_ip_not_trusted(self) -> None:
         req = _StubRequest({"x-real-ip": "203.0.113.5"})
-        assert extract_starlette_ip(req) == "203.0.113.5"
+        assert extract_starlette_ip(req) == "0.0.0.0"
 
     def test_request_client_host(self) -> None:
         req = _StubRequest({}, client_host="198.51.100.10")
@@ -252,6 +262,6 @@ class TestMiddlewareTelemetry:
         assert len(captured) >= 1
         payload = captured[0].decode()
         assert '"events"' in payload
-        assert '"path": "/api"' in payload
+        assert '"path": "[redacted]"' in payload
         assert '"method": "GET"' in payload
         assert '"decision": "allow"' in payload

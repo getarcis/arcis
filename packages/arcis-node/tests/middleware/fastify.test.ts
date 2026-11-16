@@ -7,7 +7,7 @@
  * exposed by the adapter are exactly what these tests assert against.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   arcisFastify,
   type FastifyHookHandler,
@@ -156,24 +156,64 @@ describe('arcisFastify (Fastify plugin)', () => {
       expect(alice2.state.status).toBe(429);
     });
 
-    it('falls back to X-Forwarded-For when request.ip is absent', async () => {
-      const { app, hooks } = createFakeFastify();
-      await arcisFastify(app, { rateLimit: { max: 1, windowMs: 60_000 } });
-      const onRequest = hooks.onRequest[0];
+    describe('client IP resolution', () => {
+      afterEach(() => vi.restoreAllMocks());
 
-      const r1 = createFakeReply();
-      await onRequest(
-        buildRequest({ headers: { 'x-forwarded-for': '9.9.9.9, 1.1.1.1' } }),
-        r1.reply,
-      );
-      const r2 = createFakeReply();
-      await onRequest(
-        buildRequest({ headers: { 'x-forwarded-for': '9.9.9.9, 1.1.1.1' } }),
-        r2.reply,
-      );
-      expect(r1.state.sent).toBe(false);
-      expect(r2.state.sent).toBe(true);
-      expect(r2.state.status).toBe(429);
+      it('ignores X-Forwarded-For from a public peer: rotating it stays in one bucket', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const { app, hooks } = createFakeFastify();
+        await arcisFastify(app, { rateLimit: { max: 1, windowMs: 60_000 } });
+        const onRequest = hooks.onRequest[0];
+        const r1 = createFakeReply();
+        const r2 = createFakeReply();
+        await onRequest(buildRequest({ socketRemoteAddress: '203.0.113.5', ip: '203.0.113.5', headers: { 'x-forwarded-for': '9.9.9.1' } }), r1.reply);
+        await onRequest(buildRequest({ socketRemoteAddress: '203.0.113.5', ip: '203.0.113.5', headers: { 'x-forwarded-for': '9.9.9.2' } }), r2.reply);
+        expect(r1.state.sent).toBe(false);
+        expect(r2.state.status).toBe(429);
+      });
+
+      it('walks X-Forwarded-For from a trusted private peer', async () => {
+        const { app, hooks } = createFakeFastify();
+        await arcisFastify(app, { rateLimit: { max: 1, windowMs: 60_000 } });
+        const onRequest = hooks.onRequest[0];
+        const send = async (xff: string) => {
+          const r = createFakeReply();
+          await onRequest(buildRequest({ socketRemoteAddress: '10.0.0.2', headers: { 'x-forwarded-for': xff } }), r.reply);
+          return r.state.status ?? 200;
+        };
+        expect(await send('198.51.100.1')).toBe(200);
+        expect(await send('198.51.100.2')).toBe(200);
+        expect(await send('198.51.100.1')).toBe(429);
+      });
+
+      it("uses Fastify's request.ip when trustProxy is configured (request.ips is defined)", async () => {
+        const { app, hooks } = createFakeFastify();
+        await arcisFastify(app, { rateLimit: { max: 1, windowMs: 60_000 } });
+        const onRequest = hooks.onRequest[0];
+        const send = async (ip: string) => {
+          const r = createFakeReply();
+          const request = { ...buildRequest({ socketRemoteAddress: '203.0.113.5', ip }), ips: ['203.0.113.5', ip] };
+          await onRequest(request, r.reply);
+          return r.state.status ?? 200;
+        };
+        expect(await send('198.51.100.1')).toBe(200);
+        expect(await send('198.51.100.2')).toBe(200);
+        expect(await send('198.51.100.1')).toBe(429);
+      });
+
+      it('explicit trustedProxies wins over request.ip', async () => {
+        const { app, hooks } = createFakeFastify();
+        await arcisFastify(app, { trustedProxies: [], rateLimit: { max: 1, windowMs: 60_000 } });
+        const onRequest = hooks.onRequest[0];
+        const send = async (ip: string) => {
+          const r = createFakeReply();
+          const request = { ...buildRequest({ socketRemoteAddress: '203.0.113.5', ip }), ips: ['203.0.113.5', ip] };
+          await onRequest(request, r.reply);
+          return r.state.status ?? 200;
+        };
+        expect(await send('198.51.100.1')).toBe(200);
+        expect(await send('198.51.100.2')).toBe(429); // keyed on the peer
+      });
     });
 
     it('falls back to socket.remoteAddress when no IP header is present', async () => {

@@ -54,6 +54,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
+from ..utils.ip import TrustedProxies, rate_limit_key, validate_trusted_proxies
+
 
 # ─── Defaults ──────────────────────────────────────────────────────────────
 
@@ -106,27 +108,6 @@ class TokenBudgetExceeded(Exception):
             body["maxTokens"] = self.max_tokens
             body["retryAfter"] = self.retry_after_seconds
         return body
-
-
-def _default_key_generator(request: Any) -> str:
-    """Default key: client IP, fall back to ``unknown``.
-
-    Reads the IP from the most common shapes (Flask ``request.remote_addr``,
-    Starlette/FastAPI ``request.client.host``, raw mappings) without
-    depending on any web framework being installed.
-    """
-    if hasattr(request, "remote_addr"):
-        ip = getattr(request, "remote_addr", None)
-        if ip:
-            return str(ip)
-    client = getattr(request, "client", None)
-    if client is not None and getattr(client, "host", None):
-        return str(client.host)
-    if isinstance(request, dict):
-        ip = request.get("ip") or request.get("remote_addr")
-        if ip:
-            return str(ip)
-    return "unknown"
 
 
 def _default_estimate_tokens(request: Any) -> int:
@@ -205,11 +186,20 @@ class TokenBudget:
         message: str = _DEFAULT_MESSAGE,
         message_oversize: str = _DEFAULT_MESSAGE_OVERSIZE,
         skip: Optional[Callable[[Any], bool]] = None,
+        trusted_proxies: TrustedProxies = None,
     ):
+        """Create a budget enforcer.
+
+        The default key is the trust-aware client IP (IPv6 grouped by /56);
+        ``trusted_proxies`` lists the proxies whose X-Forwarded-For counts.
+        Requests without a resolvable address share the ``unknown`` key.
+        """
+        validate_trusted_proxies(trusted_proxies)
+        self.trusted_proxies = trusted_proxies
         self.max_tokens = max_tokens
         self.window_seconds = window_seconds
         self.max_request_tokens = max_request_tokens
-        self.key_generator = key_generator or _default_key_generator
+        self.key_generator = key_generator or self._default_key_generator
         self.estimate_tokens = estimate_tokens or _default_estimate_tokens
         self.status_code = status_code
         self.status_code_oversize = status_code_oversize
@@ -218,6 +208,9 @@ class TokenBudget:
         self.skip = skip
         self._store: Dict[str, _Entry] = {}
         self._lock = threading.Lock()
+
+    def _default_key_generator(self, request: Any) -> str:
+        return rate_limit_key(request, self.trusted_proxies)
 
     # ── core ────────────────────────────────────────────────────────────
 

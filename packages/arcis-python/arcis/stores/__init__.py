@@ -6,6 +6,7 @@ Usage:
     from arcis.stores.redis import RedisRateLimitStore, AsyncRedisRateLimitStore
 """
 
+from .base import RateLimitStore
 from .memory import InMemoryStore
 
-__all__ = ["InMemoryStore"]
+__all__ = ["InMemoryStore", "RateLimitStore"]

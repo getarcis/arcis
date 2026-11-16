@@ -29,10 +29,8 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -40,6 +38,9 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter, type ClientIpOptions } from '../utils/client-ip';
+import { adapterKey, buildAdapterLimiter, mergeClientIpOptions } from './rate-limit-shared';
 
 // ─── SvelteKit duck-typed contracts ─────────────────────────────────────────
 // Mirrors `@sveltejs/kit`'s `RequestEvent` / `Handle` shape closely enough
@@ -70,7 +71,14 @@ export type SvelteKitHandle = (input: {
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
-export interface ArcisHandleOptions {
+/**
+ * Adapter options. The framework address (`event.getClientAddress()`) is the peer for
+ * the `trustedProxies` walk, so a proxy on a trusted private address can
+ * report the client in X-Forwarded-For while a public client cannot choose
+ * its own key. When no address is available, `clientIpHeader` or the
+ * platform header is used, else one shared `unknown` key.
+ */
+export interface ArcisHandleOptions extends ClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -85,43 +93,6 @@ export interface ArcisHandleOptions {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  // Object.create(null) avoids prototype-pollution risk if a key is "__proto__".
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
-
-/**
- * Adapt the SvelteKit Headers object to the shape `detectBot()` reads off an
- * Express request. Only the headers `detectBot` actually consults are
- * forwarded — keeps the surface tiny.
- */
 function botInputFor(headers: Headers): ExpressRequestLike {
   const h: Record<string, string | undefined> = {
     'user-agent': headers.get('user-agent') ?? undefined,
@@ -135,76 +106,13 @@ function botInputFor(headers: Headers): ExpressRequestLike {
 
 function applySecurityHeaders(
   response: Response,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   event: SvelteKitRequestEvent,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-  const h = response.headers;
-
-  if (contentSecurityPolicy) {
-    h.set(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) h.set('X-XSS-Protection', '0');
-  if (noSniff) h.set('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) h.set('X-Frame-Options', frameOptions);
-
-  // HSTS only over HTTPS — sending it over HTTP can brick HTTP-only dev servers.
-  // Trust X-Forwarded-Proto only when it's exactly 'http' or 'https'.
-  const xfp = event.request.headers
-    .get('x-forwarded-proto')
-    ?.split(',')[0]
-    ?.trim()
-    ?.toLowerCase();
-  const trustedXfp = xfp === 'https' || xfp === 'http' ? xfp : undefined;
-  const isHttps = event.url.protocol === 'https:' || trustedXfp === 'https';
-
-  if (hsts && isHttps) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    h.set('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) h.set('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) h.set('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) h.set('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) h.set('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) h.set('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) h.set('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) h.set('X-DNS-Prefetch-Control', 'off');
-  h.set('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    h.set(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    h.set('Pragma', 'no-cache');
-    h.set('Expires', '0');
-  }
-
-  h.delete('X-Powered-By');
+  const isHttps =
+    event.url.protocol === 'https:' ||
+    parseForwardedProto(event.request.headers.get('x-forwarded-proto')) === 'https';
+  applyPlanToHeaders(response.headers, policy, policy.plan({ isHttps, request: event, response }));
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -217,12 +125,17 @@ function applySecurityHeaders(
  */
 export function arcisHandle(options: ArcisHandleOptions = {}): SvelteKitHandle {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'SvelteKit',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisHandle') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions =
@@ -236,8 +149,14 @@ export function arcisHandle(options: ArcisHandleOptions = {}): SvelteKitHandle {
   return async ({ event, resolve }) => {
     // 1. Rate limit
     if (limiter) {
-      const key = event.getClientAddress();
-      const decision = limiter(key);
+      let peer: string | undefined;
+      try {
+        peer = event.getClientAddress();
+      } catch {
+        // The adapter cannot provide an address (for example a prerendered route).
+      }
+      const ip = resolver.resolve(peer, toHeaderGetter(event.request.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisHandle'));
       if (!decision.allowed) {
         return new Response(
           JSON.stringify({
@@ -278,8 +197,8 @@ export function arcisHandle(options: ArcisHandleOptions = {}): SvelteKitHandle {
     const response = await resolve(event);
 
     // 4. Apply security headers (in-place; SvelteKit's response headers are mutable)
-    if (headersCfg) {
-      applySecurityHeaders(response, typeof headersCfg === 'object' ? headersCfg : {}, event);
+    if (headerPolicy) {
+      applySecurityHeaders(response, headerPolicy, event);
     }
 
     return response;

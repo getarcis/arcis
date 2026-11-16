@@ -23,8 +23,19 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { MemoryLimiter, LimiterResult } from '../_third_party/rate-limit';
 import type { IRateLimiterRes } from '../_third_party/rate-limit';
+import {
+  clientKey,
+  createNodeClientIp,
+  validateIpv6Subnet,
+  type ClientIpOptions,
+} from '../utils/client-ip';
 
-export interface BruteForceOptions {
+/**
+ * Brute-force options. The default key is the client IP resolved with
+ * `trustedProxies` / `clientIpHeader` (see spec/API_SPEC.md, "Client IP
+ * resolution") and passed through `ipKeyGenerator`.
+ */
+export interface BruteForceOptions extends ClientIpOptions {
   /** Points allowed in the fast window. */
   fastPoints?: number;
   /** Fast window length in seconds. */
@@ -35,8 +46,10 @@ export interface BruteForceOptions {
   slowDuration?: number;
   /** Seconds to semi-permanently block a key after slow-window exhaustion. */
   blockDuration?: number;
-  /** Custom key resolver. Defaults to client IP. */
+  /** Custom key resolver. Defaults to the resolved client IP key. */
   keyGenerator?: (req: Request) => string;
+  /** IPv6 prefix length for the default key (1-128), or `false`. Default: 56 */
+  ipv6Subnet?: number | false;
   /** HTTP status to return when blocked. */
   statusCode?: number;
   /** Response message when blocked. */
@@ -64,17 +77,6 @@ declare global {
   }
 }
 
-function defaultKeyGenerator(req: Request): string {
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length > 0) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  if (typeof req.ip === 'string' && req.ip.length > 0) return req.ip;
-  const remote = req.socket?.remoteAddress;
-  return typeof remote === 'string' && remote.length > 0 ? remote : 'unknown';
-}
-
 /**
  * Build a brute-force middleware backed by a bursty limiter. The
  * returned function is an Express RequestHandler with a `controller`
@@ -88,7 +90,10 @@ export function bruteForceProtection(options: BruteForceOptions = {}): RequestHa
   const slowPoints = options.slowPoints ?? 20;
   const slowDuration = options.slowDuration ?? 900; // 15 min
   const blockDuration = options.blockDuration ?? 900; // 15 min
-  const keyGenerator = options.keyGenerator ?? defaultKeyGenerator;
+  const ipv6Subnet = validateIpv6Subnet(options.ipv6Subnet, 'bruteForceProtection');
+  const clientIp = createNodeClientIp(options);
+  const keyGenerator =
+    options.keyGenerator ?? ((req: Request) => clientKey(clientIp(req), ipv6Subnet));
   const statusCode = options.statusCode ?? 429;
   const message = options.message ?? 'Too many login attempts. Please try again later.';
   const skip = options.skip;

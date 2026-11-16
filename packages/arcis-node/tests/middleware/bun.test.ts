@@ -103,6 +103,22 @@ describe('arcisBun (Bun.serve fetch wrapper)', () => {
     );
     expect(blocked.status).toBe(429);
   });
+
+  it('ignores X-Forwarded-For from a public peer: rotating it stays in one bucket', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const handler = arcisBun({ rateLimit: { max: 2 } }, async () => new Response('ok'));
+    const server: BunServerLike = { requestIP: () => ({ address: '203.0.113.5' }) };
+    const statuses: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const res = await handler(
+        new Request('https://example.test/', { headers: { 'x-forwarded-for': `198.51.100.${i}` } }),
+        server,
+      );
+      statuses.push(res.status);
+    }
+    expect(statuses).toEqual([200, 200, 429, 429]);
+    warn.mockRestore();
+  });
 });
 
 // ─── arcisHono (Hono middleware) ─────────────────────────────────────────────

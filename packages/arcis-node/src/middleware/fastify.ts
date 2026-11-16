@@ -31,10 +31,8 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -42,6 +40,15 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { applyPlanAfterHandler, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import {
+  createClientIpResolver,
+  normalizeIp,
+  toHeaderGetter,
+  type ClientIpOptions,
+  type ClientIpResolver,
+} from '../utils/client-ip';
+import { adapterKey, buildAdapterLimiter, mergeClientIpOptions } from './rate-limit-shared';
 
 // ─── Fastify duck-typed contracts ───────────────────────────────────────────
 // Mirror just enough of the FastifyInstance / FastifyRequest / FastifyReply
@@ -56,8 +63,14 @@ export interface FastifyRequestLike {
   url?: string;
   method?: string;
   ip?: string;
+  /** Defined by Fastify only when the app sets `trustProxy`. */
+  ips?: string[];
   socket?: { remoteAddress?: string };
-  raw?: { headers: Record<string, string | string[] | undefined>; url?: string };
+  raw?: {
+    headers: Record<string, string | string[] | undefined>;
+    url?: string;
+    socket?: { remoteAddress?: string };
+  };
 }
 
 /**
@@ -68,6 +81,10 @@ export interface FastifyRequestLike {
 export interface FastifyReplyLike {
   status(code: number): FastifyReplyLike;
   header(name: string, value: string): FastifyReplyLike;
+  /** Real Fastify replies expose this; used to strip fingerprinting headers. */
+  removeHeader?(name: string): FastifyReplyLike;
+  /** Real Fastify replies expose this; lets route-set headers win in the baseline profile. */
+  hasHeader?(name: string): boolean;
   send(payload: unknown): FastifyReplyLike;
 }
 
@@ -89,7 +106,12 @@ export interface FastifyInstanceLike {
 
 // ─── Plugin options ─────────────────────────────────────────────────────────
 
-export interface ArcisFastifyOptions {
+/**
+ * Plugin options. `trustedProxies` / `clientIpHeader` control client IP
+ * resolution; without `trustedProxies`, an app that sets Fastify's
+ * `trustProxy` keys on Fastify's resolved `request.ip`.
+ */
+export interface ArcisFastifyOptions extends ClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -103,38 +125,6 @@ export interface ArcisFastifyOptions {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  // Object.create(null) avoids prototype-pollution risk if a key is "__proto__".
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
 
 /**
  * Pull the first header value as a plain string. Fastify's request.headers
@@ -170,101 +160,39 @@ function botInputFor(
 }
 
 /**
- * Pull a stable client IP. Order: `request.ip` (Fastify pre-resolves
- * trustProxy when configured) → X-Forwarded-For (leftmost) → X-Real-IP →
- * socket.remoteAddress → "unknown". `request.ip` is the canonical Fastify
- * field — when the user enables `trustProxy: true` Fastify already parsed
- * the right entry from XFF; we honor that when it's set.
+ * Resolve the client IP. Fastify defines `request.ips` only when the app sets
+ * `trustProxy`; then its resolved `request.ip` is used (unless Arcis
+ * `trustedProxies` is set explicitly). Otherwise the socket peer goes through
+ * the Arcis trust walk, so a public client cannot pick its key with
+ * X-Forwarded-For.
  */
-function clientIpOf(request: FastifyRequestLike): string {
-  if (request.ip) return request.ip;
-  const headers = request.headers ?? request.raw?.headers ?? {};
-  const xff = headerValue(headers, 'x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
+function clientIpOf(request: FastifyRequestLike, resolver: ClientIpResolver): string | null {
+  if (!resolver.explicitTrust && Array.isArray(request.ips)) {
+    const frameworkIp = normalizeIp(request.ip);
+    if (frameworkIp !== null) return frameworkIp;
   }
-  const xrip = headerValue(headers, 'x-real-ip');
-  if (xrip) return xrip.trim();
-  if (request.socket?.remoteAddress) return request.socket.remoteAddress;
-  return 'unknown';
+  const peer = request.socket?.remoteAddress ?? request.raw?.socket?.remoteAddress ?? request.ip;
+  return resolver.resolve(peer, toHeaderGetter(request.headers ?? request.raw?.headers));
 }
 
 function applySecurityHeaders(
   reply: FastifyReplyLike,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   request: FastifyRequestLike,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-
-  if (contentSecurityPolicy) {
-    reply.header(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) reply.header('X-XSS-Protection', '0');
-  if (noSniff) reply.header('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) reply.header('X-Frame-Options', frameOptions);
-
-  // HSTS only over HTTPS — sending it over HTTP can brick HTTP-only dev
-  // servers. Trust X-Forwarded-Proto only when it's exactly 'http' or
-  // 'https'; reject malformed values.
+  // Fastify exposes only a path, so HTTPS is known from a trusted
+  // X-Forwarded-Proto. Deployments behind a TLS proxy must set it for HSTS.
   const headers = request.headers ?? request.raw?.headers ?? {};
-  const xfp = headerValue(headers, 'x-forwarded-proto')
-    ?.split(',')[0]
-    ?.trim()
-    ?.toLowerCase();
-  const trustedXfp = xfp === 'https' || xfp === 'http' ? xfp : undefined;
-  // We don't know the protocol from request.url alone (Fastify gives a
-  // path, not a full URL), so fall back to the trusted XFP. Without XFP
-  // and without a way to inspect the listening socket, default to
-  // non-HTTPS — HSTS won't be set. Production deployments behind a TLS-
-  // terminating proxy MUST set X-Forwarded-Proto to get HSTS.
-  const isHttps = trustedXfp === 'https';
-
-  if (hsts && isHttps) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    reply.header('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) reply.header('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) reply.header('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) reply.header('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) reply.header('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) reply.header('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) reply.header('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) reply.header('X-DNS-Prefetch-Control', 'off');
-  reply.header('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    reply.header(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    reply.header('Pragma', 'no-cache');
-    reply.header('Expires', '0');
-  }
+  const isHttps = parseForwardedProto(headerValue(headers, 'x-forwarded-proto')) === 'https';
+  applyPlanAfterHandler(
+    {
+      has: (name) => reply.hasHeader?.(name) ?? false,
+      set: (name, value) => reply.header(name, value),
+      remove: (name) => reply.removeHeader?.(name),
+    },
+    policy,
+    policy.plan({ isHttps, request, response: reply }),
+  );
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -282,12 +210,17 @@ export async function arcisFastify(
   options: ArcisFastifyOptions = {},
 ): Promise<void> {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Fastify',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisFastify') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions =
@@ -301,8 +234,8 @@ export async function arcisFastify(
   fastify.addHook('onRequest', async (request, reply) => {
     // 1. Rate limit
     if (limiter) {
-      const key = clientIpOf(request);
-      const decision = limiter(key);
+      const key = adapterKey(clientIpOf(request, resolver), limiter, 'arcisFastify');
+      const decision = limiter.check(key);
       reply.header('X-RateLimit-Limit', decision.max.toString());
       reply.header(
         'X-RateLimit-Remaining',
@@ -335,14 +268,14 @@ export async function arcisFastify(
     }
   });
 
-  if (headersCfg) {
+  if (headerPolicy) {
     fastify.addHook('onSend', async (request, reply, payload) => {
       // onSend runs after the route handler but before the response is
       // flushed — last chance to mutate headers. Fastify expects the
       // (possibly transformed) payload returned; we don't touch it.
       applySecurityHeaders(
         reply,
-        typeof headersCfg === 'object' ? headersCfg : {},
+        headerPolicy,
         request,
       );
       return payload;

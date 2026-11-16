@@ -66,13 +66,11 @@ describe('createRateLimiter', () => {
 
   describe('Fail-open on store errors', () => {
     // A store whose every operation rejects, simulating Redis being down.
-    const throwingStore = (): RateLimitStore =>
-      ({
-        get: () => Promise.reject(new Error('redis down')),
-        set: () => Promise.reject(new Error('redis down')),
-        increment: () => Promise.reject(new Error('redis down')),
-        reset: () => Promise.reject(new Error('redis down')),
-      } as unknown as RateLimitStore);
+    const throwingStore = (): RateLimitStore => ({
+      increment: () => Promise.reject(new Error('redis down')),
+      decrement: () => Promise.reject(new Error('redis down')),
+      resetKey: () => Promise.reject(new Error('redis down')),
+    });
 
     it('allows the request when the store throws (availability over denial)', async () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

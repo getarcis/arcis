@@ -13,6 +13,7 @@ from starlette.requests import Request
 
 from .async_rate_limit import AsyncRateLimiter, AsyncRateLimitStore, AsyncRateLimitExceeded
 from .core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS
+from .utils.ip import TrustedProxies, client_ip_from_request, validate_trusted_proxies
 
 
 # ============================================================================
@@ -76,11 +77,14 @@ def create_rate_limit_dependency(
     key_func: Optional[Callable] = None,
     skip_func: Optional[Callable] = None,
     store: Optional[AsyncRateLimitStore] = None,
+    trusted_proxies: TrustedProxies = None,
 ):
     """
     Create a FastAPI dependency for rate limiting.
     
     Useful when you want per-route rate limiting instead of global middleware.
+    ``trusted_proxies`` lists the proxies whose X-Forwarded-For the default
+    key honors (default: loopback, link-local and private ranges).
     
     Usage:
         from fastapi import Depends
@@ -106,6 +110,7 @@ def create_rate_limit_dependency(
         key_func=key_func,
         skip_func=skip_func,
         store=store,
+        trusted_proxies=trusted_proxies,
     )
 
     async def rate_limit_dependency(request: Request):
@@ -134,14 +139,15 @@ def create_login_protection_dependency(
     allowed_bot_categories: Optional[List[str]] = None,
     correlation_window: Any = None,
     route: str = "/login",
+    trusted_proxies: TrustedProxies = None,
 ):
     """
     Create a FastAPI dependency that runs check_login() and raises
     HTTPException on rejection.
 
     Wraps arcis.check_login (which is framework-agnostic) into the
-    FastAPI Depends() shape, including IP extraction from request.client
-    so callers don't have to pull it manually.
+    FastAPI Depends() shape, including trust-aware client IP resolution
+    (``trusted_proxies``) so callers don't have to pull it manually.
 
     Usage:
         from fastapi import FastAPI, Depends
@@ -164,8 +170,10 @@ def create_login_protection_dependency(
     """
     from .middleware.protect_login import check_login as _check_login
 
+    validate_trusted_proxies(trusted_proxies)
+
     async def login_protection_dependency(request: Request):
-        client_ip = request.client.host if request.client else None
+        client_ip = client_ip_from_request(request, trusted_proxies)
         result = _check_login(
             request,
             username_field=username_field,
@@ -193,8 +201,8 @@ def create_login_protection_dependency(
 # ============================================================================
 # Per-framework wrappers around the composite login / signup / api checks
 # plus a shared CorrelationWindow. Each factory returns a FastAPI/Starlette
-# async dependency that auto-extracts the client IP (X-Forwarded-For first
-# hop, then request.client.host) and the route path, forwards them into the
+# async dependency that resolves the client IP (trust-aware: X-Forwarded-For
+# only from a trusted peer) and the route path, forwards them into the
 # base check with the right vector tag, and raises HTTPException on denial.
 #
 # Rate limiting stays the RateLimiter middleware's job (Pattern 3). Mount
@@ -228,16 +236,6 @@ async def _read_json_body(request: Request) -> Any:
         return None
 
 
-def _starlette_client_ip(request: Request) -> Optional[str]:
-    """Resolve client IP: X-Forwarded-For first hop, then socket peer."""
-    from .middleware.protect_factories import client_ip_from_xff_then
-
-    fallback = request.client.host if request.client else None
-    return client_ip_from_xff_then(
-        request.headers.get("x-forwarded-for"), fallback
-    )
-
-
 def protect_login(
     *,
     username_field: str = "username",
@@ -247,6 +245,7 @@ def protect_login(
     allowed_bot_categories: Optional[List[str]] = None,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ):
     """FastAPI/Starlette login-protection dependency factory.
 
@@ -268,16 +267,19 @@ def protect_login(
             instance to several factories to share per-IP state.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None uses the default private set.
 
     Returns:
         An async FastAPI dependency callable.
     """
+    validate_trusted_proxies(trusted_proxies)
     from fastapi import HTTPException
 
     from .middleware.protect_factories import block_status_code, check_login
 
     async def login_dependency(request: Request):
-        client_ip = _starlette_client_ip(request)
+        client_ip = client_ip_from_request(request, trusted_proxies)
         body = await _read_json_body(request)
         shim = _BodyRequest(body, request.headers)
         result = check_login(
@@ -312,6 +314,7 @@ def protect_signup(
     blocked_email_domains: Optional[List[str]] = None,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ):
     """FastAPI/Starlette signup-protection dependency factory.
 
@@ -332,10 +335,13 @@ def protect_signup(
         correlation_window: Optional shared window.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None uses the default private set.
 
     Returns:
         An async FastAPI dependency callable.
     """
+    validate_trusted_proxies(trusted_proxies)
     from fastapi import HTTPException
 
     from .middleware.protect_factories import (
@@ -344,7 +350,7 @@ def protect_signup(
     )
 
     async def signup_dependency(request: Request):
-        client_ip = _starlette_client_ip(request)
+        client_ip = client_ip_from_request(request, trusted_proxies)
         body = await _read_json_body(request)
         shim = _BodyRequest(body, request.headers)
         result = signup_check_with_correlation(
@@ -378,6 +384,7 @@ def protect_api(
     scan_body: bool = True,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ):
     """FastAPI/Starlette API-protection dependency factory.
 
@@ -396,16 +403,19 @@ def protect_api(
         correlation_window: Optional shared window.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None uses the default private set.
 
     Returns:
         An async FastAPI dependency callable.
     """
+    validate_trusted_proxies(trusted_proxies)
     from fastapi import HTTPException
 
     from .middleware.protect_factories import block_status_code, check_api
 
     async def api_dependency(request: Request):
-        client_ip = _starlette_client_ip(request)
+        client_ip = client_ip_from_request(request, trusted_proxies)
         body = await _read_json_body(request)
         shim = _BodyRequest(body, request.headers)
         result = check_api(

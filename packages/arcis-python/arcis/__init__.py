@@ -88,6 +88,8 @@ from .core import (
     validate_uuid,
 )
 
+from .middleware.headers import DANGEROUSLY_DISABLE_DEFAULT_SRC
+
 from .validation.url import (
     validate_url_ssrf,
     is_url_safe,
@@ -201,10 +203,15 @@ from .middleware.protect_factories import (
 from .utils import (
     parse_duration,
     format_duration,
+    DEFAULT_TRUSTED_PROXIES,
+    client_ip_from_request,
     detect_client_ip,
+    ip_key_generator,
     is_private_ip,
+    resolve_client_ip,
     fingerprint,
 )
+from .stores.base import RateLimitStore
 
 # Async components (for FastAPI)
 try:
@@ -230,6 +237,7 @@ __all__ = [
     "RateLimitEntry",
     "InMemoryStore",
     "SecurityHeaders",
+    "DANGEROUSLY_DISABLE_DEFAULT_SRC",
     "Validator",
     "ValidationError",
     "SafeLogger",
@@ -332,9 +340,14 @@ __all__ = [
     # Utilities
     "parse_duration",
     "format_duration",
+    "DEFAULT_TRUSTED_PROXIES",
+    "client_ip_from_request",
     "detect_client_ip",
+    "ip_key_generator",
     "is_private_ip",
+    "resolve_client_ip",
     "fingerprint",
+    "RateLimitStore",
 ]
 
 # Add async exports if available

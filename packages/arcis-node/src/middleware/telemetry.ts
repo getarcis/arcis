@@ -8,6 +8,7 @@ import type { Request, RequestHandler } from 'express';
 import type { TelemetryClient } from '../telemetry/client';
 import type { TelemetryEvent, TelemetryDecision, TelemetrySeverity } from '../telemetry/types';
 import { SecurityThreatError } from '../core/errors';
+import { createNodeClientIp } from '../utils/client-ip';
 
 /** Marker that inner middleware writes to and the emitter reads from. */
 export interface ArcisTelemetryMarker {
@@ -16,7 +17,7 @@ export interface ArcisTelemetryMarker {
   severity?: TelemetrySeverity;
   matchedPattern?: string;
   reason?: string;
-  /** Pre-decided decision. If absent, the emitter infers from response status. */
+  /** Explicit Arcis decision. If absent, the request passed through Arcis. */
   decision?: TelemetryDecision;
 }
 
@@ -41,16 +42,23 @@ const THREAT_TO_VECTOR: Record<string, string> = {
 
 /**
  * Express middleware that records a telemetry event for every request.
- * Captures latency from entry, hooks `res.on('finish')`, and infers the
- * final decision from response status + any `req.__arcis` marker.
+ * Captures latency from entry and the actual final status on `finish`.
+ * Security decisions come only from Arcis markers, never application status.
+ *
+ * @param client - Telemetry transport
+ * @param clientIp - Resolves the event `ip`. Default: the Arcis resolver with
+ *   the default trust set.
  */
-export function createTelemetryEmitter(client: TelemetryClient): RequestHandler {
+export function createTelemetryEmitter(
+  client: TelemetryClient,
+  clientIp: (req: Request) => string | null = createNodeClientIp(),
+): RequestHandler {
   return (req, res, next) => {
     const start = performance.now();
 
     res.on('finish', () => {
       try {
-        const event = buildEvent(req, res.statusCode, performance.now() - start);
+        const event = buildEvent(req, res.statusCode, performance.now() - start, clientIp(req));
         client.record(event);
       } catch {
         // emit must never break the response — fail-open
@@ -84,38 +92,24 @@ export function tapSanitizerThreats(handler: RequestHandler): RequestHandler {
   };
 }
 
-function buildEvent(req: Request, status: number, latencyMs: number): TelemetryEvent {
+function buildEvent(req: Request, status: number, latencyMs: number, ip: string | null): TelemetryEvent {
   const marker = req.__arcis;
-  const decision = marker?.decision ?? inferDecision(status);
+  const decision = marker?.decision ?? 'allow';
 
-  // Skip 5xx — those are server errors, not security decisions.
-  // Still emit so the dashboard shows traffic, but mark as allow with status >=500.
+  // Application errors and Arcis decisions are independent outcomes.
   return {
     ts: new Date().toISOString(),
-    ip: extractIp(req),
+    ip: ip ?? '0.0.0.0',
     method: (req.method ?? 'GET').toUpperCase(),
     path: req.path ?? req.url ?? '/',
     decision,
-    vector: marker?.vector ?? (status === 429 ? 'rate-limit' : undefined),
-    rule: marker?.rule ?? (status === 429 ? 'rate-limit/exceeded' : undefined),
-    severity: marker?.severity ?? (status === 429 ? 'medium' : undefined),
+    vector: marker?.vector,
+    rule: marker?.rule,
+    severity: marker?.severity,
     userAgent: typeof req.headers?.['user-agent'] === 'string' ? req.headers['user-agent'] : '',
     reason: marker?.reason,
     status,
     matchedPattern: marker?.matchedPattern,
     latencyMs: Math.max(0, latencyMs),
   };
-}
-
-function inferDecision(status: number): TelemetryDecision {
-  if (status === 429) return 'deny';
-  if (status === 400) return 'deny';
-  if (status === 403) return 'deny';
-  return 'allow';
-}
-
-function extractIp(req: Request): string {
-  if (typeof req.ip === 'string' && req.ip.length > 0) return req.ip;
-  const remote = req.socket?.remoteAddress;
-  return typeof remote === 'string' ? remote : '0.0.0.0';
 }

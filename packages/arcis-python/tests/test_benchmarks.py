@@ -202,28 +202,25 @@ class TestRateLimiterBenchmarks:
     def test_rate_limiter_store_get(self, benchmark):
         """Benchmark InMemoryStore get operation."""
         store = InMemoryStore()
-        import time
-        store.set("bench_key", 5, time.time() + 60)
+        store.increment("bench_key", 60_000)
         benchmark(store.get, "bench_key")
         store.close()
 
-    def test_rate_limiter_store_set(self, benchmark):
-        """Benchmark InMemoryStore set operation."""
-        store = InMemoryStore()
-        import time
+    def test_rate_limiter_store_increment_new_keys(self, benchmark):
+        """Benchmark InMemoryStore increment creating fresh keys at the cap."""
+        store = InMemoryStore(max_size=1_000)
+        counter = iter(range(10**9))
 
-        def do_set():
-            store.set("bench_key", 1, time.time() + 60)
+        def do_increment():
+            store.increment(f"bench_key_{next(counter)}", 60_000)
 
-        benchmark(do_set)
+        benchmark(do_increment)
         store.close()
 
     def test_rate_limiter_store_increment(self, benchmark):
         """Benchmark InMemoryStore increment operation."""
         store = InMemoryStore()
-        import time
-        store.set("bench_key", 1, time.time() + 60)
-        benchmark(store.increment, "bench_key")
+        benchmark(store.increment, "bench_key", 60_000)
         store.close()
 
 

@@ -1,7 +1,7 @@
 """
 Arcis Middleware - Sliding Window Rate Limiter
 
-More accurate than fixed window — uses a weighted sum of the previous
+More accurate than fixed window: uses a weighted sum of the previous
 and current window to approximate a true sliding window.
 
 Algorithm:
@@ -21,7 +21,15 @@ import math
 from typing import Any, Callable, Dict, Optional, Union
 
 from ..utils.duration import parse_duration
+from ..utils.ip import (
+    DEFAULT_IPV6_SUBNET,
+    TrustedProxies,
+    rate_limit_key,
+    validate_ipv6_subnet,
+    validate_trusted_proxies,
+)
 from ..core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS, DEFAULT_RATE_LIMIT_MESSAGE
+from .rate_limit import RateLimitExceeded, validate_max_requests, validate_window_ms
 
 
 class SlidingWindowLimiter:
@@ -46,24 +54,41 @@ class SlidingWindowLimiter:
         message: str = DEFAULT_RATE_LIMIT_MESSAGE,
         key_func: Optional[Callable] = None,
         skip_func: Optional[Callable] = None,
+        trusted_proxies: TrustedProxies = None,
+        ipv6_subnet: Union[int, bool] = DEFAULT_IPV6_SUBNET,
     ):
-        if max_requests < 1:
-            raise ValueError(f"max_requests must be >= 1, got {max_requests}")
+        """Create a limiter.
 
-        self.max_requests = max_requests
-        self.window_ms = parse_duration(window)
-        if self.window_ms < 1:
-            raise ValueError(f"window must be > 0, got {window}")
+        Args:
+            max_requests: Requests allowed per window; 0 blocks every request.
+            window: Window as whole milliseconds or a duration string ('15m').
+            message: Message carried by ``RateLimitExceeded``.
+            key_func: ``request -> key``. Default: resolved client IP key.
+            skip_func: ``request -> bool``; True skips counting.
+            trusted_proxies: Proxy IPs / CIDR ranges whose X-Forwarded-For is
+                honored. None uses the default private set; [] trusts none.
+            ipv6_subnet: IPv6 prefix grouped into one key (1-128) or False.
+
+        Raises:
+            ValueError: On an invalid limit, window, proxy entry or subnet.
+        """
+        self.max_requests = validate_max_requests(max_requests)
+        window_ms = parse_duration(window) if isinstance(window, str) else window
+        self.window_ms = validate_window_ms(window_ms, "window")
         self.window_sec = self.window_ms / 1000
         self.message = message
+        validate_trusted_proxies(trusted_proxies)
+        self.trusted_proxies = trusted_proxies
+        self.ipv6_subnet = validate_ipv6_subnet(ipv6_subnet)
         self.key_func = key_func or self._default_key_func
         self.skip_func = skip_func
         self._closed = False
         self._lock = threading.Lock()
 
-        # Two windows per key
-        self._current: Dict[str, Dict[str, Any]] = {}
-        self._previous: Dict[str, Dict[str, Any]] = {}
+        # Two windows per key, each {'count': int, 'index': int} where index
+        # is floor(now_ms / window_ms).
+        self._current: Dict[str, Dict[str, int]] = {}
+        self._previous: Dict[str, Dict[str, int]] = {}
 
         # Cleanup thread
         self._cleanup_event = threading.Event()
@@ -72,26 +97,26 @@ class SlidingWindowLimiter:
         atexit.register(self.close)
 
     def _default_key_func(self, request) -> str:
-        """Default key function - uses client IP address."""
-        from ..utils.ip import detect_client_ip
-        return detect_client_ip(request)
+        """Default key: trust-aware client IP through ``ip_key_generator``."""
+        return rate_limit_key(request, self.trusted_proxies, self.ipv6_subnet)
+
+    def _window_index(self, now: float) -> int:
+        return int((now * 1000) // self.window_ms)
 
     def _cleanup_loop(self):
-        """Background cleanup of expired windows."""
+        """Background cleanup of windows that can no longer count."""
         # Clamp interval: min 10s, max 300s regardless of window size
         cleanup_interval = max(10, min(300, self.window_sec))
         while not self._cleanup_event.wait(timeout=cleanup_interval):
             if self._closed:
                 break
-            now = time.time()
-            cutoff = now - self.window_sec * 2
+            # Only the window right before the current one still counts.
+            oldest_useful = self._window_index(time.time()) - 1
             with self._lock:
-                expired = [k for k, v in self._previous.items() if v['start'] < cutoff]
-                for k in expired:
-                    del self._previous[k]
-                expired = [k for k, v in self._current.items() if v['start'] < cutoff]
-                for k in expired:
-                    del self._current[k]
+                for windows in (self._previous, self._current):
+                    expired = [k for k, v in windows.items() if v['index'] < oldest_useful]
+                    for k in expired:
+                        del windows[k]
 
     def close(self):
         """Stop cleanup thread and release resources."""
@@ -121,30 +146,38 @@ class SlidingWindowLimiter:
 
         key = self.key_func(request)
         now = time.time()
-        window_start = math.floor(now / self.window_sec) * self.window_sec
+        index = self._window_index(now)
+        window_start = index * self.window_sec
 
         with self._lock:
-            # Rotate windows if needed
-            if key not in self._current or self._current[key]['start'] < window_start:
-                if key in self._current:
-                    self._previous[key] = self._current[key]
-                self._current[key] = {'count': 0, 'start': window_start}
+            current = self._current.get(key)
+            if current is None or current['index'] != index:
+                # Rotate. The old current window becomes the previous one
+                # only when it is the window immediately before this one; a
+                # key idle for a full window starts from zero.
+                if current is not None and current['index'] == index - 1:
+                    self._previous[key] = current
+                else:
+                    self._previous.pop(key, None)
+                current = {'count': 0, 'index': index}
+                self._current[key] = current
+
+            previous = self._previous.get(key)
+            prev_count = previous['count'] if previous and previous['index'] == index - 1 else 0
 
             # Calculate weighted count BEFORE incrementing
             elapsed = now - window_start
             weight = max(0, (self.window_sec - elapsed) / self.window_sec)
-            prev_count = self._previous.get(key, {}).get('count', 0)
-            estimated = (prev_count * weight) + self._current[key]['count'] + 1
+            estimated = (prev_count * weight) + current['count'] + 1
 
             reset = max(1, math.ceil(window_start + self.window_sec - now))
 
             if estimated > self.max_requests:
-                # Don't increment — rejected requests should not consume quota
-                from ..middleware.rate_limit import RateLimitExceeded
+                # Don't increment: rejected requests should not consume quota
                 raise RateLimitExceeded(self.message, reset)
 
             # Only increment on allowed requests
-            self._current[key]['count'] += 1
+            current['count'] += 1
 
         remaining = max(0, int(self.max_requests - estimated))
 

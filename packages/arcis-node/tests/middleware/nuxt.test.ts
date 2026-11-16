@@ -150,6 +150,18 @@ describe('arcisHandler (Nuxt h3 event handler factory)', () => {
       await handler(b.event);
       expect(b.res.statusCode).toBe(429);
     });
+
+    it('ignores X-Forwarded-For from a public peer: rotating it stays in one bucket', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const handler = arcisHandler({ rateLimit: { max: 1 } });
+      const a = buildEvent({ ip: '203.0.113.5', headers: { 'x-forwarded-for': '198.51.100.1' } });
+      const b = buildEvent({ ip: '203.0.113.5', headers: { 'x-forwarded-for': '198.51.100.2' } });
+      await handler(a.event);
+      await handler(b.event);
+      expect(a.res.statusCode).toBe(200);
+      expect(b.res.statusCode).toBe(429);
+      warn.mockRestore();
+    });
   });
 
   describe('Bot detection', () => {

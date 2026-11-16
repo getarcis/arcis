@@ -227,81 +227,94 @@ from arcis.fastapi import (
 
 
 class TestAsyncInMemoryStore:
-    """Test AsyncInMemoryStore class."""
-    
+    """Test AsyncInMemoryStore class (async facade over InMemoryStore)."""
+
     @pytest.mark.asyncio
     async def test_get_returns_none_for_nonexistent_key(self):
         store = AsyncInMemoryStore()
         result = await store.get("nonexistent")
         assert result is None
         await store.close()
-    
+
     @pytest.mark.asyncio
-    async def test_set_and_get(self):
+    async def test_increment_and_get(self):
         store = AsyncInMemoryStore()
-        await store.set("test_key", 5, time.time() + 60)
+        hits, reset_time = await store.increment("test_key", 60_000)
+        assert hits == 1
+        assert reset_time > time.time()
         result = await store.get("test_key")
         assert result is not None
-        assert result.count == 5
+        assert result.count == 1
         await store.close()
-    
+
     @pytest.mark.asyncio
     async def test_get_returns_none_for_expired_entry(self):
         store = AsyncInMemoryStore()
-        # Set entry that's already expired
-        await store.set("expired_key", 1, time.time() - 10)
+        await store.increment("expired_key", 1)
+        await asyncio.sleep(0.01)
         result = await store.get("expired_key")
         assert result is None
         await store.close()
-    
+
     @pytest.mark.asyncio
-    async def test_increment(self):
+    async def test_increment_counts(self):
         store = AsyncInMemoryStore()
-        await store.set("counter", 3, time.time() + 60)
-        new_count = await store.increment("counter")
-        assert new_count == 4
+        for _ in range(3):
+            await store.increment("counter", 60_000)
+        hits, _ = await store.increment("counter", 60_000)
+        assert hits == 4
         result = await store.get("counter")
         assert result.count == 4
         await store.close()
-    
+
     @pytest.mark.asyncio
-    async def test_increment_nonexistent_returns_one(self):
+    async def test_concurrent_increments_are_atomic(self):
         store = AsyncInMemoryStore()
-        new_count = await store.increment("new_key")
-        assert new_count == 1
+        results = await asyncio.gather(*[store.increment("k", 60_000) for _ in range(50)])
+        assert sorted(hits for hits, _ in results) == list(range(1, 51))
         await store.close()
-    
+
+    @pytest.mark.asyncio
+    async def test_decrement_and_reset_key(self):
+        store = AsyncInMemoryStore()
+        await store.increment("k", 60_000)
+        await store.decrement("k")
+        await store.decrement("k")
+        assert (await store.get("k")).count == 0
+        await store.reset_key("k")
+        assert await store.get("k") is None
+        await store.close()
+
     @pytest.mark.asyncio
     async def test_cleanup_removes_expired(self):
         store = AsyncInMemoryStore()
-        # Set one expired and one valid
-        await store.set("expired", 1, time.time() - 10)
-        await store.set("valid", 1, time.time() + 60)
-        
-        # Force store the expired one (bypass get's auto-cleanup)
-        async with store._lock:
-            from arcis.core.types import RateLimitEntry
-            store._store["expired"] = RateLimitEntry(count=1, reset_time=time.time() - 10)
-        
+        await store.increment("expired", 1)
+        await store.increment("valid", 60_000)
+        await asyncio.sleep(0.01)
         await store.cleanup()
-        
-        # Expired should be gone, valid should remain
-        async with store._lock:
-            assert "expired" not in store._store
-            assert "valid" in store._store
+        assert await store.get("expired") is None
+        assert await store.get("valid") is not None
         await store.close()
-    
+
     @pytest.mark.asyncio
     async def test_clear_removes_all(self):
         store = AsyncInMemoryStore()
-        await store.set("key1", 1, time.time() + 60)
-        await store.set("key2", 2, time.time() + 60)
+        await store.increment("key1", 60_000)
+        await store.increment("key2", 60_000)
         await store.clear()
-        
-        async with store._lock:
-            assert len(store._store) == 0
+        assert await store.get("key1") is None
+        assert await store.get("key2") is None
         await store.close()
-    
+
+    @pytest.mark.asyncio
+    async def test_size_cap_keeps_limiting(self):
+        store = AsyncInMemoryStore(max_size=2)
+        await store.increment("a", 60_000)
+        await store.increment("b", 60_000)
+        assert (await store.increment("c", 60_000))[0] == 1
+        assert (await store.increment("c", 60_000))[0] == 2
+        await store.close()
+
     @pytest.mark.asyncio
     async def test_close_marks_closed(self):
         store = AsyncInMemoryStore()
@@ -478,29 +491,35 @@ class TestAsyncRateLimiter:
 
         await limiter.close()
 
-    def test_default_key_func_uses_xff_from_right(self):
-        """Regression: _default_key_func used to read X-Forwarded-For from the
-        left, allowing trivial IP spoofing via attacker-prepended values. It
-        now delegates to detect_client_ip which parses XFF from the right
-        (proxy-appended end) and prefers spoofproof platform headers.
+    def test_default_key_func_ignores_xff_without_peer(self):
+        """Regression: the key must never come from a client-controlled
+        header. Without a socket peer there is no trusted proxy, so the
+        forwarded value is ignored and the request falls into the shared
+        'unknown' bucket.
         """
         from types import SimpleNamespace
 
         limiter = AsyncRateLimiter(max_requests=10, window_ms=60000)
 
-        # Use SimpleNamespace so hasattr returns False for framework-specific
-        # attrs we did not set (META, remote_addr). MagicMock auto-creates
-        # those, sending detect_client_ip down the wrong branch.
+        # SimpleNamespace so hasattr returns False for framework attrs we
+        # did not set (META, remote_addr, scope).
         request = SimpleNamespace(
             client=None,  # No socket peer
             headers={"x-forwarded-for": "spoofed.attacker, 203.0.113.50"},
         )
+        assert limiter._default_key_func(request) == "unknown"
 
-        key = limiter._default_key_func(request)
-        # Rightmost trusted IP must win, never the spoofed left value.
-        assert key != "spoofed.attacker"
-        assert "203.0.113.50" in key
-    
+    def test_default_key_func_walks_xff_from_trusted_peer(self):
+        from types import SimpleNamespace
+
+        limiter = AsyncRateLimiter(max_requests=10, window_ms=60000)
+        request = SimpleNamespace(
+            client=SimpleNamespace(host="10.0.0.2"),
+            headers={"x-forwarded-for": "spoofed.attacker, 203.0.113.50"},
+        )
+        # Right to left: 203.0.113.50 is the first untrusted hop.
+        assert limiter._default_key_func(request) == "203.0.113.50"
+
     @pytest.mark.asyncio
     async def test_close_stops_limiter(self, mock_request):
         limiter = AsyncRateLimiter(max_requests=5, window_ms=60000)

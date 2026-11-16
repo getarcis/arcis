@@ -16,8 +16,14 @@
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { RATE_LIMIT } from '../core/constants';
+import {
+  clientKey,
+  createNodeClientIp,
+  validateIpv6Subnet,
+  type ClientIpOptions,
+} from '../utils/client-ip';
 
-export interface TokenBucketOptions {
+export interface TokenBucketOptions extends ClientIpOptions {
   /** Maximum tokens (burst size). Default: 100 */
   capacity?: number;
   /** Tokens added per second. Default: 10 */
@@ -28,10 +34,15 @@ export interface TokenBucketOptions {
   message?: string;
   /** HTTP status code for rate limited responses. Default: 429 */
   statusCode?: number;
-  /** Function to generate rate limit key from request */
+  /**
+   * Function to generate rate limit key from request. Default: the resolved
+   * client IP passed through `ipKeyGenerator`.
+   */
   keyGenerator?: (req: Request) => string;
   /** Function to skip rate limiting for certain requests */
   skip?: (req: Request) => boolean;
+  /** IPv6 prefix length for the default key (1-128), or `false`. Default: 56 */
+  ipv6Subnet?: number | false;
 }
 
 interface Bucket {
@@ -64,9 +75,11 @@ export function createTokenBucketLimiter(options: TokenBucketOptions = {}): Toke
     cost = 1,
     message = RATE_LIMIT.DEFAULT_MESSAGE,
     statusCode = RATE_LIMIT.DEFAULT_STATUS_CODE,
-    keyGenerator = (req) => req.ip ?? req.socket?.remoteAddress ?? 'unknown',
     skip,
   } = options;
+  const ipv6Subnet = validateIpv6Subnet(options.ipv6Subnet, 'createTokenBucketLimiter');
+  const clientIp = createNodeClientIp(options);
+  const keyGenerator = options.keyGenerator ?? ((req: Request) => clientKey(clientIp(req), ipv6Subnet));
 
   if (capacity < 1) throw new RangeError(`Token bucket capacity must be >= 1, got ${capacity}`);
   if (refillRate <= 0) throw new RangeError(`Token bucket refillRate must be > 0, got ${refillRate}`);

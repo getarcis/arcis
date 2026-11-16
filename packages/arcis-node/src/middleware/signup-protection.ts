@@ -21,6 +21,7 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { validateEmail } from '../validation/email';
 import { detectBot, type BotCategory } from './bot-detection';
 import { createRateLimiter } from './rate-limit';
+import type { RateLimitOptions } from '../core/types';
 
 export type SignupBlockReason =
   | 'missing_email'
@@ -46,8 +47,11 @@ export interface SignupProtectionOptions {
   checkBot?: boolean;
   /** Bot categories allowed through (e.g. test harnesses). Default: [] — all bots blocked */
   allowedBotCategories?: BotCategory[];
-  /** Per-IP rate limit on signup endpoint. Set to `false` to disable. Default: 5 requests / 60s */
-  rateLimit?: { max?: number; windowMs?: number } | false;
+  /**
+   * Per-IP rate limit on signup endpoint. Set to `false` to disable. Default: 5 requests / 60s.
+   * `trustedProxies` / `clientIpHeader` control how the client IP is resolved.
+   */
+  rateLimit?: Pick<RateLimitOptions, 'max' | 'windowMs' | 'trustedProxies' | 'clientIpHeader'> | false;
   /** Extra email domains to allow (bypasses disposable check) */
   allowedEmailDomains?: string[];
   /** Extra email domains to block */
@@ -125,6 +129,8 @@ export function signupProtection(
       : createRateLimiter({
           max: rateLimitCfg?.max ?? 5,
           windowMs: rateLimitCfg?.windowMs ?? 60_000,
+          trustedProxies: rateLimitCfg?.trustedProxies,
+          clientIpHeader: rateLimitCfg?.clientIpHeader,
           message: 'Too many signup attempts',
         });
 

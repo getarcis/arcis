@@ -223,11 +223,11 @@ async def test_dry_run_does_not_enforce_rate_limit():
 
 
 @pytest.mark.asyncio
-async def test_xff_leftmost_wins_for_rate_limit_key():
+async def test_xff_from_trusted_peer_drives_rate_limit_key():
     """
-    Header-stripping edge proxies must not be able to escape rate
-    limiting. The leftmost X-Forwarded-For value drives the bucket;
-    same XFF means same bucket regardless of socket peer.
+    Behind trusted (private) proxies the X-Forwarded-For walk, read from
+    the right, picks the client: same client means same bucket regardless
+    of which proxy forwarded it.
     """
     middleware = ArcisMiddleware(
         lambda *a, **k: None,
@@ -245,7 +245,7 @@ async def test_xff_leftmost_wins_for_rate_limit_key():
     )
     sent1, _ = await _drive(middleware, base("10.0.0.5"))
     sent2, _ = await _drive(middleware, base("10.0.0.6"))
-    # Different socket peers, same XFF → same bucket → 429 on the second.
+    # Different trusted socket peers, same client: same bucket, 429 on the second.
     assert any(m.get("status") == 200 for m in sent1)
     assert any(m.get("status") == 429 for m in sent2)
 

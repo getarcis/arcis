@@ -9,14 +9,14 @@ import json
 import asyncio
 import logging
 import re as _re
-from typing import Callable, Optional, Dict, Any, List, Protocol
+from typing import Callable, Optional, Dict, Any, List, Protocol, cast
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
 
 from .sanitizers.sanitize import Sanitizer, scan_threats
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
-from .middleware.headers import SecurityHeaders
+from .middleware.headers import HeadersOption, SecurityHeaders, build_security_headers
 from .middleware.error_handler import ErrorHandler
 from .middleware.bot_detection import BotProtection, BotDenied
 from .middleware.sensitive_paths import detect_sensitive_path, SENSITIVE_PATH_PATTERNS
@@ -29,13 +29,14 @@ from .middleware.telemetry import (
     ArcisTelemetryMarker,
     build_event,
     extract_starlette_ip,
+    tag_marker,
 )
 from .core.types import RateLimitEntry
 from .core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS, DEFAULT_RATE_LIMIT_MESSAGE
 from .telemetry.client import AsyncTelemetryClient
-from .telemetry.types import TelemetryOptions
+from .telemetry.types import TelemetryOptions, TelemetrySeverity
 from .middleware.telemetry import telemetry_options_from_env as _telemetry_options_from_env
-from .utils.ip import detect_client_ip
+from .utils.ip import TrustedProxies, client_ip_from_request, validate_trusted_proxies
 from .intelligence.client import IntelligenceClient, reputation_severity_tier
 from .intelligence.types import IntelligenceOptions
 
@@ -271,8 +272,21 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # disables.
         forwarded_headers: bool = True,
         trusted_hosts: Optional[List[str]] = None,
-        # Security headers options
-        headers: bool = True,
+        # Proxy IPs / CIDR ranges whose X-Forwarded-For is honored when
+        # resolving the client IP (rate-limit key, IP reputation, telemetry).
+        # None uses loopback, link-local and private ranges; [] trusts none.
+        # The peer is scope["client"]. If uvicorn/hypercorn already applied
+        # proxy headers (--proxy-headers with --forwarded-allow-ips), pass []
+        # so Arcis uses that address as is. Applies to the limiters this
+        # middleware builds; a supplied limiter keeps its own setting.
+        trusted_proxies: TrustedProxies = None,
+        # Security headers options. headers=True applies the legacy profile
+        # (csp overrides its Content-Security-Policy); a dict is passed to
+        # SecurityHeaders, e.g. {"profile": "baseline", "x_frame_options":
+        # {"action": "deny"}}; a SecurityHeaders instance is used as is;
+        # False disables. With the baseline CSP nonce on, the per-request
+        # nonce is at request.state.csp_nonce before the route runs.
+        headers: HeadersOption = True,
         csp: Optional[str] = None,
         # Error handler options
         error_handling: bool = True,
@@ -302,6 +316,8 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         self.block = block
         self.dry_run = dry_run
         self.on_sanitize = on_sanitize
+        validate_trusted_proxies(trusted_proxies)
+        self.trusted_proxies = trusted_proxies
 
         self.sanitizer = sanitizer or (Sanitizer(
             xss=sanitize_xss,
@@ -333,16 +349,16 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 self.async_rate_limiter = AsyncRateLimiter(
                     max_requests=rate_limit_max,
                     window_ms=rate_limit_window_ms,
+                    trusted_proxies=trusted_proxies,
                 )
             else:
                 self.rate_limiter = RateLimiter(
                     max_requests=rate_limit_max,
                     window_ms=rate_limit_window_ms,
+                    trusted_proxies=trusted_proxies,
                 )
         
-        self.security_headers = security_headers or (SecurityHeaders(
-            content_security_policy=csp,
-        ) if headers else None)
+        self.security_headers = security_headers or build_security_headers(headers, csp)
 
         # Bot UA classification (v1.7 W1 wire-up). Constructed only when
         # bot=True, kept as instance attribute so dispatch can call it on
@@ -548,6 +564,12 @@ class ArcisMiddleware(BaseHTTPMiddleware):
             # ``request.state._ArcisMiddleware__arcis`` inside this class.
             setattr(request.state, ARCIS_MARKER_ATTR, ArcisTelemetryMarker())
 
+        # Baseline CSP nonce: exposed before the route runs so templates can
+        # read request.state.csp_nonce; the same value goes in the header.
+        csp_nonce = self.security_headers.new_nonce() if self.security_headers else None
+        if csp_nonce is not None:
+            request.state.csp_nonce = csp_nonce
+
         # Forwarded-header inspection (v1.7 W7). Loopback in a forwarded /
         # client-IP header is a spoof; optional trusted-host allowlist on
         # Host / X-Forwarded-Host. Runs first because it only reads headers.
@@ -565,6 +587,12 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                             reason=f"Loopback address detected in {hname}",
                         )
                         break
+                    if self._telemetry_client is not None:
+                        tag_marker(
+                            request, vector="header",
+                            rule="header/forwarded-loopback-spoof",
+                            severity="high", reason=f"Loopback address detected in {hname}",
+                        )
                     response = JSONResponse(
                         content={
                             "error": "Request blocked for security reasons",
@@ -574,7 +602,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         },
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
             if self.trusted_hosts is not None:
                 for hname in ("host", "x-forwarded-host"):
@@ -591,6 +619,11 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                                     reason=f"Untrusted host detected in {hname}",
                                 )
                                 break
+                            if self._telemetry_client is not None:
+                                tag_marker(
+                                    request, vector="header", rule="header/untrusted-host",
+                                    severity="high", reason=f"Untrusted host detected in {hname}",
+                                )
                             response = JSONResponse(
                                 content={
                                     "error": "Request blocked for security reasons",
@@ -600,7 +633,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                                 },
                                 status_code=403,
                             )
-                            self._maybe_record(request, response, telemetry_start)
+                            self._maybe_record(request, response, telemetry_start, denied=True)
                             return response
 
         # Cloud IP reputation (opt-in). Runs after forwarded-header inspection
@@ -609,7 +642,9 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # latency, and an unreachable service fails open. Active only when
         # configured with cloud_decisions including "ip-rep".
         if self._intel_client is not None and self._intel_ip_rep:
-            rep = self._intel_client.check(detect_client_ip(request))
+            rep = self._intel_client.check(
+                client_ip_from_request(request, self.trusted_proxies) or "unknown"
+            )
             request.state.arcis_ip_reputation = rep
             would_block = (
                 rep.found
@@ -650,7 +685,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         },
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
 
         # Scanner-path probe blocking (v1.7 W2). Runs BEFORE bot detection
@@ -671,6 +706,11 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         reason="Sensitive scanner path detected",
                     )
                 else:
+                    if self._telemetry_client is not None:
+                        tag_marker(
+                            request, vector="scanner-path", rule="scanner-path/sensitive",
+                            severity="medium", reason="Sensitive scanner path detected",
+                        )
                     response = JSONResponse(
                         content={
                             "error": "Access denied.",
@@ -679,7 +719,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         },
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
 
         # Bot UA classification (v1.7 W1). Runs BEFORE rate-limit so bots
@@ -704,7 +744,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         content={"error": e.message},
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
 
         # Rate limiting (async or sync)
@@ -727,8 +767,13 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         content={"error": e.message, "retry_after": e.retry_after},
                         status_code=429,
                     )
+                    if self._telemetry_client is not None:
+                        tag_marker(
+                            request, vector="rate-limit", rule="rate-limit/exceeded",
+                            severity="medium", reason="Rate limit exceeded",
+                        )
                     response.headers["Retry-After"] = str(e.retry_after)
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
         elif self.rate_limiter:
             try:
@@ -747,8 +792,13 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         content={"error": e.message, "retry_after": e.retry_after},
                         status_code=429,
                     )
+                    if self._telemetry_client is not None:
+                        tag_marker(
+                            request, vector="rate-limit", rule="rate-limit/exceeded",
+                            severity="medium", reason="Rate limit exceeded",
+                        )
                     response.headers["Retry-After"] = str(e.retry_after)
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
         
         # Read JSON body once (used by GraphQL inspection, block scan, and
@@ -835,6 +885,11 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         reason=str(gql_result.reason),
                     )
                 else:
+                    if self._telemetry_client is not None:
+                        tag_marker(
+                            request, vector="graphql", rule=f"graphql/{gql_result.reason}",
+                            severity="high", reason=str(gql_result.reason),
+                        )
                     response = JSONResponse(
                         content={
                             "error": "Request blocked for security reasons",
@@ -844,7 +899,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         },
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
 
         # Mass-assignment field detection (v1.7 W4). Scan the parsed body
@@ -866,6 +921,12 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         reason="Sensitive mass-assignment field detected",
                     )
                 else:
+                    if self._telemetry_client is not None:
+                        tag_marker(
+                            request, vector="mass-assignment",
+                            rule="mass-assignment/sensitive-field", severity="high",
+                            reason="Sensitive mass-assignment field detected",
+                        )
                     response = JSONResponse(
                         content={
                             "error": "Request blocked for security reasons",
@@ -875,7 +936,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         },
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
 
         # SSRF body-URL validation (v1.7 W5). Walk the parsed body for
@@ -895,6 +956,11 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         reason="Blocked URL detected in request body",
                     )
                 else:
+                    if self._telemetry_client is not None:
+                        tag_marker(
+                            request, vector="ssrf", rule="ssrf/blocked-url",
+                            severity="high", reason="Blocked URL detected in request body",
+                        )
                     response = JSONResponse(
                         content={
                             "error": "Request blocked for security reasons",
@@ -904,7 +970,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         },
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
 
         # Prompt-injection detection on body strings (v1.7 W6). Walk the
@@ -925,6 +991,12 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         reason="Prompt injection detected in request body",
                     )
                 else:
+                    if self._telemetry_client is not None:
+                        tag_marker(
+                            request, vector="prompt-injection", rule="prompt-injection/detected",
+                            severity=cast(TelemetrySeverity, prompt_severity),
+                            reason="Prompt injection detected in request body",
+                        )
                     response = JSONResponse(
                         content={
                             "error": "Request blocked for security reasons",
@@ -934,7 +1006,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         },
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
 
         # Block mode: scan body + query params for attack patterns. On match,
@@ -1006,7 +1078,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                         },
                         status_code=403,
                     )
-                    self._maybe_record(request, response, telemetry_start)
+                    self._maybe_record(request, response, telemetry_start, denied=True)
                     return response
 
         # Store sanitized body in request state if JSON
@@ -1026,13 +1098,16 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 error_response = self.error_handler.handle(e, status_code)
                 response = JSONResponse(content=error_response, status_code=status_code)
             else:
+                # The outer application's error handler owns the response.
+                # Keep the finding without guessing its eventual HTTP status.
+                self._maybe_record(request, None, telemetry_start)
                 raise
         
-        # Add security headers
+        # Add security headers. Legacy overwrites; baseline keeps headers the
+        # route set and removes X-Powered-By unless configured otherwise.
         if self.security_headers:
-            for header, value in self.security_headers.get_headers().items():
-                response.headers[header] = value
-        
+            self.security_headers.apply(response, request=request, nonce=csp_nonce)
+
         # Add rate limit headers
         if rate_limit_info:
             response.headers["X-RateLimit-Limit"] = str(rate_limit_info["limit"])
@@ -1052,13 +1127,17 @@ class ArcisMiddleware(BaseHTTPMiddleware):
     def _maybe_record(
         self,
         request: Request,
-        response: Response,
+        response: Optional[Response],
         start: Optional[float],
+        *,
+        denied: bool = False,
     ) -> None:
         """Build and record a TelemetryEvent if telemetry is configured.
 
         Never raises — telemetry must not affect the response. ``start`` is
         ``None`` when telemetry is disabled, in which case this is a no-op.
+        ``denied`` is set only at Arcis rejection exits, never inferred from
+        the response status of the downstream application.
         """
         if self._telemetry_client is None or start is None:
             return
@@ -1069,12 +1148,15 @@ class ArcisMiddleware(BaseHTTPMiddleware):
             marker: Optional[ArcisTelemetryMarker] = getattr(
                 request.state, ARCIS_MARKER_ATTR, None
             )
+            if denied:
+                marker = marker or ArcisTelemetryMarker()
+                marker.decision = "deny"
             user_agent = request.headers.get("user-agent", "") if hasattr(request, "headers") else ""
             event = build_event(
-                ip=extract_starlette_ip(request),
+                ip=extract_starlette_ip(request, self.trusted_proxies),
                 method=request.method,
                 path=request.url.path if hasattr(request, "url") else "/",
-                status=response.status_code,
+                status=response.status_code if response is not None else 0,
                 user_agent=user_agent,
                 latency_ms=latency_ms,
                 marker=marker,

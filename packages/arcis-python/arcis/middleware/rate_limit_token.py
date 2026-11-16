@@ -18,7 +18,15 @@ import time
 import threading
 import atexit
 import math
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Union
+
+from ..utils.ip import (
+    DEFAULT_IPV6_SUBNET,
+    TrustedProxies,
+    rate_limit_key,
+    validate_ipv6_subnet,
+    validate_trusted_proxies,
+)
 
 
 class TokenBucketLimiter:
@@ -44,7 +52,14 @@ class TokenBucketLimiter:
         message: str = "Too many requests, please try again later.",
         key_func: Optional[Callable] = None,
         skip_func: Optional[Callable] = None,
+        trusted_proxies: TrustedProxies = None,
+        ipv6_subnet: Union[int, bool] = DEFAULT_IPV6_SUBNET,
     ):
+        """Create a limiter.
+
+        ``trusted_proxies`` and ``ipv6_subnet`` shape the default key, as in
+        :class:`arcis.RateLimiter`.
+        """
         if capacity < 1:
             raise ValueError(f"capacity must be >= 1, got {capacity}")
         if refill_rate <= 0:
@@ -58,6 +73,9 @@ class TokenBucketLimiter:
         self.refill_rate = refill_rate
         self.cost = cost
         self.message = message
+        validate_trusted_proxies(trusted_proxies)
+        self.trusted_proxies = trusted_proxies
+        self.ipv6_subnet = validate_ipv6_subnet(ipv6_subnet)
         self.key_func = key_func or self._default_key_func
         self.skip_func = skip_func
         self._closed = False
@@ -72,9 +90,8 @@ class TokenBucketLimiter:
         atexit.register(self.close)
 
     def _default_key_func(self, request) -> str:
-        """Default key function - uses client IP address."""
-        from ..utils.ip import detect_client_ip
-        return detect_client_ip(request)
+        """Default key: trust-aware client IP through ``ip_key_generator``."""
+        return rate_limit_key(request, self.trusted_proxies, self.ipv6_subnet)
 
     def _cleanup_loop(self):
         """Remove stale buckets periodically."""

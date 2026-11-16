@@ -7,7 +7,7 @@ the WSGI adapter (``arcis.middleware.main.Arcis`` -> Flask) to:
 
 * attach a per-request attribution marker (vector, rule, severity, decision,
   matched_pattern, reason)
-* infer the final decision from the response status when no marker is set
+* preserve Arcis decisions independently of the application's response status
 * build a ``TelemetryEvent`` with the captured latency
 * hand the event to a ``TelemetryClient`` / ``AsyncTelemetryClient``
 """
@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 
+from ..utils.ip import TrustedProxies, client_ip_from_request
 from ..telemetry.types import (
     TelemetryDecision,
     TelemetryEvent,
@@ -56,8 +57,8 @@ class ArcisTelemetryMarker:
     On Starlette/FastAPI: stored at ``request.state._arcis_marker``.
     On Flask:             stored at ``flask.g._arcis_marker``.
 
-    A marker is optional. If absent, the emitter infers ``decision`` from the
-    response status code (see ``infer_decision``).
+    A marker is optional. If absent, the request passed through Arcis, even
+    when the application subsequently returns an error.
     """
 
     vector: Optional[str] = None
@@ -78,15 +79,11 @@ def threat_to_vector(threat_type: str) -> str:
 
 
 def infer_decision(status: int) -> TelemetryDecision:
-    """Default decision when no marker was set.
+    """Pass-through without an Arcis decision, regardless of HTTP status.
 
-    Mirrors Node's inferDecision: 400/403/429 -> ``deny``, everything else
-    treated as ``allow``. The middleware is free to set an explicit decision
-    via the marker for cases that don't fit (e.g. ``challenge`` on a sanitize-
-    in-place rewrite that returned 200).
+    The status argument is retained for compatibility with existing callers.
+    An application error alone is not evidence of an Arcis rejection.
     """
-    if status in (400, 403, 429):
-        return "deny"
     return "allow"
 
 
@@ -128,13 +125,6 @@ def build_event(
         matched_pattern = None
         reason = None
 
-    # Rate-limit fallback attribution: a 429 with no marker should still show
-    # up as a rate-limit denial in the dashboard.
-    if status == 429 and vector is None:
-        vector = "rate-limit"
-        rule = "rate-limit/exceeded"
-        severity = "medium"
-
     return TelemetryEvent(
         ts=ts,
         ip=ip,
@@ -152,25 +142,15 @@ def build_event(
     )
 
 
-def extract_starlette_ip(request: Any) -> str:
-    """Pull a client IP from a Starlette/FastAPI request.
+def extract_starlette_ip(request: Any, trusted_proxies: TrustedProxies = None) -> str:
+    """Resolve the client IP of a Starlette/FastAPI request for telemetry.
 
-    Tries (in order): ``X-Forwarded-For`` first hop, ``X-Real-IP``,
-    ``request.client.host``. Falls back to ``"0.0.0.0"`` so the spec's
-    required ``ip`` field is never empty.
+    Uses the trust-aware resolver: ``X-Forwarded-For`` counts only when the
+    socket peer is in ``trusted_proxies`` (default: loopback, link-local and
+    private ranges). Falls back to ``"0.0.0.0"`` so the spec's required
+    ``ip`` field is never empty.
     """
-    headers: Mapping[str, str] = getattr(request, "headers", {}) or {}
-    fwd = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
-    if fwd:
-        first = fwd.split(",")[0].strip()
-        if first:
-            return first
-    real = headers.get("x-real-ip") or headers.get("X-Real-IP")
-    if real:
-        return real.strip()
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None) if client is not None else None
-    return host or "0.0.0.0"
+    return client_ip_from_request(request, trusted_proxies) or "0.0.0.0"
 
 
 def tag_marker(

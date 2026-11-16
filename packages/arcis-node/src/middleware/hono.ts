@@ -34,10 +34,8 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -45,6 +43,16 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter } from '../utils/client-ip';
+import {
+  adapterKey,
+  buildAdapterLimiter,
+  honoPeerAddress,
+  mergeClientIpOptions,
+  userClientIp,
+  type FetchClientIpOptions,
+} from './rate-limit-shared';
 
 // ─── Hono duck-typed contracts ──────────────────────────────────────────────
 // Mirrors Hono's `Context` and `MiddlewareHandler` shapes closely enough
@@ -53,7 +61,8 @@ import {
 interface HonoContextLike {
   req: { raw: Request };
   res: Response;
-  env?: Record<string, unknown>;
+  /** Runtime bindings: a Node `incoming`, a Bun server, Deno conn info, or Workers bindings. */
+  env?: unknown;
 }
 
 export type HonoMiddleware = (
@@ -61,7 +70,14 @@ export type HonoMiddleware = (
   next: () => Promise<void>,
 ) => Promise<Response | void>;
 
-export interface ArcisHonoOptions {
+/**
+ * Adapter options. Client IP resolution: `getClientIp` when it returns a
+ * valid address; else the peer address Hono exposes (Node, Bun, Deno) with
+ * the `trustedProxies` walk; else, without a peer, `clientIpHeader`, then
+ * `cf-connecting-ip` on Cloudflare Workers or `x-real-ip` on Vercel; else
+ * one shared `unknown` key.
+ */
+export interface ArcisHonoOptions extends FetchClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -76,37 +92,6 @@ export interface ArcisHonoOptions {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
-
 function botInputFor(headers: Headers): ExpressRequestLike {
   const h: Record<string, string | undefined> = {
     'user-agent': headers.get('user-agent') ?? undefined,
@@ -118,104 +103,18 @@ function botInputFor(headers: Headers): ExpressRequestLike {
   return { headers: h } as unknown as ExpressRequestLike;
 }
 
-/**
- * Extract a client IP from the request. Falls back to "unknown" when
- * none of XFF / CF-Connecting-IP / Forwarded / X-Real-IP are present.
- * The fallback is intentionally NOT a per-request unique value —
- * unknown traffic should share a bucket so a misconfigured edge can't
- * bypass rate limiting by stripping headers.
- */
-function clientIpOf(headers: Headers): string {
-  const cf = headers.get('cf-connecting-ip');
-  if (cf) return cf.trim();
-  const xff = headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  const real = headers.get('x-real-ip');
-  if (real) return real.trim();
-  return 'unknown';
-}
-
 function applySecurityHeaders(
   response: Response,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
   request: Request,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-  const h = response.headers;
-
-  if (contentSecurityPolicy) {
-    h.set(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) h.set('X-XSS-Protection', '0');
-  if (noSniff) h.set('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) h.set('X-Frame-Options', frameOptions);
-
-  // HSTS only over HTTPS — sending it over HTTP can brick HTTP-only dev
-  // servers. Trust X-Forwarded-Proto only when it's exactly 'http' or
-  // 'https' (anything else is suspect proxy garbage).
-  const xfp = request.headers
-    .get('x-forwarded-proto')
-    ?.split(',')[0]
-    ?.trim()
-    ?.toLowerCase();
-  const trustedXfp = xfp === 'https' || xfp === 'http' ? xfp : undefined;
-  let isHttps = trustedXfp === 'https';
+  let isHttps = parseForwardedProto(request.headers.get('x-forwarded-proto')) === 'https';
   try {
     isHttps = isHttps || new URL(request.url).protocol === 'https:';
   } catch {
     // Malformed request.url shouldn't crash the security-header pass.
   }
-
-  if (hsts && isHttps) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    h.set('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) h.set('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) h.set('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) h.set('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) h.set('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) h.set('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) h.set('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) h.set('X-DNS-Prefetch-Control', 'off');
-  h.set('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    h.set(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    h.set('Pragma', 'no-cache');
-    h.set('Expires', '0');
-  }
-
-  h.delete('X-Powered-By');
+  applyPlanToHeaders(response.headers, policy, policy.plan({ isHttps, request: request, response }));
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -232,12 +131,17 @@ function applySecurityHeaders(
  */
 export function arcisHono(options: ArcisHonoOptions = {}): HonoMiddleware {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Hono',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisHono') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions =
@@ -253,8 +157,10 @@ export function arcisHono(options: ArcisHonoOptions = {}): HonoMiddleware {
 
     // 1. Rate limit
     if (limiter) {
-      const key = clientIpOf(request.headers);
-      const decision = limiter(key);
+      const ip =
+        userClientIp(options.getClientIp, request) ??
+        resolver.resolve(honoPeerAddress(c.env, request), toHeaderGetter(request.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisHono'));
       if (!decision.allowed) {
         return new Response(
           JSON.stringify({
@@ -296,8 +202,8 @@ export function arcisHono(options: ArcisHonoOptions = {}): HonoMiddleware {
 
     // 4. Apply security headers in-place on c.res. Hono guarantees c.res
     //    is set by the time the chain resumes.
-    if (headersCfg && c.res) {
-      applySecurityHeaders(c.res, typeof headersCfg === 'object' ? headersCfg : {}, request);
+    if (headerPolicy && c.res) {
+      applySecurityHeaders(c.res, headerPolicy, request);
     }
     return undefined;
   };

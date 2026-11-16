@@ -24,7 +24,9 @@ export const mockRequest = (overrides: Record<string, unknown> = {}): Partial<Re
   path: '/',
   method: 'GET',
   headers: {},
-  socket: { remoteAddress: '127.0.0.1' } as never,
+  // The socket peer follows an overridden `ip`, as it does in Express when
+  // `trust proxy` is off.
+  socket: { remoteAddress: typeof overrides.ip === 'string' ? overrides.ip : '127.0.0.1' } as never,
   ...overrides,
 });
 

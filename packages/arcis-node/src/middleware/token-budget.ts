@@ -25,8 +25,9 @@
  */
 
 import type { Request, RequestHandler } from 'express';
+import { clientKey, createNodeClientIp, type ClientIpOptions } from '../utils/client-ip';
 
-export interface TokenBudgetOptions {
+export interface TokenBudgetOptions extends ClientIpOptions {
   /** Max tokens a single key can spend in one window. Default: 100,000. */
   maxTokens?: number;
   /** Window length in milliseconds. Default: 60 * 60 * 1000 (1 hour). */
@@ -38,8 +39,9 @@ export interface TokenBudgetOptions {
    */
   maxRequestTokens?: number;
   /**
-   * Function that returns the budget key for a request. Default: client IP
-   * (req.ip), falling back to `unknown` when unresolvable.
+   * Function that returns the budget key for a request. Default: the client
+   * IP resolved with `trustedProxies` / `clientIpHeader` and passed through
+   * `ipKeyGenerator`, or `unknown` when unresolvable.
    */
   keyGenerator?: (req: Request) => string;
   /**
@@ -76,11 +78,6 @@ interface Entry {
 const DEFAULT_MAX_TOKENS = 100_000;
 const DEFAULT_WINDOW_MS = 60 * 60 * 1000;
 
-function defaultKeyGenerator(req: Request): string {
-  const ip = req.ip ?? req.socket?.remoteAddress;
-  return ip ?? 'unknown';
-}
-
 function defaultEstimateTokens(req: Request): number {
   // Approximate OpenAI's "1 token ≈ 4 characters" rule using byte length
   // of stringified body + query. Fast, side-effect-free, no model call.
@@ -113,7 +110,8 @@ export function tokenBudget(options: TokenBudgetOptions = {}): TokenBudgetMiddle
   const maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
   const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
   const maxRequestTokens = options.maxRequestTokens;
-  const keyGenerator = options.keyGenerator ?? defaultKeyGenerator;
+  const clientIp = createNodeClientIp(options);
+  const keyGenerator = options.keyGenerator ?? ((req: Request) => clientKey(clientIp(req)));
   const estimateTokens = options.estimateTokens ?? defaultEstimateTokens;
   const statusCode = options.statusCode ?? 429;
   const statusCodeOversize = options.statusCodeOversize ?? 413;

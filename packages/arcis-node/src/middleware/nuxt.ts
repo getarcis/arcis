@@ -24,10 +24,8 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { HEADERS, RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
-  HstsOptions,
   RateLimitOptions,
 } from '../core/types';
 import {
@@ -35,6 +33,9 @@ import {
   type BotProtectionOptions,
   type BotDetectionResult,
 } from './bot-detection';
+import { compileSecurityHeaders, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter, type ClientIpOptions } from '../utils/client-ip';
+import { adapterKey, buildAdapterLimiter, mergeClientIpOptions } from './rate-limit-shared';
 
 // ─── h3 / Nuxt duck-typed contracts ─────────────────────────────────────────
 
@@ -64,7 +65,13 @@ export type ArcisH3Handler = (event: H3EventLike) => Promise<void> | void;
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
-export interface ArcisNuxtOptions {
+/**
+ * Adapter options. The client IP is the socket peer address passed through
+ * the `trustedProxies` walk; on edge presets without a socket, the
+ * configured `clientIpHeader` or the platform header is used, else one
+ * shared `unknown` key.
+ */
+export interface ArcisNuxtOptions extends ClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -75,55 +82,10 @@ export interface ArcisNuxtOptions {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
-
 function botInputFor(req: NodeIncomingMessageLike): ExpressRequestLike {
   // Node's IncomingMessage already has the headers shape detectBot reads off
   // an Express request — pass it through with a type assertion.
   return { headers: req.headers } as unknown as ExpressRequestLike;
-}
-
-function clientIpFromReq(req: NodeIncomingMessageLike): string {
-  // Trust X-Forwarded-For only when present and well-formed; fall back to
-  // socket.remoteAddress; finally a stable 'unknown' bucket so a missing IP
-  // doesn't share a counter with every other unresolvable client.
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length > 0) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  const remote = req.socket?.remoteAddress;
-  if (remote) return remote;
-  return 'unknown';
 }
 
 function isHttpsRequest(req: NodeIncomingMessageLike): boolean {
@@ -135,64 +97,12 @@ function isHttpsRequest(req: NodeIncomingMessageLike): boolean {
 function applySecurityHeaders(
   res: NodeServerResponseLike,
   req: NodeIncomingMessageLike,
-  options: HeaderOptions,
+  policy: CompiledSecurityHeaders,
 ): void {
-  const {
-    contentSecurityPolicy = true,
-    xssFilter = true,
-    noSniff = true,
-    frameOptions = HEADERS.FRAME_OPTIONS,
-    hsts = true,
-    referrerPolicy = HEADERS.REFERRER_POLICY,
-    permissionsPolicy = HEADERS.PERMISSIONS_POLICY,
-    cacheControl = true,
-    crossOriginOpenerPolicy = 'same-origin',
-    crossOriginResourcePolicy = 'same-origin',
-    crossOriginEmbedderPolicy = 'require-corp',
-    originAgentCluster = true,
-    dnsPrefetchControl = true,
-  } = options;
-
-  if (contentSecurityPolicy) {
-    res.setHeader(
-      'Content-Security-Policy',
-      typeof contentSecurityPolicy === 'string' ? contentSecurityPolicy : HEADERS.DEFAULT_CSP,
-    );
-  }
-  if (xssFilter) res.setHeader('X-XSS-Protection', '0');
-  if (noSniff) res.setHeader('X-Content-Type-Options', HEADERS.CONTENT_TYPE_OPTIONS);
-  if (frameOptions) res.setHeader('X-Frame-Options', frameOptions);
-
-  if (hsts && isHttpsRequest(req)) {
-    const o: HstsOptions = typeof hsts === 'object' ? hsts : {};
-    const maxAge = o.maxAge ?? HEADERS.HSTS_MAX_AGE;
-    const includeSub = o.includeSubDomains !== false;
-    const preload = o.preload === true;
-    let v = `max-age=${maxAge}`;
-    if (includeSub) v += '; includeSubDomains';
-    if (preload) v += '; preload';
-    res.setHeader('Strict-Transport-Security', v);
-  }
-
-  if (referrerPolicy) res.setHeader('Referrer-Policy', referrerPolicy);
-  if (permissionsPolicy) res.setHeader('Permissions-Policy', permissionsPolicy);
-  if (crossOriginOpenerPolicy) res.setHeader('Cross-Origin-Opener-Policy', crossOriginOpenerPolicy);
-  if (crossOriginResourcePolicy) res.setHeader('Cross-Origin-Resource-Policy', crossOriginResourcePolicy);
-  if (crossOriginEmbedderPolicy) res.setHeader('Cross-Origin-Embedder-Policy', crossOriginEmbedderPolicy);
-  if (originAgentCluster) res.setHeader('Origin-Agent-Cluster', '?1');
-  if (dnsPrefetchControl) res.setHeader('X-DNS-Prefetch-Control', 'off');
-  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
-
-  if (cacheControl) {
-    res.setHeader(
-      'Cache-Control',
-      typeof cacheControl === 'string' ? cacheControl : HEADERS.CACHE_CONTROL,
-    );
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-  }
-
-  res.removeHeader('X-Powered-By');
+  // Applied before the route handler runs, so a header the route sets wins.
+  const plan = policy.plan({ isHttps: isHttpsRequest(req), request: req, response: res });
+  for (const [name, value] of plan.set) res.setHeader(name, value);
+  for (const name of plan.remove) res.removeHeader(name);
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -206,12 +116,17 @@ function applySecurityHeaders(
  */
 export function arcisHandler(options: ArcisNuxtOptions = {}): ArcisH3Handler {
   const headersCfg = options.headers ?? true;
+  const headerPolicy = headersCfg
+    ? compileSecurityHeaders(typeof headersCfg === 'object' ? headersCfg : {}, {
+        nonceUnsupportedBy: 'Nuxt',
+      })
+    : null;
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisHandler') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions = typeof botCfg === 'object' ? botCfg : {};
@@ -226,7 +141,8 @@ export function arcisHandler(options: ArcisNuxtOptions = {}): ArcisH3Handler {
 
     // 1. Rate limit
     if (limiter) {
-      const decision = limiter(clientIpFromReq(req));
+      const ip = resolver.resolve(req.socket?.remoteAddress, toHeaderGetter(req.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisHandler'));
       if (!decision.allowed) {
         res.statusCode = 429;
         res.setHeader('Content-Type', 'application/json');
@@ -262,8 +178,8 @@ export function arcisHandler(options: ArcisNuxtOptions = {}): ArcisH3Handler {
 
     // 3. Security headers — set up-front so they're sent with the eventual
     // response from the downstream Nuxt route handler.
-    if (headersCfg) {
-      applySecurityHeaders(res, req, typeof headersCfg === 'object' ? headersCfg : {});
+    if (headerPolicy) {
+      applySecurityHeaders(res, req, headerPolicy);
     }
   };
 }

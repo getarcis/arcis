@@ -37,6 +37,8 @@ export { createRateLimiter, rateLimit } from './middleware/rate-limit';
 export { createSlidingWindowLimiter } from './middleware/rate-limit-sliding';
 export { createTokenBucketLimiter } from './middleware/rate-limit-token';
 export { createHeaders, securityHeaders } from './middleware/headers';
+export { dangerouslyDisableDefaultSrc } from './middleware/csp';
+export type { ContentSecurityPolicyOptions, CspDirectiveValue, CspDirectiveValueEntry } from './middleware/csp';
 export { errorHandler, createErrorHandler } from './middleware/error-handler';
 export { safeCors, createCors } from './middleware/cors';
 export { secureCookieDefaults, createSecureCookies, enforceSecureCookie } from './middleware/cookies';
@@ -170,6 +172,13 @@ export { validateEmail, verifyEmailMx, isValidEmailSyntax } from './validation/e
 // =============================================================================
 export { parseDuration, formatDuration } from './utils/duration';
 export { detectClientIp, isPrivateIp } from './utils/ip';
+export {
+  resolveClientIp,
+  ipKeyGenerator,
+  normalizeIp,
+  DEFAULT_TRUSTED_PROXIES,
+} from './utils/client-ip';
+export type { ClientIpOptions } from './utils/client-ip';
 export { fingerprint } from './utils/fingerprint';
 
 // =============================================================================
@@ -220,11 +229,16 @@ export type {
   // Rate limiting
   RateLimitOptions,
   RateLimitStore,
+  RateLimitIncrement,
+  LegacyRateLimitStore,
   RateLimitEntry,
   RateLimitResult,
   RateLimiterMiddleware,
   // Headers
   HeaderOptions,
+  LegacyHeaderOptions,
+  BaselineHeaderOptions,
+  ReferrerPolicyToken,
   HstsOptions,
   // Validation
   ValidationConfig,

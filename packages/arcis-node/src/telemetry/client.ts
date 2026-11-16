@@ -1,4 +1,5 @@
 import type { TelemetryEvent, TelemetryOptions } from './types';
+import { isIP } from 'node:net';
 
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 500; // matches server Zod schema upper bound
@@ -27,6 +28,8 @@ export class TelemetryClient {
   private readonly endpoint: string;
   private readonly apiKey: string | undefined;
   private readonly workspaceId: string | undefined;
+  private readonly routeId: string | undefined;
+  private readonly policyId: string | undefined;
   private readonly batchSize: number;
   private readonly flushIntervalMs: number;
   private readonly maxQueueSize: number;
@@ -49,6 +52,8 @@ export class TelemetryClient {
     this.endpoint = options.endpoint;
     this.apiKey = options.apiKey;
     this.workspaceId = options.workspaceId;
+    this.routeId = metadataLabel(options.routeId, 'routeId');
+    this.policyId = metadataLabel(options.policyId, 'policyId');
     this.batchSize = clamp(
       options.batchSize ?? DEFAULT_BATCH_SIZE,
       1,
@@ -81,7 +86,25 @@ export class TelemetryClient {
    */
   record(event: TelemetryEvent): void {
     if (this.closed) return;
-    this.queue.push(event);
+    // Copy only contract metadata. Never retain request evidence or the
+    // caller's mutable event object in the delivery queue.
+    this.queue.push({
+      ts: event.ts,
+      ip: isIP(event.ip) && !event.ip.includes('%') ? event.ip : '0.0.0.0',
+      method: event.method,
+      path: '[redacted]',
+      decision: event.decision,
+      vector: event.vector,
+      rule: event.rule,
+      severity: event.severity,
+      country: event.country,
+      status: event.status,
+      latencyMs: event.latencyMs,
+      schemaVersion: '1.1',
+      sdk: 'node',
+      routeId: this.routeId,
+      policyId: this.policyId,
+    });
 
     // Cap the queue at maxQueueSize. Drop oldest events (FIFO) so we keep
     // the freshest signal during a sustained outage. Without this cap, a
@@ -238,6 +261,15 @@ export class TelemetryHttpError extends Error {
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, Math.trunc(value)));
+}
+
+function metadataLabel(value: string | undefined, field: string): string | undefined {
+  if (value === undefined || value === '') return undefined;
+  if (typeof value !== 'string' || value.length > 128 ||
+      !/^[A-Za-z0-9]/.test(value) || /[^A-Za-z0-9._-]/.test(value)) {
+    throw new TypeError(`TelemetryClient: invalid ${field}`);
+  }
+  return value;
 }
 
 async function safeReadBody(res: Response): Promise<string> {

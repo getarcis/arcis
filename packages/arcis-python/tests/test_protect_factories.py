@@ -55,8 +55,18 @@ def test_block_status_code_maps_input_errors_to_400():
     assert block_status_code("disposable_email") == 400
 
 
-def test_client_ip_honors_xff_first_hop():
+def test_client_ip_walks_xff_from_trusted_peer():
     assert client_ip_from_xff_then("1.2.3.4, 10.0.0.1", "127.0.0.1") == "1.2.3.4"
+
+
+def test_client_ip_ignores_xff_from_public_peer():
+    assert client_ip_from_xff_then("1.2.3.4", "203.0.113.7") == "203.0.113.7"
+    assert client_ip_from_xff_then("1.2.3.4", None) is None
+
+
+def test_client_ip_respects_trusted_proxies():
+    assert client_ip_from_xff_then("1.2.3.4", "127.0.0.1", trusted_proxies=[]) == "127.0.0.1"
+    assert client_ip_from_xff_then("1.2.3.4", "203.0.113.7", ["203.0.113.0/24"]) == "1.2.3.4"
 
 
 def test_client_ip_falls_back_to_socket_peer():
@@ -145,6 +155,9 @@ pytest.importorskip("httpx")
 from fastapi import Depends, FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+# The socket peer is a local reverse proxy, so X-Forwarded-For counts.
+_PROXY_PEER = ("127.0.0.1", 50000)
+
 from arcis.fastapi import (  # noqa: E402
     protect_api as fastapi_protect_api,
     protect_login as fastapi_protect_login,
@@ -168,7 +181,7 @@ def _fastapi_login_app(window=None):
 
 
 def test_fastapi_login_legit_request_passes():
-    client = TestClient(_fastapi_login_app())
+    client = TestClient(_fastapi_login_app(), client=_PROXY_PEER)
     resp = client.post("/login", json={"username": "alice", "password": "pw"})
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
@@ -176,7 +189,7 @@ def test_fastapi_login_legit_request_passes():
 
 def test_fastapi_login_credential_stuffing_returns_429():
     window = CorrelationWindow(credential_stuffing_distinct_values=3)
-    client = TestClient(_fastapi_login_app(window))
+    client = TestClient(_fastapi_login_app(window), client=_PROXY_PEER)
     # First two distinct usernames pass.
     for i in range(2):
         resp = client.post(
@@ -196,10 +209,10 @@ def test_fastapi_login_credential_stuffing_returns_429():
 
 
 def test_fastapi_login_ip_extraction_honors_xff():
-    # Two requests with DIFFERENT forwarded IPs must NOT share a
-    # credential-stuffing bucket; the XFF first hop is the bucket key.
+    # Behind a trusted proxy, two requests with DIFFERENT forwarded IPs
+    # must NOT share a credential-stuffing bucket.
     window = CorrelationWindow(credential_stuffing_distinct_values=2)
-    client = TestClient(_fastapi_login_app(window))
+    client = TestClient(_fastapi_login_app(window), client=_PROXY_PEER)
     resp_a = client.post(
         "/login",
         json={"username": "a", "password": "pw"},
@@ -239,7 +252,7 @@ def test_fastapi_shared_window_across_two_factory_instances():
     async def api(_r=Depends(api_guard)):
         return {"ok": "api"}
 
-    client = TestClient(app)
+    client = TestClient(app, client=_PROXY_PEER)
     # Seed two cross-vector events on the shared IP via the window directly
     # (simulating prior XSS + SQL hits), then a clean login crosses the
     # scanner threshold because the window state is shared.
@@ -262,7 +275,7 @@ def test_fastapi_signup_legit_request_passes():
     async def signup(_r=Depends(guard)):
         return {"status": "ok"}
 
-    client = TestClient(app)
+    client = TestClient(app, client=_PROXY_PEER)
     resp = client.post("/signup", json={"email": "alice@example.com"})
     assert resp.status_code == 200
 
@@ -278,7 +291,7 @@ def test_fastapi_signup_credential_stuffing_returns_429():
     async def signup(_r=Depends(guard)):
         return {"status": "ok"}
 
-    client = TestClient(app)
+    client = TestClient(app, client=_PROXY_PEER)
     resp1 = client.post(
         "/signup",
         json={"email": "one@example.com"},
@@ -302,7 +315,7 @@ def test_fastapi_api_threat_body_returns_403():
     async def api(_r=Depends(guard)):
         return {"status": "ok"}
 
-    client = TestClient(app)
+    client = TestClient(app, client=_PROXY_PEER)
     resp = client.post("/api", json={"comment": "<script>alert(1)</script>"})
     assert resp.status_code == 403
     assert resp.json()["detail"]["error"] == "threat"
@@ -316,7 +329,7 @@ def test_fastapi_api_legit_request_passes():
     async def api(_r=Depends(guard)):
         return {"status": "ok"}
 
-    client = TestClient(app)
+    client = TestClient(app, client=_PROXY_PEER)
     resp = client.post("/api", json={"hello": "world"})
     assert resp.status_code == 200
 
@@ -351,7 +364,9 @@ def test_litestar_protect_factories():
     async def login(_guard: _Any, data: dict) -> dict:
         return {"status": "ok"}
 
-    app = Litestar(route_handlers=[login])
+    from tests._asgi_peer import with_peer
+
+    app = with_peer(Litestar(route_handlers=[login]), "127.0.0.1")
     with LitestarTestClient(app=app) as client:
         # Legit request passes.
         resp = client.post("/login", json={"username": "alice", "password": "pw"})

@@ -152,19 +152,35 @@ def test_inspect_unknown_key_returns_none():
 
 def test_reset_single_key():
     guard = TokenBudget(max_tokens=100)
-    guard.check(make_request(body={"prompt": "spend"}, ip="r.1"))
-    assert guard.inspect("r.1") is not None
-    guard.reset("r.1")
-    assert guard.inspect("r.1") is None
+    guard.check(make_request(body={"prompt": "spend"}, ip="192.0.2.1"))
+    assert guard.inspect("192.0.2.1") is not None
+    guard.reset("192.0.2.1")
+    assert guard.inspect("192.0.2.1") is None
 
 
 def test_reset_all_keys():
     guard = TokenBudget(max_tokens=100)
-    guard.check(make_request(body={"prompt": "x"}, ip="r.1"))
-    guard.check(make_request(body={"prompt": "y"}, ip="r.2"))
+    guard.check(make_request(body={"prompt": "x"}, ip="192.0.2.1"))
+    guard.check(make_request(body={"prompt": "y"}, ip="192.0.2.2"))
     guard.reset()
-    assert guard.inspect("r.1") is None
-    assert guard.inspect("r.2") is None
+    assert guard.inspect("192.0.2.1") is None
+    assert guard.inspect("192.0.2.2") is None
+
+
+def test_unresolvable_address_uses_shared_unknown_key():
+    guard = TokenBudget(max_tokens=100)
+    guard.check(make_request(body={"prompt": "x"}, ip="not-an-ip"))
+    assert guard.inspect("not-an-ip") is None
+    assert guard.inspect("unknown") is not None
+
+
+def test_ipv6_clients_grouped_by_56():
+    guard = TokenBudget(max_tokens=100)
+    first = guard.check(make_request(body={"prompt": "x"}, ip="2001:db8:1234:5601::1"))
+    guard.check(make_request(body={"prompt": "x"}, ip="2001:db8:1234:56ff::2"))
+    per_request = int(first["X-Token-Budget-Request-Cost"])
+    assert guard.inspect("2001:db8:1234:5601::1") is None
+    assert guard.inspect("2001:db8:1234:5600::/56")["used"] == 2 * per_request
 
 
 def test_factory_is_alias_for_class():

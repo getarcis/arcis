@@ -7,18 +7,26 @@
  * convention.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { arcisHono } from '../../src/middleware/hono';
+import { _resetClientIpWarnings } from '../../src/utils/client-ip';
 
 interface FakeCtx {
   req: { raw: Request };
   res: Response;
+  env?: unknown;
+}
+
+/** `c.env` as @hono/node-server sets it: the Node request with its socket. */
+function nodeEnv(remoteAddress: string): unknown {
+  return { incoming: { socket: { remoteAddress } } };
 }
 
 function buildCtx(opts: {
   url?: string;
   method?: string;
   headers?: Record<string, string>;
+  env?: unknown;
 } = {}): FakeCtx {
   const url = opts.url ?? 'https://example.test/';
   const request = new Request(url, {
@@ -31,7 +39,7 @@ function buildCtx(opts: {
     status: 200,
     headers: { 'Content-Type': 'text/plain' },
   });
-  return { req: { raw: request }, res };
+  return { req: { raw: request }, res, env: opts.env };
 }
 
 function passthroughNext(ctx: FakeCtx, body = 'ok', status = 200): () => Promise<void> {
@@ -112,73 +120,106 @@ describe('arcisHono', () => {
   });
 
   describe('Rate limiting', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+      _resetClientIpWarnings();
+    });
+
     it('returns 429 + Retry-After once the cap is exceeded for a single IP', async () => {
       const handler = arcisHono({ rateLimit: { max: 2, windowMs: 60_000 } });
       const next = vi.fn();
+      const hit = () => handler(buildCtx({ env: nodeEnv('203.0.113.5') }), async () => { next(); });
 
-      const c1 = buildCtx({ headers: { 'cf-connecting-ip': '1.2.3.4' } });
-      const r1 = await handler(c1, async () => {
-        next();
-      });
-      expect(r1).toBeUndefined();
-      expect(next).toHaveBeenCalledTimes(1);
-
-      const c2 = buildCtx({ headers: { 'cf-connecting-ip': '1.2.3.4' } });
-      const r2 = await handler(c2, async () => {
-        next();
-      });
-      expect(r2).toBeUndefined();
-      expect(next).toHaveBeenCalledTimes(2);
-
-      const c3 = buildCtx({ headers: { 'cf-connecting-ip': '1.2.3.4' } });
-      const r3 = await handler(c3, async () => {
-        next();
-      });
+      expect(await hit()).toBeUndefined();
+      expect(await hit()).toBeUndefined();
+      const r3 = await hit();
       expect(r3).toBeInstanceOf(Response);
       expect((r3 as Response).status).toBe(429);
       expect((r3 as Response).headers.get('Retry-After')).toBeTruthy();
       expect(next).toHaveBeenCalledTimes(2); // not invoked on the 429
     });
 
-    it('uses cf-connecting-ip > x-forwarded-for > x-real-ip in that order', async () => {
-      const handler = arcisHono({ rateLimit: { max: 1, windowMs: 60_000 } });
-      const next = vi.fn();
-
-      // CF wins.
-      const c1 = buildCtx({
-        headers: {
-          'cf-connecting-ip': '9.9.9.9',
-          'x-forwarded-for': '1.1.1.1',
-          'x-real-ip': '2.2.2.2',
-        },
-      });
-      await handler(c1, async () => {
-        next();
-      });
-
-      // Same CF — second hit should 429.
-      const c2 = buildCtx({
-        headers: {
-          'cf-connecting-ip': '9.9.9.9',
-          'x-forwarded-for': '8.8.8.8',
-        },
-      });
-      const r2 = await handler(c2, async () => {
-        next();
-      });
-      expect((r2 as Response).status).toBe(429);
+    it('never trusts CF-Connecting-IP or X-Forwarded-For from a public peer', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const handler = arcisHono({ rateLimit: { max: 2, windowMs: 60_000 } });
+      const statuses: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        const ctx = buildCtx({
+          env: nodeEnv('203.0.113.5'),
+          headers: { 'cf-connecting-ip': `198.51.100.${i}`, 'x-forwarded-for': `192.0.2.${i}` },
+        });
+        const r = await handler(ctx, passthroughNext(ctx));
+        statuses.push(r ? (r as Response).status : 200);
+      }
+      expect(statuses).toEqual([200, 200, 429, 429, 429]);
     });
 
-    it('isolates rate-limit buckets per client IP', async () => {
+    it('does not trust CF-Connecting-IP off Cloudflare Workers (no peer)', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.stubEnv('VERCEL', '');
+      const handler = arcisHono({ rateLimit: { max: 1, windowMs: 60_000 } });
+      const a = buildCtx({ headers: { 'cf-connecting-ip': '9.9.9.9' } });
+      const b = buildCtx({ headers: { 'cf-connecting-ip': '8.8.8.8' } });
+      expect(await handler(a, passthroughNext(a))).toBeUndefined();
+      // Both share the unknown key: a forged header does not mint a bucket.
+      expect(((await handler(b, passthroughNext(b))) as Response).status).toBe(429);
+    });
+
+    it('uses CF-Connecting-IP on Cloudflare Workers', async () => {
+      vi.stubGlobal('navigator', { userAgent: 'Cloudflare-Workers' });
+      const handler = arcisHono({ rateLimit: { max: 1, windowMs: 60_000 } });
+      const a = buildCtx({ headers: { 'cf-connecting-ip': '9.9.9.9' } });
+      const b = buildCtx({ headers: { 'cf-connecting-ip': '8.8.8.8' } });
+      const a2 = buildCtx({ headers: { 'cf-connecting-ip': '9.9.9.9' } });
+      expect(await handler(a, passthroughNext(a))).toBeUndefined();
+      expect(await handler(b, passthroughNext(b))).toBeUndefined();
+      expect(((await handler(a2, passthroughNext(a2))) as Response).status).toBe(429);
+    });
+
+    it('isolates rate-limit buckets per client IP behind a trusted private proxy', async () => {
       const handler = arcisHono({ rateLimit: { max: 1, windowMs: 60_000 } });
       const next = vi.fn();
-
-      const a = buildCtx({ headers: { 'x-forwarded-for': '1.1.1.1' } });
-      const b = buildCtx({ headers: { 'x-forwarded-for': '2.2.2.2' } });
+      const a = buildCtx({ env: nodeEnv('10.0.0.2'), headers: { 'x-forwarded-for': '198.51.100.1' } });
+      const b = buildCtx({ env: nodeEnv('10.0.0.2'), headers: { 'x-forwarded-for': '198.51.100.2' } });
+      const a2 = buildCtx({ env: nodeEnv('10.0.0.2'), headers: { 'x-forwarded-for': '198.51.100.1' } });
 
       await handler(a, async () => { next(); });
       await handler(b, async () => { next(); });
       expect(next).toHaveBeenCalledTimes(2); // both first hits succeed
+      expect(((await handler(a2, async () => { next(); })) as Response).status).toBe(429);
+    });
+
+    it('reads the peer from Bun (env.requestIP) and Deno (env.remoteAddr)', async () => {
+      const handler = arcisHono({ rateLimit: { max: 1, windowMs: 60_000 } });
+      const bun = { requestIP: () => ({ address: '203.0.113.7' }) };
+      const deno = { remoteAddr: { hostname: '203.0.113.8' } };
+      const c1 = buildCtx({ env: bun });
+      const c2 = buildCtx({ env: deno });
+      const c3 = buildCtx({ env: bun });
+      expect(await handler(c1, passthroughNext(c1))).toBeUndefined();
+      expect(await handler(c2, passthroughNext(c2))).toBeUndefined();
+      expect(((await handler(c3, passthroughNext(c3))) as Response).status).toBe(429);
+    });
+
+    it('honors trustedProxies and getClientIp', async () => {
+      const viaTrust = arcisHono({ trustedProxies: ['203.0.113.0/24'], rateLimit: { max: 1, windowMs: 60_000 } });
+      const t1 = buildCtx({ env: nodeEnv('203.0.113.5'), headers: { 'x-forwarded-for': '198.51.100.1' } });
+      const t2 = buildCtx({ env: nodeEnv('203.0.113.5'), headers: { 'x-forwarded-for': '198.51.100.2' } });
+      expect(await viaTrust(t1, passthroughNext(t1))).toBeUndefined();
+      expect(await viaTrust(t2, passthroughNext(t2))).toBeUndefined();
+
+      const viaResolver = arcisHono({
+        getClientIp: (req) => req.headers.get('x-client'),
+        rateLimit: { max: 1, windowMs: 60_000 },
+      });
+      const r1 = buildCtx({ headers: { 'x-client': '198.51.100.3' } });
+      const r2 = buildCtx({ headers: { 'x-client': '198.51.100.4' } });
+      const r3 = buildCtx({ headers: { 'x-client': '198.51.100.3' } });
+      expect(await viaResolver(r1, passthroughNext(r1))).toBeUndefined();
+      expect(await viaResolver(r2, passthroughNext(r2))).toBeUndefined();
+      expect(((await viaResolver(r3, passthroughNext(r3))) as Response).status).toBe(429);
     });
 
     it('disables rate limiting entirely when rateLimit: false', async () => {
@@ -186,10 +227,16 @@ describe('arcisHono', () => {
       const next = vi.fn();
       // 50 hits from the same IP — all should pass.
       for (let i = 0; i < 50; i++) {
-        const c = buildCtx({ headers: { 'cf-connecting-ip': '5.5.5.5' } });
+        const c = buildCtx({ env: nodeEnv('203.0.113.5') });
         await handler(c, async () => { next(); });
       }
       expect(next).toHaveBeenCalledTimes(50);
+    });
+
+    it('rejects invalid limiter configuration at construction', () => {
+      expect(() => arcisHono({ rateLimit: { windowMs: 0 } })).toThrow(RangeError);
+      expect(() => arcisHono({ rateLimit: { max: -1 } })).toThrow(RangeError);
+      expect(() => arcisHono({ trustedProxies: ['not-a-cidr'] })).toThrow(TypeError);
     });
   });
 

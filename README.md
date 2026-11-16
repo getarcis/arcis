@@ -132,7 +132,7 @@ At the checkpoint, Arcis:
 | **GraphQL Abuse** | `graphqlGuard` rejects oversize queries, deep selection sets, introspection in production, and (v1.6) alias bombs + fragment cycles via `max_aliases` and `block_fragment_cycles`. |
 | **Stateful correlation (v1.6)** | `CorrelationWindow` middleware tracks a 60s rolling window per IP. Detects active scanners (`distinct_vectors >= 3 AND requests >= 20`), credential stuffing (`>= 10 distinct usernames on /login in 60s`), and race-window probes (route-pair within 200ms). Pairs with `protectLogin / protectApi`. |
 | **LLM Token Budget** | Per-key sliding-window token cap with optional per-request size limit. Custom estimator hook for tiktoken or your own counter. `X-Token-Budget-*` headers on every response |
-| **Security Headers** | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control (16 headers) |
+| **Security Headers** | CSP, HSTS, X-Frame-Options, COOP, CORP, COEP, Origin-Agent-Cluster, X-DNS-Prefetch-Control and more. A `baseline` profile matches Helmet 8 defaults and options, plus a per-request CSP nonce. See [Security Headers](#security-headers) |
 | **Error Leakage** | Stack traces, DB errors, connection strings, internal IPs scrubbed in production |
 | **CORS** | Whitelist-based origins, `null` origin blocked, `Vary: Origin` enforced |
 | **Cookie Security** | HttpOnly, Secure, SameSite enforced on all cookies |
@@ -283,6 +283,92 @@ app.use('*', async (c, next) => {
 ```
 
 > Built-in adapters now ship for Fastify (`@arcis/node/fastify`), Koa (`@arcis/node/koa`), and Hono (`@arcis/node/hono`) alongside the existing Express, Next.js, NestJS, SvelteKit, Astro, Nuxt, and Bun adapters.
+
+---
+
+## Security Headers
+
+Arcis has two header profiles. The default (`legacy`) keeps the headers Arcis has always sent, so upgrading changes nothing. The `baseline` profile matches Helmet 8: the same default headers, the same option names and the same validation. A test suite runs every shared header case against the real `helmet@8.3.0` package and fails on any difference.
+
+```js
+// Before
+app.use(helmet({ contentSecurityPolicy: { directives: { scriptSrc: ["'self'", 'cdn.example.com'] } } }));
+
+// After: same headers
+app.use(arcis({
+  headers: { profile: 'baseline', contentSecurityPolicy: { directives: { scriptSrc: ["'self'", 'cdn.example.com'] } } },
+}));
+```
+
+The same profile in Python and Go:
+
+```python
+# FastAPI / Starlette (Flask: Arcis(app, headers=...), Django: ARCIS_CONFIG["headers"])
+app.add_middleware(ArcisMiddleware, headers={
+    "profile": "baseline",
+    "content_security_policy": {"nonce": True},
+})
+# In a route: request.state.csp_nonce (Flask: g.csp_nonce, Django: request.csp_nonce)
+```
+
+```go
+cfg := arcisgin.DefaultConfig()
+cfg.HeaderProfile = arcis.HeaderProfileBaseline
+cfg.BaselineHeaders = arcis.BaselineHeaderOptions{
+	ContentSecurityPolicy: arcis.CSPOptions{Nonce: true},
+}
+r.Use(arcisgin.MiddlewareWithConfig(cfg))
+// In a handler: arcis.CSPNonce(c.Request.Context())
+```
+
+What the baseline profile adds on top of Helmet:
+
+- **Per-request CSP nonce.** `contentSecurityPolicy: { nonce: true }` generates a fresh nonce for each response, adds it to `script-src`, and exposes it to your templates (`res.locals.cspNonce` in Express). With Helmet you write that middleware yourself.
+- **Python and Go.** The same profile, defaults and validation ship in the Python and Go SDKs, checked against the same shared fixtures.
+- **Every Node adapter.** Express, Fastify, Koa, Hono, Next.js, SvelteKit, Astro, Nuxt and Bun send identical headers. Headers a route sets itself are kept.
+- **Permissions-Policy and Reporting-Endpoints builders**, off by default: `permissionsPolicy: { camera: [], geolocation: ['self'] }`, `reportingEndpoints: { csp: 'https://reports.example.com/csp' }`.
+- **Fails at startup, not per request.** A CR or LF in a CSP value is rejected when the middleware is created. Helmet accepts it, and then every response fails.
+
+Like Helmet, the baseline profile does not send `Cross-Origin-Embedder-Policy` (it breaks third-party embeds) or any `Cache-Control` header unless you ask for them. The full option table is in [`spec/API_SPEC.md`](spec/API_SPEC.md#baseline-profile-helmet-8-compatible).
+
+---
+
+## HTML Sanitizer
+
+When your app accepts HTML on purpose (comments, rich text, CMS content), clean it with the parser-backed sanitizer. It produces the same output as DOMPurify 3.4 with the same configuration, built on a standards-compliant HTML5 parser instead of a browser DOM. It is an add-on, so the core packages stay dependency-free.
+
+```js
+// npm install @arcis/node parse5
+import { sanitizeHtml } from '@arcis/node/html';
+
+sanitizeHtml('<p>Hi<img src=x onerror=alert(1)></p>');          // '<p>Hi<img src="x"></p>'
+sanitizeHtml(dirty, { ALLOWED_TAGS: ['b', 'i', 'a'], ALLOWED_ATTR: ['href'] });
+```
+
+```python
+# pip install "arcis[html]"
+from arcis.html import sanitize_html
+
+sanitize_html(dirty, allowed_tags=["b", "i", "a"], allowed_attr=["href"])
+```
+
+```go
+// go get github.com/getarcis/arcis-go/htmlsanitizer
+clean := htmlsanitizer.Sanitize(dirty)
+
+s, err := htmlsanitizer.New(htmlsanitizer.Config{AllowedTags: []string{"b", "i", "a"}})
+```
+
+Moving from DOMPurify: `DOMPurify.sanitize(dirty, cfg)` becomes `sanitizeHtml(dirty, cfg)` with the same option names.
+
+What you get compared with DOMPurify on the server:
+
+- **No jsdom.** DOMPurify needs a full DOM implementation on the server. Arcis needs only the parser, and the Node add-on uses no Node built-ins. On the shared cases it runs more than 10x faster than DOMPurify on jsdom, with identical output.
+- **Python and Go.** The same behavior in all three SDKs, checked against the same shared cases.
+- **Misconfiguration fails loudly.** An unknown option (for example a misspelled `ALLOWED_TAG`) throws instead of silently falling back to the default allowlist. Options that only apply to browser DOM objects are rejected the same way.
+- **Explainable output.** `sanitizeHtmlDetailed()` returns the cleaned HTML plus every element and attribute that was removed, for logging or review.
+
+Every SDK must reproduce DOMPurify's exact output on a shared set of 668 cases: DOMPurify's own published test payloads, one case per option, benign rich text, and seeded fuzz cases. Expected values come from running DOMPurify, and the Node suite also compares against DOMPurify directly on every run. Details are in [`spec/API_SPEC.md`](spec/API_SPEC.md#11-html-sanitizer-parser-backed).
 
 ---
 

@@ -6,8 +6,8 @@ return an ``*CheckResult`` with ``allowed`` / ``reason`` / ``details``.
 The per-framework adapters (FastAPI/Starlette, Litestar, Django) need a
 thin wrapper that:
 
-1. extracts the client IP (X-Forwarded-For first hop, then the socket
-   peer / ``REMOTE_ADDR``),
+1. resolves the client IP with the trust-aware resolver (X-Forwarded-For
+   only from a trusted socket peer / ``REMOTE_ADDR``),
 2. extracts the route path,
 3. forwards an optional shared :class:`CorrelationWindow` plus the right
    ``vector`` tag into the base check,
@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, Tuple
 
+from ..utils.ip import TrustedProxies, resolve_client_ip
 from .correlation import CorrelationDetections, CorrelationWindow
 from .protect_api import check_api
 from .protect_login import check_login
@@ -71,28 +72,27 @@ def block_status_code(reason: str) -> int:
 
 
 def client_ip_from_xff_then(
-    xff_header: Optional[str], fallback: Optional[str]
+    xff_header: Optional[str],
+    fallback: Optional[str],
+    trusted_proxies: TrustedProxies = None,
 ) -> Optional[str]:
-    """Resolve the client IP: X-Forwarded-For first hop, then a fallback.
+    """Resolve the client IP from ``X-Forwarded-For`` and the socket peer.
 
-    The factory wrappers honor the X-Forwarded-For first hop (the address
-    the edge proxy saw the client connect from) and fall back to the
-    framework's socket peer (``request.client.host`` /
-    ``META['REMOTE_ADDR']``) when no forwarded header is present.
+    Runs the trust-aware resolver (:func:`arcis.utils.ip.resolve_client_ip`):
+    the header counts only when ``fallback`` (the socket peer,
+    ``request.client.host`` / ``META['REMOTE_ADDR']``) is a trusted proxy,
+    and it is read from the right, so a client cannot choose its own IP.
 
     Args:
         xff_header: Raw ``X-Forwarded-For`` header value, or None.
-        fallback: Socket peer address to use when no forwarded header is
-            present.
+        fallback: Socket peer address.
+        trusted_proxies: Proxy IPs / CIDR ranges. None uses the default
+            loopback, link-local and private set; [] trusts none.
 
     Returns:
-        The resolved client IP, or None when neither source yields one.
+        The resolved client IP, or None when it cannot be determined.
     """
-    if xff_header:
-        first = xff_header.split(",")[0].strip()
-        if first:
-            return first
-    return fallback or None
+    return resolve_client_ip(fallback, xff_header, trusted_proxies)
 
 
 def record_signup_correlation(

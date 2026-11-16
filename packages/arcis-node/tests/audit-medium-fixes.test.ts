@@ -118,31 +118,39 @@ describe('M5 — Bot detection flags overlong UA', () => {
   });
 });
 
-describe('M8 — Rate limit unknown IP uses UA+Lang fingerprint', () => {
-  it('two unknown-IP requests with different UAs get different counter keys', async () => {
+describe('M8: Rate limit unknown IP shares one unknown key (spec: Client IP resolution)', () => {
+  it('unknown-IP requests share one bucket whatever their UA, and never mix with real IPs', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const limiter = createRateLimiter({ max: 1, windowMs: 60_000 });
     try {
+      // A client-chosen User-Agent must not mint a fresh bucket.
       const reqA = {
         ip: undefined,
         socket: {},
         headers: { 'user-agent': 'ClientA/1.0', 'accept-language': 'en' },
-      } as any;
+      } as unknown as Request;
       const reqB = {
         ip: undefined,
         socket: {},
         headers: { 'user-agent': 'ClientB/1.0', 'accept-language': 'en' },
-      } as any;
+      } as unknown as Request;
+      const reqReal = { socket: { remoteAddress: '203.0.113.9' }, headers: {} } as unknown as Request;
 
       const nextA = vi.fn();
       const nextB = vi.fn();
+      const nextReal = vi.fn();
+      const resB = mockRes();
       await limiter(reqA, mockRes() as Response, nextA as unknown as NextFunction);
-      await limiter(reqB, mockRes() as Response, nextB as unknown as NextFunction);
+      await limiter(reqB, resB as Response, nextB as unknown as NextFunction);
+      await limiter(reqReal, mockRes() as Response, nextReal as unknown as NextFunction);
 
-      // Different fingerprints → each gets its own bucket → both allowed under max=1
       expect(nextA).toHaveBeenCalled();
-      expect(nextB).toHaveBeenCalled();
+      expect(nextB).not.toHaveBeenCalled();
+      expect(resB.status).toHaveBeenCalledWith(429);
+      expect(nextReal).toHaveBeenCalled();
     } finally {
       limiter.close();
+      vi.restoreAllMocks();
     }
   });
 });
