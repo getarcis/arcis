@@ -38,7 +38,6 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
   RateLimitOptions,
@@ -49,6 +48,17 @@ import {
   type BotDetectionResult,
 } from './bot-detection';
 import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter, type ClientIpResolver } from '../utils/client-ip';
+import {
+  adapterKey,
+  buildAdapterLimiter,
+  honoPeerAddress,
+  mergeClientIpOptions,
+  userClientIp,
+  type AdapterRateLimitDecision,
+  type AdapterRateLimiter,
+  type FetchClientIpOptions,
+} from './rate-limit-shared';
 
 // ─── Bun + Hono duck-typed contracts ────────────────────────────────────────
 
@@ -70,6 +80,8 @@ interface HonoRequestLike {
 export interface HonoContextLike {
   req: HonoRequestLike;
   res: Response;
+  /** Hono on Bun passes the Bun server here; it supplies the peer address. */
+  env?: unknown;
   json(object: unknown, status?: number): Response;
 }
 
@@ -81,7 +93,13 @@ export type HonoMiddlewareHandler = (
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
-export interface ArcisBunOptions {
+/**
+ * Adapter options. Client IP resolution: `getClientIp` when it returns a
+ * valid address; else the peer address (`server.requestIP()`) with the
+ * `trustedProxies` walk; else, without a peer, `clientIpHeader` or the
+ * platform header; else one shared `unknown` key.
+ */
+export interface ArcisBunOptions extends FetchClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -91,37 +109,6 @@ export interface ArcisBunOptions {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key) => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
 
 function botInputFor(headers: Headers): ExpressRequestLike {
   const h: Record<string, string | undefined> = {
@@ -167,16 +154,21 @@ function buildBotConfig(botCfg: ArcisBunOptions['bot']): BotConfig {
   };
 }
 
-function clientIpFromHeaders(headers: Headers, fallback: string): string {
-  const xff = headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return fallback;
+interface RateLimitSetup {
+  limiter: AdapterRateLimiter | null;
+  resolver: ClientIpResolver;
 }
 
-function rateLimitedResponse(decision: RateLimitDecision): Response {
+function buildRateLimit(options: ArcisBunOptions, owner: string): RateLimitSetup {
+  const rateLimitCfg = options.rateLimit ?? true;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  return {
+    limiter: rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, owner) : null,
+    resolver: createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts)),
+  };
+}
+
+function rateLimitedResponse(decision: AdapterRateLimitDecision): Response {
   return new Response(
     JSON.stringify({
       error: 'Too many requests, please try again later.',
@@ -226,19 +218,17 @@ export function arcisBun(
         nonceUnsupportedBy: 'Bun',
       })
     : null;
-  const rateLimitCfg = options.rateLimit ?? true;
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const { limiter, resolver } = buildRateLimit(options, 'arcisBun');
   const botCfg = buildBotConfig(options.bot);
 
   return async (req, server) => {
     const url = new URL(req.url);
-    const fallbackIp = server?.requestIP(req)?.address ?? 'unknown';
-    const ip = clientIpFromHeaders(req.headers, fallbackIp);
 
     if (limiter) {
-      const decision = limiter(ip);
+      const ip =
+        userClientIp(options.getClientIp, req) ??
+        resolver.resolve(server?.requestIP(req)?.address, toHeaderGetter(req.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisBun'));
       if (!decision.allowed) return rateLimitedResponse(decision);
     }
 
@@ -274,18 +264,18 @@ export function arcisHono(options: ArcisBunOptions = {}): HonoMiddlewareHandler 
         nonceUnsupportedBy: 'Bun',
       })
     : null;
-  const rateLimitCfg = options.rateLimit ?? true;
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const { limiter, resolver } = buildRateLimit(options, 'arcisHono');
   const botCfg = buildBotConfig(options.bot);
 
   return async (c, next) => {
     const url = new URL(c.req.url);
-    const ip = clientIpFromHeaders(c.req.raw.headers, 'unknown');
 
     if (limiter) {
-      const decision = limiter(ip);
+      const request = c.req.raw;
+      const ip =
+        userClientIp(options.getClientIp, request) ??
+        resolver.resolve(honoPeerAddress(c.env, request), toHeaderGetter(request.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisHono'));
       if (!decision.allowed) return rateLimitedResponse(decision);
     }
 

@@ -172,6 +172,13 @@ export { validateEmail, verifyEmailMx, isValidEmailSyntax } from './validation/e
 // =============================================================================
 export { parseDuration, formatDuration } from './utils/duration';
 export { detectClientIp, isPrivateIp } from './utils/ip';
+export {
+  resolveClientIp,
+  ipKeyGenerator,
+  normalizeIp,
+  DEFAULT_TRUSTED_PROXIES,
+} from './utils/client-ip';
+export type { ClientIpOptions } from './utils/client-ip';
 export { fingerprint } from './utils/fingerprint';
 
 // =============================================================================
@@ -222,6 +229,8 @@ export type {
   // Rate limiting
   RateLimitOptions,
   RateLimitStore,
+  RateLimitIncrement,
+  LegacyRateLimitStore,
   RateLimitEntry,
   RateLimitResult,
   RateLimiterMiddleware,

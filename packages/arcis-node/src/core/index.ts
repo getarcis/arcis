@@ -17,6 +17,8 @@ export type {
   // Rate limiting
   RateLimitOptions,
   RateLimitStore,
+  RateLimitIncrement,
+  LegacyRateLimitStore,
   RateLimitEntry,
   RateLimitResult,
   RateLimiterMiddleware,

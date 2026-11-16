@@ -29,7 +29,6 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
   RateLimitOptions,
@@ -40,6 +39,8 @@ import {
   type BotDetectionResult,
 } from './bot-detection';
 import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter, type ClientIpOptions } from '../utils/client-ip';
+import { adapterKey, buildAdapterLimiter, mergeClientIpOptions } from './rate-limit-shared';
 
 // ─── Astro duck-typed contracts ─────────────────────────────────────────────
 
@@ -66,7 +67,14 @@ export type AstroMiddlewareHandler = (
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
-export interface ArcisAstroOptions {
+/**
+ * Adapter options. The framework address (`context.clientAddress`) is the peer for
+ * the `trustedProxies` walk, so a proxy on a trusted private address can
+ * report the client in X-Forwarded-For while a public client cannot choose
+ * its own key. When no address is available, `clientIpHeader` or the
+ * platform header is used, else one shared `unknown` key.
+ */
+export interface ArcisAstroOptions extends ClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -76,37 +84,6 @@ export interface ArcisAstroOptions {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
 
 function botInputFor(headers: Headers): ExpressRequestLike {
   const h: Record<string, string | undefined> = {
@@ -148,9 +125,9 @@ export function onRequest(options: ArcisAstroOptions = {}): AstroMiddlewareHandl
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'onRequest') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions = typeof botCfg === 'object' ? botCfg : {};
@@ -162,7 +139,14 @@ export function onRequest(options: ArcisAstroOptions = {}): AstroMiddlewareHandl
 
   return async (context, next) => {
     if (limiter) {
-      const decision = limiter(context.clientAddress);
+      let peer: string | undefined;
+      try {
+        peer = context.clientAddress;
+      } catch {
+        // The adapter cannot provide an address (for example a prerendered route).
+      }
+      const ip = resolver.resolve(peer, toHeaderGetter(context.request.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'onRequest'));
       if (!decision.allowed) {
         return new Response(
           JSON.stringify({

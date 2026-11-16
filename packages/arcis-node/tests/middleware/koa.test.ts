@@ -137,15 +137,44 @@ describe('arcisKoa (Koa middleware)', () => {
       expect(c2.status).toBe(429);
     });
 
-    it('falls back to X-Forwarded-For when neither ctx.ip nor ctx.request.ip is set', async () => {
+    it('ignores X-Forwarded-For from a public peer: rotating it stays in one bucket', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const middleware = arcisKoa({ rateLimit: { max: 1, windowMs: 60_000 } });
       const next = vi.fn(passThroughNext);
-
-      const c1 = buildCtx({ headers: { 'x-forwarded-for': '9.9.9.9, 1.1.1.1' } });
+      const c1 = buildCtx({ socketRemoteAddress: '203.0.113.5', headers: { 'x-forwarded-for': '9.9.9.1' } });
+      const c2 = buildCtx({ socketRemoteAddress: '203.0.113.5', headers: { 'x-forwarded-for': '9.9.9.2' } });
       await middleware(c1, next);
-      const c2 = buildCtx({ headers: { 'x-forwarded-for': '9.9.9.9, 1.1.1.1' } });
       await middleware(c2, next);
+      expect(c1.status).toBe(200);
       expect(c2.status).toBe(429);
+      warn.mockRestore();
+    });
+
+    it('walks X-Forwarded-For from a trusted private peer', async () => {
+      const middleware = arcisKoa({ rateLimit: { max: 1, windowMs: 60_000 } });
+      const next = vi.fn(passThroughNext);
+      const run = async (xff: string) => {
+        const c = buildCtx({ socketRemoteAddress: '10.0.0.2', headers: { 'x-forwarded-for': xff } });
+        await middleware(c, next);
+        return c.status;
+      };
+      expect(await run('198.51.100.1')).toBe(200);
+      expect(await run('198.51.100.2')).toBe(200);
+      expect(await run('198.51.100.1')).toBe(429);
+    });
+
+    it("uses Koa's ctx.ip when app.proxy is true", async () => {
+      const middleware = arcisKoa({ rateLimit: { max: 1, windowMs: 60_000 } });
+      const next = vi.fn(passThroughNext);
+      const run = async (ip: string) => {
+        const c = buildCtx({ socketRemoteAddress: '203.0.113.5', ip });
+        c.app = { proxy: true };
+        await middleware(c, next);
+        return c.status;
+      };
+      expect(await run('198.51.100.1')).toBe(200);
+      expect(await run('198.51.100.2')).toBe(200);
+      expect(await run('198.51.100.1')).toBe(429);
     });
 
     it('falls back to socket.remoteAddress when no IP info is available', async () => {

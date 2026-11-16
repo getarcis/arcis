@@ -1,148 +1,141 @@
 /**
  * @module @arcis/node/stores/redis
  * Redis rate limit store
- * 
- * Note: This is a reference implementation. You'll need to install
- * the 'ioredis' or 'redis' package and pass your client instance.
+ *
+ * Bring your own client: pass an `ioredis` instance (or any object with an
+ * ioredis-style `eval`). Every operation is one Lua script, so each counted
+ * request is a single atomic round trip.
  */
 
-import type { RateLimitStore, RateLimitEntry } from '../core/types';
-import { RATE_LIMIT } from '../core/constants';
+import type { RateLimitStore, RateLimitIncrement } from '../core/types';
 
-/** Generic Redis client interface (works with ioredis, redis, etc.) */
+/**
+ * The Redis client surface RedisStore uses: `EVAL` with ioredis argument
+ * order. An `ioredis` client satisfies it as-is. For `node-redis` (v4+), wrap
+ * `sendCommand`:
+ *
+ * ```ts
+ * const client = {
+ *   eval: (script: string, numKeys: number, ...args: Array<string | number>) =>
+ *     nodeRedis.sendCommand(['EVAL', script, String(numKeys), ...args.map(String)]),
+ * };
+ * ```
+ */
 export interface RedisClientLike {
-  get(key: string): Promise<string | null>;
-  /**
-   * SET with optional flags. Supports both `set(key, value)` and
-   * `set(key, value, 'EX', seconds, 'NX')` shapes for atomic
-   * set-if-not-exists with TTL. Returns 'OK' on success; null when NX
-   * is supplied and the key already exists.
-   */
-  set(
-    key: string,
-    value: string,
-    ...args: Array<string | number>
-  ): Promise<string | null | unknown>;
-  setex(key: string, seconds: number, value: string): Promise<unknown>;
-  expire(key: string, seconds: number): Promise<unknown>;
-  incr(key: string): Promise<number>;
-  decr(key: string): Promise<number>;
-  del(key: string): Promise<number>;
-  ttl(key: string): Promise<number>;
-  quit?(): Promise<unknown>;
-  disconnect?(): Promise<unknown>;
+  /** Run a Lua script: `eval(script, numKeys, ...keys, ...args)`. */
+  eval(script: string, numKeys: number, ...keysAndArgs: Array<string | number>): Promise<unknown>;
 }
 
+/** RedisStore options. */
 export interface RedisStoreOptions {
   /** Redis client instance */
   client: RedisClientLike;
   /** Key prefix. Default: 'arcis:rl:' */
   prefix?: string;
-  /** Window size in milliseconds. Default: 60000 */
+  /**
+   * Not used: each `increment` call passes its own window.
+   *
+   * @deprecated The limiter passes `windowMs` to `increment`.
+   */
   windowMs?: number;
 }
 
+// INCR and the expiry are created together: the first hit sets PEXPIRE, and a
+// counter found without a TTL (left by an older client) gets one, so a key can
+// never lock a client out forever.
+const INCREMENT_SCRIPT = `
+local hits = redis.call('INCR', KEYS[1])
+if hits == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+  ttl = tonumber(ARGV[1])
+end
+return {hits, ttl}`;
+
+const DECREMENT_SCRIPT = `
+local hits = tonumber(redis.call('GET', KEYS[1]) or '0')
+if hits and hits > 0 then return redis.call('DECR', KEYS[1]) end
+return 0`;
+
+const GET_SCRIPT = `
+local hits = redis.call('GET', KEYS[1])
+if not hits then return nil end
+return {tonumber(hits) or 0, redis.call('PTTL', KEYS[1])}`;
+
+const RESET_SCRIPT = `return redis.call('DEL', KEYS[1])`;
+
+function toWindowState(reply: unknown, now: number): RateLimitIncrement {
+  if (!Array.isArray(reply) || reply.length !== 2) {
+    throw new Error('RedisStore: unexpected reply from Redis');
+  }
+  const totalHits = Number(reply[0]);
+  const ttl = Number(reply[1]);
+  if (!Number.isFinite(totalHits) || !Number.isFinite(ttl)) {
+    throw new Error('RedisStore: unexpected reply from Redis');
+  }
+  return { totalHits, resetTime: now + Math.max(0, ttl) };
+}
+
 /**
- * Redis rate limit store for distributed deployments.
- * 
+ * Redis rate limit store for distributed deployments. Several app instances
+ * sharing one Redis never admit more than `max` requests per window.
+ *
+ * Errors are thrown, never swallowed: the limiter fails open, counts the
+ * request in memory and reports the error.
+ *
  * @example
  * import Redis from 'ioredis';
- * 
- * const redis = new Redis();
- * const store = new RedisStore({ client: redis });
- * const limiter = createRateLimiter({ store });
- * 
- * // Cleanup on shutdown
- * process.on('SIGTERM', async () => {
- *   await store.close();
- * });
+ *
+ * const store = new RedisStore({ client: new Redis() });
+ * app.use(createRateLimiter({ store }));
  */
 export class RedisStore implements RateLimitStore {
-  private client: RedisClientLike;
-  private prefix: string;
-  private windowMs: number;
-  private windowSec: number;
+  private readonly client: RedisClientLike;
+  private readonly prefix: string;
 
   constructor(options: RedisStoreOptions) {
+    if (!options?.client || typeof options.client.eval !== 'function') {
+      throw new TypeError('RedisStore: options.client must provide eval(script, numKeys, ...args)');
+    }
     this.client = options.client;
     this.prefix = options.prefix ?? 'arcis:rl:';
-    this.windowMs = options.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-    this.windowSec = Math.ceil(this.windowMs / 1000);
   }
 
-  private getKey(key: string): string {
+  private redisKey(key: string): string {
     return `${this.prefix}${key}`;
   }
 
-  async get(key: string): Promise<RateLimitEntry | null> {
-    const redisKey = this.getKey(key);
-    
-    const [countStr, ttl] = await Promise.all([
-      this.client.get(redisKey),
-      this.client.ttl(redisKey),
-    ]);
-    
-    if (!countStr || ttl < 0) {
-      return null;
-    }
-    
-    const count = parseInt(countStr, 10);
-    if (isNaN(count)) {
-      // Corrupt value in Redis — treat as if key doesn't exist
-      return null;
-    }
-
-    return {
-      count,
-      resetTime: Date.now() + (ttl * 1000),
-    };
+  /** Count one hit (INCR + PEXPIRE on first hit + PTTL in one script). */
+  async increment(key: string, windowMs: number): Promise<RateLimitIncrement> {
+    const reply = await this.client.eval(INCREMENT_SCRIPT, 1, this.redisKey(key), windowMs);
+    return toWindowState(reply, Date.now());
   }
 
-  async set(key: string, entry: RateLimitEntry): Promise<void> {
-    const redisKey = this.getKey(key);
-    // Clamp to at least 1 second — Math.ceil can produce 0 or negative values
-    // when entry.resetTime is in the past due to Redis latency or clock skew.
-    const ttlSec = Math.max(1, Math.ceil((entry.resetTime - Date.now()) / 1000));
-    await this.client.setex(redisKey, ttlSec, entry.count.toString());
-  }
-
-  async increment(key: string): Promise<number> {
-    const redisKey = this.getKey(key);
-
-    // SECURITY / RELIABILITY: Atomic first-increment via SET ... EX ... NX.
-    // If the key did not exist, this single command creates it with value
-    // 1 and the window TTL atomically. If it existed, SET returns null
-    // and we fall through to INCR for the actual count. This eliminates
-    // the INCR-then-EXPIRE race where a connection drop between the two
-    // commands could leave a counter without a TTL, locking out the
-    // client until manual intervention.
-    const created = await this.client.set(redisKey, '1', 'EX', this.windowSec, 'NX');
-    if (created === 'OK' || created === true) {
-      return 1;
-    }
-    return this.client.incr(redisKey);
-  }
-
+  /** Remove one hit, floored at 0. */
   async decrement(key: string): Promise<void> {
-    const redisKey = this.getKey(key);
-    await this.client.decr(redisKey);
+    await this.client.eval(DECREMENT_SCRIPT, 1, this.redisKey(key));
   }
 
-  async reset(key: string): Promise<void> {
-    const redisKey = this.getKey(key);
-    await this.client.del(redisKey);
+  /** Delete the key. */
+  async resetKey(key: string): Promise<void> {
+    await this.client.eval(RESET_SCRIPT, 1, this.redisKey(key));
   }
 
-  async close(): Promise<void> {
-    // Don't close the client - it may be shared
-    // The caller should manage the client lifecycle
+  /** Current window state, or `null` when the key has no live window. */
+  async get(key: string): Promise<RateLimitIncrement | null> {
+    const reply = await this.client.eval(GET_SCRIPT, 1, this.redisKey(key));
+    if (reply === null || reply === undefined) return null;
+    return toWindowState(reply, Date.now());
   }
+
+  /** No-op: the client is caller-owned and may be shared. */
+  async close(): Promise<void> {}
 }
 
 /**
  * Create a Redis store with the given options.
- * Convenience function for functional programming style.
- * 
+ *
  * @example
  * const store = createRedisStore({ client: redisClient });
  */

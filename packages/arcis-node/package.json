@@ -166,6 +166,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "8.7.4",
     "helmet": "8.3.0",
+    "ioredis": "5.11.1",
     "jsdom": "31.0.1",
     "parse5": "8.1.1",
     "tsup": "^8.0.1",

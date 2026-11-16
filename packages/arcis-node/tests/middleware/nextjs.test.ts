@@ -3,8 +3,9 @@
  * Tests for src/middleware/nextjs.ts (arcisMiddleware + arcisProtect)
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { arcisMiddleware, arcisProtect } from '../../src/middleware/nextjs';
+import { _resetClientIpWarnings } from '../../src/utils/client-ip';
 
 interface BuildOpts {
   ip?: string;
@@ -16,9 +17,9 @@ interface BuildOpts {
 function buildRequest(opts: BuildOpts = {}): Request {
   const url = opts.url ?? 'https://example.test/';
   const headers = new Headers(opts.headers ?? {});
-  // x-forwarded-for is the canonical IP-key carrier on Vercel + Cloudflare;
-  // tests use it to drive rate-limit keys without depending on platform IP
-  // accessors that the adapter intentionally doesn't reach for.
+  // Next.js middleware has no peer address. The rate-limit tests run as if
+  // on Vercel (VERCEL=1), where the platform overwrites x-forwarded-for, so
+  // its right-most entry is the client.
   if (opts.ip && !headers.has('x-forwarded-for')) {
     headers.set('x-forwarded-for', opts.ip);
   }
@@ -44,6 +45,17 @@ describe('arcisMiddleware (Edge Middleware factory)', () => {
   });
 
   describe('Rate limiting', () => {
+    beforeEach(() => {
+      vi.stubEnv('VERCEL', '1');
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      _resetClientIpWarnings();
+    });
+
     it('passes requests under the limit through', async () => {
       const middleware = arcisMiddleware({ rateLimit: { max: 3, windowMs: 60_000 } });
       for (let i = 0; i < 3; i++) {
@@ -85,12 +97,52 @@ describe('arcisMiddleware (Edge Middleware factory)', () => {
       expect(blocked!.status).toBe(429);
     });
 
-    it('honors cf-connecting-ip when other IP headers are absent', async () => {
-      // Cloudflare sets only cf-connecting-ip in some pass-through paths.
+    it('keys on the right-most X-Forwarded-For entry on Vercel, so prepending entries changes nothing', async () => {
       const middleware = arcisMiddleware({ rateLimit: { max: 1, windowMs: 60_000 } });
-      await middleware(buildRequest({ headers: { 'cf-connecting-ip': '8.8.8.8' } }));
+      await middleware(buildRequest({ headers: { 'x-forwarded-for': '6.6.6.1, 198.51.100.7' } }));
+      const blocked = await middleware(buildRequest({ headers: { 'x-forwarded-for': '6.6.6.2, 198.51.100.7' } }));
+      expect(blocked!.status).toBe(429);
+    });
+
+    it('off Vercel and Workers, forged IP headers share one unknown key', async () => {
+      vi.stubEnv('VERCEL', '');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const middleware = arcisMiddleware({ rateLimit: { max: 2, windowMs: 60_000 } });
+      const statuses: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        const r = await middleware(buildRequest({
+          headers: { 'x-forwarded-for': `198.51.100.${i}`, 'cf-connecting-ip': `192.0.2.${i}`, 'x-real-ip': `203.0.113.${i}` },
+        }));
+        statuses.push(r ? r.status : 200);
+      }
+      expect(statuses).toEqual([200, 200, 429, 429]);
+      expect(warn).toHaveBeenCalledTimes(1); // the unknown-key warning, once
+    });
+
+    it('uses cf-connecting-ip on Cloudflare Workers', async () => {
+      vi.stubEnv('VERCEL', '');
+      vi.stubGlobal('navigator', { userAgent: 'Cloudflare-Workers' });
+      const middleware = arcisMiddleware({ rateLimit: { max: 1, windowMs: 60_000 } });
+      expect(await middleware(buildRequest({ headers: { 'cf-connecting-ip': '8.8.8.8' } }))).toBeUndefined();
+      expect(await middleware(buildRequest({ headers: { 'cf-connecting-ip': '9.9.9.9' } }))).toBeUndefined();
       const blocked = await middleware(buildRequest({ headers: { 'cf-connecting-ip': '8.8.8.8' } }));
       expect(blocked!.status).toBe(429);
+    });
+
+    it('uses a configured clientIpHeader or getClientIp elsewhere', async () => {
+      vi.stubEnv('VERCEL', '');
+      const viaHeader = arcisMiddleware({ clientIpHeader: 'x-client-ip', rateLimit: { max: 1, windowMs: 60_000 } });
+      expect(await viaHeader(buildRequest({ headers: { 'x-client-ip': '198.51.100.1' } }))).toBeUndefined();
+      expect(await viaHeader(buildRequest({ headers: { 'x-client-ip': '198.51.100.2' } }))).toBeUndefined();
+      expect((await viaHeader(buildRequest({ headers: { 'x-client-ip': '198.51.100.1' } })))!.status).toBe(429);
+
+      const viaResolver = arcisMiddleware({
+        getClientIp: (req) => req.headers.get('x-mine'),
+        rateLimit: { max: 1, windowMs: 60_000 },
+      });
+      expect(await viaResolver(buildRequest({ headers: { 'x-mine': '2001:db8:1:100::1' } }))).toBeUndefined();
+      // Same /56 network: same key.
+      expect((await viaResolver(buildRequest({ headers: { 'x-mine': '2001:db8:1:1ff::2' } })))!.status).toBe(429);
     });
 
     it('falls back to the literal "unknown" key when no IP header is present', async () => {

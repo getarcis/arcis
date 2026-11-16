@@ -30,7 +30,6 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
   RateLimitOptions,
@@ -41,6 +40,14 @@ import {
   type BotDetectionResult,
 } from './bot-detection';
 import { applyPlanAfterHandler, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import {
+  createClientIpResolver,
+  normalizeIp,
+  toHeaderGetter,
+  type ClientIpOptions,
+  type ClientIpResolver,
+} from '../utils/client-ip';
+import { adapterKey, buildAdapterLimiter, mergeClientIpOptions } from './rate-limit-shared';
 
 // ─── Koa duck-typed contracts ───────────────────────────────────────────────
 // Mirrors Koa's `Context` / `Request` / `Response` closely enough that real
@@ -78,6 +85,10 @@ export interface KoaContextLike {
   status: number;
   /** Setting `ctx.body` shortcuts to `ctx.response.body`. */
   body: unknown;
+  /** Koa application; `app.proxy` is its trust-proxy setting. */
+  app?: { proxy?: boolean };
+  /** Node request (`ctx.req` in real Koa). */
+  req?: { socket?: { remoteAddress?: string } };
 }
 
 export type KoaNext = () => Promise<unknown>;
@@ -85,7 +96,12 @@ export type KoaMiddleware = (ctx: KoaContextLike, next: KoaNext) => Promise<void
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
-export interface ArcisKoaOptions {
+/**
+ * Adapter options. `trustedProxies` / `clientIpHeader` control client IP
+ * resolution; without `trustedProxies`, an app with `app.proxy = true` keys
+ * on Koa's resolved `ctx.ip`.
+ */
+export interface ArcisKoaOptions extends ClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -99,38 +115,6 @@ export interface ArcisKoaOptions {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  // Object.create(null) avoids prototype-pollution risk if a key is "__proto__".
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
 
 function headerValue(
   headers: Record<string, string | string[] | undefined>,
@@ -160,24 +144,19 @@ function botInputFor(
 }
 
 /**
- * Pull a stable client IP. Order: `ctx.ip` / `ctx.request.ip` (Koa
- * pre-resolves these from XFF when `app.proxy = true`) → X-Forwarded-For
- * (leftmost) → X-Real-IP → socket.remoteAddress → "unknown". When the
- * Koa user enables `app.proxy`, Koa already trusted XFF — we honor that.
+ * Resolve the client IP. With `app.proxy = true` Koa's resolved `ctx.ip` is
+ * used (unless Arcis `trustedProxies` is set explicitly). Otherwise the
+ * socket peer goes through the Arcis trust walk, so a public client cannot
+ * pick its key with X-Forwarded-For.
  */
-function clientIpOf(ctx: KoaContextLike): string {
-  if (ctx.ip) return ctx.ip;
-  if (ctx.request.ip) return ctx.request.ip;
-  const headers = ctx.request.headers ?? {};
-  const xff = headerValue(headers, 'x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
+function clientIpOf(ctx: KoaContextLike, resolver: ClientIpResolver): string | null {
+  const frameworkIp = ctx.ip ?? ctx.request.ip;
+  if (!resolver.explicitTrust && ctx.app?.proxy === true) {
+    const ip = normalizeIp(frameworkIp);
+    if (ip !== null) return ip;
   }
-  const xrip = headerValue(headers, 'x-real-ip');
-  if (xrip) return xrip.trim();
-  if (ctx.request.socket?.remoteAddress) return ctx.request.socket.remoteAddress;
-  return 'unknown';
+  const peer = ctx.request.socket?.remoteAddress ?? ctx.req?.socket?.remoteAddress ?? frameworkIp;
+  return resolver.resolve(peer, toHeaderGetter(ctx.request.headers));
 }
 
 function applySecurityHeaders(
@@ -222,9 +201,9 @@ export function arcisKoa(options: ArcisKoaOptions = {}): KoaMiddleware {
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisKoa') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions =
@@ -238,8 +217,8 @@ export function arcisKoa(options: ArcisKoaOptions = {}): KoaMiddleware {
   return async (ctx, next) => {
     // 1. Rate limit
     if (limiter) {
-      const key = clientIpOf(ctx);
-      const decision = limiter(key);
+      const key = adapterKey(clientIpOf(ctx, resolver), limiter, 'arcisKoa');
+      const decision = limiter.check(key);
       ctx.set('X-RateLimit-Limit', decision.max.toString());
       ctx.set(
         'X-RateLimit-Remaining',

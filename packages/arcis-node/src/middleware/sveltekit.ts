@@ -29,7 +29,6 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
   RateLimitOptions,
@@ -40,6 +39,8 @@ import {
   type BotDetectionResult,
 } from './bot-detection';
 import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter, type ClientIpOptions } from '../utils/client-ip';
+import { adapterKey, buildAdapterLimiter, mergeClientIpOptions } from './rate-limit-shared';
 
 // ─── SvelteKit duck-typed contracts ─────────────────────────────────────────
 // Mirrors `@sveltejs/kit`'s `RequestEvent` / `Handle` shape closely enough
@@ -70,7 +71,14 @@ export type SvelteKitHandle = (input: {
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
-export interface ArcisHandleOptions {
+/**
+ * Adapter options. The framework address (`event.getClientAddress()`) is the peer for
+ * the `trustedProxies` walk, so a proxy on a trusted private address can
+ * report the client in X-Forwarded-For while a public client cannot choose
+ * its own key. When no address is available, `clientIpHeader` or the
+ * platform header is used, else one shared `unknown` key.
+ */
+export interface ArcisHandleOptions extends ClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -85,43 +93,6 @@ export interface ArcisHandleOptions {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  // Object.create(null) avoids prototype-pollution risk if a key is "__proto__".
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
-
-/**
- * Adapt the SvelteKit Headers object to the shape `detectBot()` reads off an
- * Express request. Only the headers `detectBot` actually consults are
- * forwarded — keeps the surface tiny.
- */
 function botInputFor(headers: Headers): ExpressRequestLike {
   const h: Record<string, string | undefined> = {
     'user-agent': headers.get('user-agent') ?? undefined,
@@ -162,9 +133,9 @@ export function arcisHandle(options: ArcisHandleOptions = {}): SvelteKitHandle {
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisHandle') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions =
@@ -178,8 +149,14 @@ export function arcisHandle(options: ArcisHandleOptions = {}): SvelteKitHandle {
   return async ({ event, resolve }) => {
     // 1. Rate limit
     if (limiter) {
-      const key = event.getClientAddress();
-      const decision = limiter(key);
+      let peer: string | undefined;
+      try {
+        peer = event.getClientAddress();
+      } catch {
+        // The adapter cannot provide an address (for example a prerendered route).
+      }
+      const ip = resolver.resolve(peer, toHeaderGetter(event.request.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisHandle'));
       if (!decision.allowed) {
         return new Response(
           JSON.stringify({

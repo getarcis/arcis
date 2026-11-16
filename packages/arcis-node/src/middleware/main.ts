@@ -29,7 +29,8 @@ import { createSafeLogger } from '../logging';
 import { TelemetryClient } from '../telemetry/client';
 import type { TelemetryOptions } from '../telemetry/types';
 import { IntelligenceClient, reputationSeverityTier } from '../intelligence/client';
-import { detectClientIp } from '../utils/ip';
+import { createNodeClientIp } from '../utils/client-ip';
+import { mergeClientIpOptions } from './rate-limit-shared';
 import type { IpReputation, IntelligenceOptions, CloudDecision } from '../intelligence/types';
 
 /**
@@ -260,6 +261,10 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
   const middlewares: RequestHandler[] = [];
   const cleanupFns: (() => void)[] = [];
   const dryRun = options.dryRun === true;
+  // One resolver for every feature that keys on the client address
+  // (spec/API_SPEC.md, "Client IP resolution"). Invalid trustedProxies
+  // entries throw here, at construction.
+  const clientIp = createNodeClientIp(options);
 
   // Telemetry emitter — first, so latency includes the full middleware chain.
   // Opt-in: zero overhead unless options.telemetry.endpoint is set, OR
@@ -271,7 +276,7 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
   if (telemetryOpts) {
     const client = new TelemetryClient(telemetryOpts);
     telemetryClient = client;
-    middlewares.push(createTelemetryEmitter(client));
+    middlewares.push(createTelemetryEmitter(client, clientIp));
     cleanupFns.push(() => {
       void client.close();
     });
@@ -394,7 +399,7 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
     if (intelDecisions.includes('ip-rep')) {
       const blockThreshold = intel.blockThreshold;
       middlewares.push((req, res, next): void => {
-        const ip = detectClientIp(req);
+        const ip = clientIp(req) ?? 'unknown';
         const rep = intelClient.check(ip);
         req.arcisIpReputation = rep;
         const wouldBlock =
@@ -475,7 +480,12 @@ export function arcis(options: ArcisOptions = {}): ArcisMiddlewareStack {
     const rateLimitOpts: RateLimitOptions = typeof options.rateLimit === 'object'
       ? options.rateLimit
       : {};
-    const rateLimiter = createRateLimiter(rateLimitOpts);
+    const rateLimiter = createRateLimiter({
+      ...rateLimitOpts,
+      ...mergeClientIpOptions(options, rateLimitOpts),
+      // Store errors also reach the telemetry error hook when one is set.
+      onError: rateLimitOpts.onError ?? telemetryOpts?.onError,
+    });
     middlewares.push(dryRun ? observeRateLimitRejection(rateLimiter, rateLimitOpts.statusCode) : rateLimiter);
     cleanupFns.push(() => rateLimiter.close());
   }

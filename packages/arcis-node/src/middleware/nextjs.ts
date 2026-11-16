@@ -65,7 +65,6 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
   RateLimitOptions,
@@ -76,10 +75,27 @@ import {
   type BotDetectionResult,
 } from './bot-detection';
 import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter, type ClientIpResolver } from '../utils/client-ip';
+import {
+  adapterKey,
+  buildAdapterLimiter,
+  mergeClientIpOptions,
+  userClientIp,
+  type AdapterRateLimiter,
+  type FetchClientIpOptions,
+} from './rate-limit-shared';
 
 // ─── Adapter options ────────────────────────────────────────────────────────
 
-export interface ArcisNextOptions {
+/**
+ * Adapter options. Next.js middleware has no peer address, so the client IP
+ * comes from `getClientIp` when it returns a valid address; else
+ * `clientIpHeader`; else `x-real-ip` (then the right-most X-Forwarded-For
+ * entry) on Vercel (`VERCEL=1`) or `cf-connecting-ip` on Cloudflare Workers;
+ * else every request shares one `unknown` key. Self-hosted deployments
+ * should set `clientIpHeader` to the header their proxy overwrites.
+ */
+export interface ArcisNextOptions extends FetchClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -93,38 +109,6 @@ export interface ArcisNextOptions {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  // Object.create(null) avoids prototype-pollution risk if a key is "__proto__".
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
 
 /**
  * Adapt the Headers object to the shape `detectBot()` reads off an
@@ -140,33 +124,6 @@ function botInputFor(headers: Headers): ExpressRequestLike {
     connection: headers.get('connection') ?? undefined,
   };
   return { headers: h } as unknown as ExpressRequestLike;
-}
-
-/**
- * Pull a stable client IP from a Web Fetch Request. Honors trust order:
- * X-Forwarded-For (leftmost trusted entry) → X-Real-IP → CF-Connecting-IP
- * (Cloudflare on Vercel) → "unknown".
- *
- * Vercel + Cloudflare set `X-Forwarded-For`; Next.js Edge Middleware sees
- * those as request headers but does NOT expose `request.ip` consistently
- * across deployment targets (it's `undefined` on self-hosted Node, set
- * on Vercel Edge). Reading the header set is the portable approach.
- *
- * Falls back to the literal string "unknown" so the rate-limit key is
- * still deterministic; an unknown-IP request still rate-limits against
- * other unknown-IP requests, which is the behavior tests assume.
- */
-function clientIpOf(request: Request): string {
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  const xrip = request.headers.get('x-real-ip');
-  if (xrip) return xrip.trim();
-  const cf = request.headers.get('cf-connecting-ip');
-  if (cf) return cf.trim();
-  return 'unknown';
 }
 
 function applySecurityHeaders(
@@ -192,7 +149,9 @@ function applySecurityHeaders(
  */
 interface ResolvedPipeline {
   headerPolicy: CompiledSecurityHeaders | null;
-  limiter: ((key: string) => RateLimitDecision) | null;
+  limiter: AdapterRateLimiter | null;
+  resolver: ClientIpResolver;
+  getClientIp: FetchClientIpOptions['getClientIp'];
   botEnabled: boolean;
   botAllow: Set<string>;
   botDeny: Set<string>;
@@ -211,15 +170,17 @@ function resolvePipeline(options: ArcisNextOptions): ResolvedPipeline {
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisNext') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions = typeof botCfg === 'object' ? botCfg : {};
   return {
     headerPolicy,
     limiter,
+    resolver,
+    getClientIp: options.getClientIp,
     botEnabled,
     botAllow: new Set(botOpts.allow ?? ['SEARCH_ENGINE', 'SOCIAL', 'MONITORING']),
     botDeny: new Set(botOpts.deny ?? ['AUTOMATED']),
@@ -238,8 +199,9 @@ function resolvePipeline(options: ArcisNextOptions): ResolvedPipeline {
  */
 function checkRequest(request: Request, p: ResolvedPipeline): Response | null {
   if (p.limiter) {
-    const key = clientIpOf(request);
-    const decision = p.limiter(key);
+    const ip =
+      userClientIp(p.getClientIp, request) ?? p.resolver.fromEdge(toHeaderGetter(request.headers));
+    const decision = p.limiter.check(adapterKey(ip, p.limiter, 'arcisNext'));
     if (!decision.allowed) {
       return new Response(
         JSON.stringify({

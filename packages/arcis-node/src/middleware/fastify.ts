@@ -31,7 +31,6 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
   RateLimitOptions,
@@ -42,6 +41,14 @@ import {
   type BotDetectionResult,
 } from './bot-detection';
 import { applyPlanAfterHandler, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import {
+  createClientIpResolver,
+  normalizeIp,
+  toHeaderGetter,
+  type ClientIpOptions,
+  type ClientIpResolver,
+} from '../utils/client-ip';
+import { adapterKey, buildAdapterLimiter, mergeClientIpOptions } from './rate-limit-shared';
 
 // ─── Fastify duck-typed contracts ───────────────────────────────────────────
 // Mirror just enough of the FastifyInstance / FastifyRequest / FastifyReply
@@ -56,8 +63,14 @@ export interface FastifyRequestLike {
   url?: string;
   method?: string;
   ip?: string;
+  /** Defined by Fastify only when the app sets `trustProxy`. */
+  ips?: string[];
   socket?: { remoteAddress?: string };
-  raw?: { headers: Record<string, string | string[] | undefined>; url?: string };
+  raw?: {
+    headers: Record<string, string | string[] | undefined>;
+    url?: string;
+    socket?: { remoteAddress?: string };
+  };
 }
 
 /**
@@ -93,7 +106,12 @@ export interface FastifyInstanceLike {
 
 // ─── Plugin options ─────────────────────────────────────────────────────────
 
-export interface ArcisFastifyOptions {
+/**
+ * Plugin options. `trustedProxies` / `clientIpHeader` control client IP
+ * resolution; without `trustedProxies`, an app that sets Fastify's
+ * `trustProxy` keys on Fastify's resolved `request.ip`.
+ */
+export interface ArcisFastifyOptions extends ClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -107,38 +125,6 @@ export interface ArcisFastifyOptions {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  // Object.create(null) avoids prototype-pollution risk if a key is "__proto__".
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
 
 /**
  * Pull the first header value as a plain string. Fastify's request.headers
@@ -174,24 +160,19 @@ function botInputFor(
 }
 
 /**
- * Pull a stable client IP. Order: `request.ip` (Fastify pre-resolves
- * trustProxy when configured) → X-Forwarded-For (leftmost) → X-Real-IP →
- * socket.remoteAddress → "unknown". `request.ip` is the canonical Fastify
- * field — when the user enables `trustProxy: true` Fastify already parsed
- * the right entry from XFF; we honor that when it's set.
+ * Resolve the client IP. Fastify defines `request.ips` only when the app sets
+ * `trustProxy`; then its resolved `request.ip` is used (unless Arcis
+ * `trustedProxies` is set explicitly). Otherwise the socket peer goes through
+ * the Arcis trust walk, so a public client cannot pick its key with
+ * X-Forwarded-For.
  */
-function clientIpOf(request: FastifyRequestLike): string {
-  if (request.ip) return request.ip;
-  const headers = request.headers ?? request.raw?.headers ?? {};
-  const xff = headerValue(headers, 'x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
+function clientIpOf(request: FastifyRequestLike, resolver: ClientIpResolver): string | null {
+  if (!resolver.explicitTrust && Array.isArray(request.ips)) {
+    const frameworkIp = normalizeIp(request.ip);
+    if (frameworkIp !== null) return frameworkIp;
   }
-  const xrip = headerValue(headers, 'x-real-ip');
-  if (xrip) return xrip.trim();
-  if (request.socket?.remoteAddress) return request.socket.remoteAddress;
-  return 'unknown';
+  const peer = request.socket?.remoteAddress ?? request.raw?.socket?.remoteAddress ?? request.ip;
+  return resolver.resolve(peer, toHeaderGetter(request.headers ?? request.raw?.headers));
 }
 
 function applySecurityHeaders(
@@ -237,9 +218,9 @@ export async function arcisFastify(
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisFastify') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions =
@@ -253,8 +234,8 @@ export async function arcisFastify(
   fastify.addHook('onRequest', async (request, reply) => {
     // 1. Rate limit
     if (limiter) {
-      const key = clientIpOf(request);
-      const decision = limiter(key);
+      const key = adapterKey(clientIpOf(request, resolver), limiter, 'arcisFastify');
+      const decision = limiter.check(key);
       reply.header('X-RateLimit-Limit', decision.max.toString());
       reply.header(
         'X-RateLimit-Remaining',

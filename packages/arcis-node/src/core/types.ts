@@ -6,13 +6,22 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { TelemetryOptions } from '../telemetry/types';
 import type { IntelligenceOptions } from '../intelligence/types';
+import type { ClientIpOptions } from '../utils/client-ip';
+
+export type { ClientIpOptions } from '../utils/client-ip';
 
 // =============================================================================
 // MAIN CONFIGURATION
 // =============================================================================
 
-/** Main Arcis configuration options */
-export interface ArcisOptions {
+/**
+ * Main Arcis configuration options.
+ *
+ * `trustedProxies` and `clientIpHeader` (from {@link ClientIpOptions}) control
+ * how the client address is resolved for rate limiting, IP reputation and
+ * telemetry. See spec/API_SPEC.md, "Client IP resolution".
+ */
+export interface ArcisOptions extends ClientIpOptions {
   /** Enable/configure input sanitization. Default: true */
   sanitize?: boolean | SanitizeOptions;
   /** Enable/configure rate limiting. Default: true */
@@ -245,32 +254,82 @@ export type ThreatType =
 // =============================================================================
 
 /** Rate limiting configuration */
-export interface RateLimitOptions {
-  /** Maximum requests per window. Default: 100 */
+export interface RateLimitOptions extends ClientIpOptions {
+  /** Maximum requests per window, a non-negative integer. `0` blocks every request. Default: 100 */
   max?: number;
-  /** Window size in milliseconds. Default: 60000 (1 minute) */
+  /** Window size in milliseconds, a whole number from 1 to 2^31-1. Default: 60000 (1 minute) */
   windowMs?: number;
   /** Error message when limit exceeded */
   message?: string;
   /** HTTP status code for rate limited responses. Default: 429 */
   statusCode?: number;
-  /** Function to generate rate limit key from request */
+  /**
+   * Function to generate rate limit key from request. Default: the resolved
+   * client IP passed through `ipKeyGenerator`, or `'unknown'`.
+   */
   keyGenerator?: (req: Request) => string;
   /** Function to skip rate limiting for certain requests */
   skip?: (req: Request) => boolean;
-  /** Optional external store for distributed rate limiting */
-  store?: RateLimitStore;
+  /**
+   * Optional external store for distributed rate limiting. Stores that only
+   * implement the get/set interface still work through a non-atomic
+   * compatibility wrapper that warns once.
+   */
+  store?: RateLimitStore | LegacyRateLimitStore;
+  /**
+   * IPv6 prefix length used for the default key (1-128), or `false` to key on
+   * the full address. Default: 56
+   */
+  ipv6Subnet?: number | false;
+  /**
+   * Called when the store fails, at most once per window. The request is
+   * still counted by the in-memory fallback. Default: `console.error`.
+   */
+  onError?: (error: Error) => void;
 }
 
-/** External store interface for distributed rate limiting */
+/** Window state returned by an atomic store increment. */
+export interface RateLimitIncrement {
+  /** Hits in the current window, including this one. */
+  totalHits: number;
+  /** Epoch milliseconds at which the window resets. */
+  resetTime: number;
+}
+
+/**
+ * Atomic store contract for distributed rate limiting
+ * (spec/API_SPEC.md, "Store contract and counting").
+ */
 export interface RateLimitStore {
+  /**
+   * Count one hit and return the window state. The counter and its expiry
+   * must be created together in one atomic operation.
+   */
+  increment(key: string, windowMs: number): Promise<RateLimitIncrement>;
+  /** Remove one hit, floored at 0. */
+  decrement(key: string): Promise<void>;
+  /** Forget a key. */
+  resetKey(key: string): Promise<void>;
+  /** Current window state, or `null` when the key has no live window. */
+  get?(key: string): Promise<RateLimitIncrement | null>;
+  /** Close the store (cleanup connections) */
+  close?(): Promise<void>;
+}
+
+/**
+ * Previous get/set store interface. It cannot count atomically across
+ * instances; implement {@link RateLimitStore} instead.
+ *
+ * @deprecated Use {@link RateLimitStore}.
+ */
+export interface LegacyRateLimitStore {
   /** Get current count for a key */
   get(key: string): Promise<RateLimitEntry | null>;
   /** Set entry for a key */
   set(key: string, entry: RateLimitEntry): Promise<void>;
   /** Increment count for a key */
   increment(key: string): Promise<number>;
-  /** Decrement count for a key (for sliding window) */
+  /** Decrement count for a key */
   decrement?(key: string): Promise<void>;
   /** Reset count for a key */
   reset?(key: string): Promise<void>;
@@ -278,7 +337,7 @@ export interface RateLimitStore {
   close?(): Promise<void>;
 }
 
-/** Rate limit entry stored in a store */
+/** Rate limit entry stored in a legacy store */
 export interface RateLimitEntry {
   /** Number of requests in the current window */
   count: number;

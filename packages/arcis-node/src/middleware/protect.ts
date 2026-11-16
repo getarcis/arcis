@@ -42,6 +42,7 @@ import { bruteForceProtection, type BruteForceOptions } from './brute-force';
 import { createSanitizer } from '../sanitizers';
 import type { RateLimitOptions, SanitizeOptions } from '../core/types';
 import { CorrelationWindow } from './correlation';
+import { createNodeClientIp, ipKeyGenerator, type ClientIpOptions } from '../utils/client-ip';
 
 /**
  * Per-protect-helper correlation-window wiring (improvements.md §1.4).
@@ -59,8 +60,11 @@ import { CorrelationWindow } from './correlation';
  *  - `route`: route label recorded in the window (so cross-route
  *    aggregation is meaningful). Defaults to the request path.
  *  - `statusCode` / `message`: response shape on a correlation block.
+ *  - `trustedProxies` / `clientIpHeader`: how the client address is
+ *    resolved (spec/API_SPEC.md, "Client IP resolution"). IPv6 clients are
+ *    tracked per /56 network.
  */
-export interface CorrelationOptions {
+export interface CorrelationOptions extends ClientIpOptions {
   window: CorrelationWindow;
   vector?: string;
   usernameField?: string;
@@ -69,27 +73,16 @@ export interface CorrelationOptions {
   message?: string;
 }
 
-function getClientIp(req: any): string {
-  // Best-effort. Matches the helper Arcis uses elsewhere.
-  const xff =
-    req?.headers?.['x-forwarded-for'] ?? req?.headers?.['X-Forwarded-For'];
-  if (typeof xff === 'string' && xff.length > 0) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  if (typeof req?.ip === 'string') return req.ip;
-  const remote = req?.socket?.remoteAddress;
-  return typeof remote === 'string' ? remote : '';
-}
-
 function correlationMiddleware(opts: CorrelationOptions): RequestHandler {
   const vector = opts.vector ?? 'request';
   const usernameField = opts.usernameField ?? 'username';
   const statusCode = opts.statusCode ?? 429;
   const message = opts.message ?? 'Suspicious request pattern detected.';
+  const clientIp = createNodeClientIp(opts);
   return function (req, res, next) {
-    const ip = getClientIp(req);
-    if (!ip) return next();
+    const resolved = clientIp(req);
+    if (!resolved) return next();
+    const ip = ipKeyGenerator(resolved);
     const route = opts.route ?? (req.path || req.url || '/');
     const username = req?.body?.[usernameField];
     const distinctValue =

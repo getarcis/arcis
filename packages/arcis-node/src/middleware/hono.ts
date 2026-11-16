@@ -34,7 +34,6 @@
  */
 
 import type { Request as ExpressRequestLike } from 'express';
-import { RATE_LIMIT } from '../core/constants';
 import type {
   HeaderOptions,
   RateLimitOptions,
@@ -45,6 +44,15 @@ import {
   type BotDetectionResult,
 } from './bot-detection';
 import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type CompiledSecurityHeaders } from './security-headers';
+import { createClientIpResolver, toHeaderGetter } from '../utils/client-ip';
+import {
+  adapterKey,
+  buildAdapterLimiter,
+  honoPeerAddress,
+  mergeClientIpOptions,
+  userClientIp,
+  type FetchClientIpOptions,
+} from './rate-limit-shared';
 
 // ─── Hono duck-typed contracts ──────────────────────────────────────────────
 // Mirrors Hono's `Context` and `MiddlewareHandler` shapes closely enough
@@ -53,7 +61,8 @@ import { applyPlanToHeaders, compileSecurityHeaders, parseForwardedProto, type C
 interface HonoContextLike {
   req: { raw: Request };
   res: Response;
-  env?: Record<string, unknown>;
+  /** Runtime bindings: a Node `incoming`, a Bun server, Deno conn info, or Workers bindings. */
+  env?: unknown;
 }
 
 export type HonoMiddleware = (
@@ -61,7 +70,14 @@ export type HonoMiddleware = (
   next: () => Promise<void>,
 ) => Promise<Response | void>;
 
-export interface ArcisHonoOptions {
+/**
+ * Adapter options. Client IP resolution: `getClientIp` when it returns a
+ * valid address; else the peer address Hono exposes (Node, Bun, Deno) with
+ * the `trustedProxies` walk; else, without a peer, `clientIpHeader`, then
+ * `cf-connecting-ip` on Cloudflare Workers or `x-real-ip` on Vercel; else
+ * one shared `unknown` key.
+ */
+export interface ArcisHonoOptions extends FetchClientIpOptions {
   /** Security headers configuration. Default: enabled. Pass `false` to disable. */
   headers?: boolean | HeaderOptions;
   /** Rate limiter configuration. Default: 100 req/60s in-memory. Pass `false` to disable. */
@@ -76,37 +92,6 @@ export interface ArcisHonoOptions {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  count: number;
-  max: number;
-  remaining: number;
-  resetSeconds: number;
-}
-
-function buildLimiter(opts: RateLimitOptions): (key: string) => RateLimitDecision {
-  const max = opts.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS;
-  const windowMs = opts.windowMs ?? RATE_LIMIT.DEFAULT_WINDOW_MS;
-  const store = Object.create(null) as Record<string, RateLimitEntry>;
-  return (key: string): RateLimitDecision => {
-    const now = Date.now();
-    let entry = store[key];
-    if (!entry || entry.resetTime < now) {
-      entry = { count: 0, resetTime: now + windowMs };
-      store[key] = entry;
-    }
-    entry.count += 1;
-    const remaining = Math.max(0, max - entry.count);
-    const resetSeconds = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: entry.count <= max, count: entry.count, max, remaining, resetSeconds };
-  };
-}
-
 function botInputFor(headers: Headers): ExpressRequestLike {
   const h: Record<string, string | undefined> = {
     'user-agent': headers.get('user-agent') ?? undefined,
@@ -116,26 +101,6 @@ function botInputFor(headers: Headers): ExpressRequestLike {
     connection: headers.get('connection') ?? undefined,
   };
   return { headers: h } as unknown as ExpressRequestLike;
-}
-
-/**
- * Extract a client IP from the request. Falls back to "unknown" when
- * none of XFF / CF-Connecting-IP / Forwarded / X-Real-IP are present.
- * The fallback is intentionally NOT a per-request unique value —
- * unknown traffic should share a bucket so a misconfigured edge can't
- * bypass rate limiting by stripping headers.
- */
-function clientIpOf(headers: Headers): string {
-  const cf = headers.get('cf-connecting-ip');
-  if (cf) return cf.trim();
-  const xff = headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  const real = headers.get('x-real-ip');
-  if (real) return real.trim();
-  return 'unknown';
 }
 
 function applySecurityHeaders(
@@ -174,9 +139,9 @@ export function arcisHono(options: ArcisHonoOptions = {}): HonoMiddleware {
   const rateLimitCfg = options.rateLimit ?? true;
   const botCfg = options.bot;
 
-  const limiter = rateLimitCfg
-    ? buildLimiter(typeof rateLimitCfg === 'object' ? rateLimitCfg : {})
-    : null;
+  const rateLimitOpts = typeof rateLimitCfg === 'object' ? rateLimitCfg : {};
+  const limiter = rateLimitCfg ? buildAdapterLimiter(rateLimitOpts, 'arcisHono') : null;
+  const resolver = createClientIpResolver(mergeClientIpOptions(options, rateLimitOpts));
 
   const botEnabled = !!botCfg;
   const botOpts: BotProtectionOptions =
@@ -192,8 +157,10 @@ export function arcisHono(options: ArcisHonoOptions = {}): HonoMiddleware {
 
     // 1. Rate limit
     if (limiter) {
-      const key = clientIpOf(request.headers);
-      const decision = limiter(key);
+      const ip =
+        userClientIp(options.getClientIp, request) ??
+        resolver.resolve(honoPeerAddress(c.env, request), toHeaderGetter(request.headers));
+      const decision = limiter.check(adapterKey(ip, limiter, 'arcisHono'));
       if (!decision.allowed) {
         return new Response(
           JSON.stringify({

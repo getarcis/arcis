@@ -17,20 +17,32 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { parseDuration } from '../utils/duration';
 import { RATE_LIMIT } from '../core/constants';
+import { validateMax, validateWindowMs } from '../core/rate-limit-config';
+import {
+  clientKey,
+  createNodeClientIp,
+  validateIpv6Subnet,
+  type ClientIpOptions,
+} from '../utils/client-ip';
 
-export interface SlidingWindowOptions {
-  /** Maximum requests per window. Default: 100 */
+export interface SlidingWindowOptions extends ClientIpOptions {
+  /** Maximum requests per window, a non-negative integer. Default: 100 */
   max?: number;
-  /** Window size in ms or duration string. Default: '1m' */
+  /** Window size in ms (1 to 2^31-1) or duration string. Default: '1m' */
   window?: string | number;
   /** Error message when limit exceeded */
   message?: string;
   /** HTTP status code for rate limited responses. Default: 429 */
   statusCode?: number;
-  /** Function to generate rate limit key from request */
+  /**
+   * Function to generate rate limit key from request. Default: the resolved
+   * client IP passed through `ipKeyGenerator`.
+   */
   keyGenerator?: (req: Request) => string;
   /** Function to skip rate limiting for certain requests */
   skip?: (req: Request) => boolean;
+  /** IPv6 prefix length for the default key (1-128), or `false`. Default: 56 */
+  ipv6Subnet?: number | false;
 }
 
 interface WindowEntry {
@@ -54,16 +66,22 @@ export interface SlidingWindowMiddleware extends RequestHandler {
  * app.use('/api', createSlidingWindowLimiter({ max: 30, window: '1m' }));
  */
 export function createSlidingWindowLimiter(options: SlidingWindowOptions = {}): SlidingWindowMiddleware {
+  const owner = 'createSlidingWindowLimiter';
   const {
-    max = RATE_LIMIT.DEFAULT_MAX_REQUESTS,
     window: windowOpt = RATE_LIMIT.DEFAULT_WINDOW_MS,
     message = RATE_LIMIT.DEFAULT_MESSAGE,
     statusCode = RATE_LIMIT.DEFAULT_STATUS_CODE,
-    keyGenerator = (req) => req.ip ?? req.socket?.remoteAddress ?? 'unknown',
     skip,
   } = options;
-
-  const windowMs = parseDuration(windowOpt);
+  const max = validateMax(options.max ?? RATE_LIMIT.DEFAULT_MAX_REQUESTS, owner);
+  // A numeric window is validated as given (parseDuration would floor and clamp it).
+  const windowMs = validateWindowMs(
+    typeof windowOpt === 'number' ? windowOpt : parseDuration(windowOpt),
+    owner,
+  );
+  const ipv6Subnet = validateIpv6Subnet(options.ipv6Subnet, owner);
+  const clientIp = createNodeClientIp(options);
+  const keyGenerator = options.keyGenerator ?? ((req: Request) => clientKey(clientIp(req), ipv6Subnet));
 
   // Two windows per key: current and previous
   const currentWindows = Object.create(null) as Record<string, WindowEntry>;
@@ -113,10 +131,13 @@ export function createSlidingWindowLimiter(options: SlidingWindowOptions = {}): 
         currentWindows[key] = { count: 0, startTime: windowStart };
       }
 
-      // Calculate weighted count BEFORE incrementing
+      // Calculate weighted count BEFORE incrementing. The previous window
+      // counts only when it is the one immediately before this window; a key
+      // idle for a full window starts from zero.
       const elapsed = now - windowStart;
       const weight = Math.max(0, (windowMs - elapsed) / windowMs);
-      const prevCount = previousWindows[key]?.count ?? 0;
+      const previous = previousWindows[key];
+      const prevCount = previous && previous.startTime === windowStart - windowMs ? previous.count : 0;
       const estimatedCount = (prevCount * weight) + currentWindows[key].count + 1;
 
       const remaining = Math.max(0, Math.floor(max - estimatedCount));
