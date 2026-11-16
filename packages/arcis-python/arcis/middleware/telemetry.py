@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 
+from ..utils.ip import TrustedProxies, client_ip_from_request
 from ..telemetry.types import (
     TelemetryDecision,
     TelemetryEvent,
@@ -141,25 +142,15 @@ def build_event(
     )
 
 
-def extract_starlette_ip(request: Any) -> str:
-    """Pull a client IP from a Starlette/FastAPI request.
+def extract_starlette_ip(request: Any, trusted_proxies: TrustedProxies = None) -> str:
+    """Resolve the client IP of a Starlette/FastAPI request for telemetry.
 
-    Tries (in order): ``X-Forwarded-For`` first hop, ``X-Real-IP``,
-    ``request.client.host``. Falls back to ``"0.0.0.0"`` so the spec's
-    required ``ip`` field is never empty.
+    Uses the trust-aware resolver: ``X-Forwarded-For`` counts only when the
+    socket peer is in ``trusted_proxies`` (default: loopback, link-local and
+    private ranges). Falls back to ``"0.0.0.0"`` so the spec's required
+    ``ip`` field is never empty.
     """
-    headers: Mapping[str, str] = getattr(request, "headers", {}) or {}
-    fwd = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
-    if fwd:
-        first = fwd.split(",")[0].strip()
-        if first:
-            return first
-    real = headers.get("x-real-ip") or headers.get("X-Real-IP")
-    if real:
-        return real.strip()
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None) if client is not None else None
-    return host or "0.0.0.0"
+    return client_ip_from_request(request, trusted_proxies) or "0.0.0.0"
 
 
 def tag_marker(

@@ -36,7 +36,7 @@ from .core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS, DEFAULT_RAT
 from .telemetry.client import AsyncTelemetryClient
 from .telemetry.types import TelemetryOptions, TelemetrySeverity
 from .middleware.telemetry import telemetry_options_from_env as _telemetry_options_from_env
-from .utils.ip import detect_client_ip
+from .utils.ip import TrustedProxies, client_ip_from_request, validate_trusted_proxies
 from .intelligence.client import IntelligenceClient, reputation_severity_tier
 from .intelligence.types import IntelligenceOptions
 
@@ -272,6 +272,14 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # disables.
         forwarded_headers: bool = True,
         trusted_hosts: Optional[List[str]] = None,
+        # Proxy IPs / CIDR ranges whose X-Forwarded-For is honored when
+        # resolving the client IP (rate-limit key, IP reputation, telemetry).
+        # None uses loopback, link-local and private ranges; [] trusts none.
+        # The peer is scope["client"]. If uvicorn/hypercorn already applied
+        # proxy headers (--proxy-headers with --forwarded-allow-ips), pass []
+        # so Arcis uses that address as is. Applies to the limiters this
+        # middleware builds; a supplied limiter keeps its own setting.
+        trusted_proxies: TrustedProxies = None,
         # Security headers options. headers=True applies the legacy profile
         # (csp overrides its Content-Security-Policy); a dict is passed to
         # SecurityHeaders, e.g. {"profile": "baseline", "x_frame_options":
@@ -308,6 +316,8 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         self.block = block
         self.dry_run = dry_run
         self.on_sanitize = on_sanitize
+        validate_trusted_proxies(trusted_proxies)
+        self.trusted_proxies = trusted_proxies
 
         self.sanitizer = sanitizer or (Sanitizer(
             xss=sanitize_xss,
@@ -339,11 +349,13 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 self.async_rate_limiter = AsyncRateLimiter(
                     max_requests=rate_limit_max,
                     window_ms=rate_limit_window_ms,
+                    trusted_proxies=trusted_proxies,
                 )
             else:
                 self.rate_limiter = RateLimiter(
                     max_requests=rate_limit_max,
                     window_ms=rate_limit_window_ms,
+                    trusted_proxies=trusted_proxies,
                 )
         
         self.security_headers = security_headers or build_security_headers(headers, csp)
@@ -630,7 +642,9 @@ class ArcisMiddleware(BaseHTTPMiddleware):
         # latency, and an unreachable service fails open. Active only when
         # configured with cloud_decisions including "ip-rep".
         if self._intel_client is not None and self._intel_ip_rep:
-            rep = self._intel_client.check(detect_client_ip(request))
+            rep = self._intel_client.check(
+                client_ip_from_request(request, self.trusted_proxies) or "unknown"
+            )
             request.state.arcis_ip_reputation = rep
             would_block = (
                 rep.found
@@ -1139,7 +1153,7 @@ class ArcisMiddleware(BaseHTTPMiddleware):
                 marker.decision = "deny"
             user_agent = request.headers.get("user-agent", "") if hasattr(request, "headers") else ""
             event = build_event(
-                ip=extract_starlette_ip(request),
+                ip=extract_starlette_ip(request, self.trusted_proxies),
                 method=request.method,
                 path=request.url.path if hasattr(request, "url") else "/",
                 status=response.status_code if response is not None else 0,

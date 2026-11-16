@@ -39,6 +39,7 @@ from urllib.parse import parse_qs
 from .middleware.headers import HeadersOption, SecurityHeaders, build_security_headers
 from .middleware.rate_limit import RateLimiter, RateLimitExceeded
 from .sanitizers.sanitize import Sanitizer, scan_threats
+from .utils.ip import TrustedProxies, client_ip_from_request, validate_trusted_proxies
 
 logger = logging.getLogger(__name__)
 
@@ -54,34 +55,6 @@ ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 _DEFAULT_BOT_ALLOW: Tuple[str, ...] = ("SEARCH_ENGINE", "SOCIAL", "MONITORING")
 _DEFAULT_BOT_DENY: Tuple[str, ...] = ("AUTOMATED",)
-
-
-def _client_ip_from_scope(scope: Scope) -> str:
-    """
-    Pull the client IP off an ASGI scope, honouring proxy headers.
-    Order: ``X-Forwarded-For`` (leftmost) > ``X-Real-IP`` >
-    ``CF-Connecting-IP`` > scope ``client`` tuple > "unknown".
-
-    The "unknown" fallback is shared per design: a header-stripping
-    edge proxy must not be able to escape rate limiting by erasing
-    every IP signal.
-    """
-    headers = dict(scope.get("headers") or [])
-    xff = headers.get(b"x-forwarded-for")
-    if xff:
-        first = xff.decode("latin-1", errors="ignore").split(",")[0].strip()
-        if first:
-            return first
-    xri = headers.get(b"x-real-ip")
-    if xri:
-        return xri.decode("latin-1", errors="ignore").strip()
-    cfip = headers.get(b"cf-connecting-ip")
-    if cfip:
-        return cfip.decode("latin-1", errors="ignore").strip()
-    client = scope.get("client")
-    if isinstance(client, (list, tuple)) and len(client) >= 1:
-        return str(client[0])
-    return "unknown"
 
 
 def _bot_input_from_scope(scope: Scope) -> Any:
@@ -228,6 +201,11 @@ class ArcisMiddleware:
     rate_limit : bool
         When True, enforce per-IP rate limiting using the bundled
         in-memory ``RateLimiter``.
+    trusted_proxies : list[str] | None
+        Proxy IPs / CIDR ranges whose ``X-Forwarded-For`` is honored when
+        resolving the client IP from ``scope["client"]``. None uses
+        loopback, link-local and private ranges; ``[]`` trusts none. If the
+        ASGI server already applied proxy headers, pass ``[]``.
     rate_limit_max : int
     rate_limit_window_ms : int
         Rate-limit configuration. Defaults match the FastAPI adapter.
@@ -261,6 +239,7 @@ class ArcisMiddleware:
         rate_limit: bool = True,
         rate_limit_max: int = 100,
         rate_limit_window_ms: int = 60_000,
+        trusted_proxies: TrustedProxies = None,
         headers: HeadersOption = True,
         bot: bool = False,
         bot_allow: Tuple[str, ...] = _DEFAULT_BOT_ALLOW,
@@ -272,15 +251,15 @@ class ArcisMiddleware:
         self.dry_run = dry_run
         self.on_sanitize = on_sanitize
         self._sanitizer: Optional[Sanitizer] = Sanitizer() if sanitize else None
-        # The bundled RateLimiter expects a request object and delegates
-        # key extraction to ``key_func``. Pass a passthrough so we can
-        # call ``check(ip_string)`` with the IP we already pulled from
-        # the ASGI scope without building a request shim.
+        validate_trusted_proxies(trusted_proxies)
+        self.trusted_proxies = trusted_proxies
+        # The limiter's default key resolves the client IP straight from
+        # the ASGI scope (peer = scope["client"]).
         self._rate_limiter: Optional[RateLimiter] = (
             RateLimiter(
                 max_requests=rate_limit_max,
                 window_ms=rate_limit_window_ms,
-                key_func=lambda key: key,
+                trusted_proxies=trusted_proxies,
             )
             if rate_limit
             else None
@@ -327,15 +306,14 @@ class ArcisMiddleware:
         #    Lock; the critical section is microsecond-scale so it's
         #    acceptable inside an async handler.
         if self._rate_limiter is not None:
-            ip = _client_ip_from_scope(scope)
             try:
-                self._rate_limiter.check(ip)
+                self._rate_limiter.check(scope)
             except RateLimitExceeded as exc:
                 if self.dry_run:
                     self._fire_on_sanitize(
                         "rate-limit",
                         "rate-limit/exceeded",
-                        str(ip),
+                        client_ip_from_request(scope, self.trusted_proxies) or "unknown",
                         scope.get("path", "") or "",
                     )
                     logger.info(
@@ -542,9 +520,9 @@ class ArcisMiddleware:
 # Per-framework wrappers around the composite login / signup / api checks
 # plus a shared CorrelationWindow. Each factory returns an async callable
 # usable as a Litestar dependency (or any async-callable guard) that
-# auto-extracts the client IP (X-Forwarded-For first hop, then the socket
-# peer) and the route path, forwards them into the base check with the
-# right vector tag, and raises Litestar's HTTPException on denial.
+# resolves the client IP (trust-aware: X-Forwarded-For only from a trusted
+# socket peer) and the route path, forwards them into the base check with
+# the right vector tag, and raises Litestar's HTTPException on denial.
 #
 # Rate limiting stays a separate concern (Pattern 3): mount Litestar's
 # rate-limit middleware or the bundled RateLimiter for the Node-parity
@@ -564,25 +542,6 @@ class _BodyRequest:
     def __init__(self, body: Any, headers: Any) -> None:
         self.body = body
         self.headers = headers
-
-
-def _litestar_client_ip(request: Any) -> Optional[str]:
-    """Resolve client IP: X-Forwarded-For first hop, then socket peer."""
-    from .middleware.protect_factories import client_ip_from_xff_then
-
-    headers = getattr(request, "headers", None)
-    xff = None
-    if headers is not None and hasattr(headers, "get"):
-        xff = headers.get("x-forwarded-for")
-    fallback: Optional[str] = None
-    client = getattr(request, "client", None)
-    if client is not None:
-        host = getattr(client, "host", None)
-        if host is None and isinstance(client, (list, tuple)) and client:
-            host = client[0]
-        if host:
-            fallback = str(host)
-    return client_ip_from_xff_then(xff, fallback)
 
 
 def _litestar_route(request: Any, route: Optional[str]) -> str:
@@ -621,6 +580,7 @@ def protect_login(
     allowed_bot_categories: Optional[List[str]] = None,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ):
     """Litestar login-protection dependency factory.
 
@@ -640,14 +600,17 @@ def protect_login(
         correlation_window: Optional shared window.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None uses the default private set.
 
     Returns:
         An async Litestar dependency callable.
     """
+    validate_trusted_proxies(trusted_proxies)
     from .middleware.protect_factories import block_status_code, check_login
 
     async def login_dependency(request: Any):
-        client_ip = _litestar_client_ip(request)
+        client_ip = client_ip_from_request(request, trusted_proxies)
         body = await _litestar_json_body(request)
         shim = _BodyRequest(body, getattr(request, "headers", {}))
         result = check_login(
@@ -679,6 +642,7 @@ def protect_signup(
     blocked_email_domains: Optional[List[str]] = None,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ):
     """Litestar signup-protection dependency factory.
 
@@ -699,17 +663,20 @@ def protect_signup(
         correlation_window: Optional shared window.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None uses the default private set.
 
     Returns:
         An async Litestar dependency callable.
     """
+    validate_trusted_proxies(trusted_proxies)
     from .middleware.protect_factories import (
         block_status_code,
         signup_check_with_correlation,
     )
 
     async def signup_dependency(request: Any):
-        client_ip = _litestar_client_ip(request)
+        client_ip = client_ip_from_request(request, trusted_proxies)
         body = await _litestar_json_body(request)
         shim = _BodyRequest(body, getattr(request, "headers", {}))
         result = signup_check_with_correlation(
@@ -740,6 +707,7 @@ def protect_api(
     scan_body: bool = True,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ):
     """Litestar API-protection dependency factory.
 
@@ -758,14 +726,17 @@ def protect_api(
         correlation_window: Optional shared window.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None uses the default private set.
 
     Returns:
         An async Litestar dependency callable.
     """
+    validate_trusted_proxies(trusted_proxies)
     from .middleware.protect_factories import block_status_code, check_api
 
     async def api_dependency(request: Any):
-        client_ip = _litestar_client_ip(request)
+        client_ip = client_ip_from_request(request, trusted_proxies)
         body = await _litestar_json_body(request)
         shim = _BodyRequest(body, getattr(request, "headers", {}))
         result = check_api(

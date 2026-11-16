@@ -35,7 +35,8 @@ def _make_app(**middleware_kwargs) -> TestClient:
     async def root():
         return {"ok": True}
 
-    return TestClient(app)
+    # The socket peer is a local reverse proxy, so its X-Forwarded-For counts.
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 def _headers(ip: str) -> dict:

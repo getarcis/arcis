@@ -150,13 +150,23 @@ class _StubRequest:
 
 
 class TestExtractIp:
-    def test_x_forwarded_for_first_hop(self) -> None:
-        req = _StubRequest({"x-forwarded-for": "203.0.113.5, 10.0.0.1, 10.0.0.2"})
+    def test_x_forwarded_for_from_trusted_peer(self) -> None:
+        req = _StubRequest(
+            {"x-forwarded-for": "203.0.113.5, 10.0.0.1, 10.0.0.2"}, client_host="10.0.0.3"
+        )
         assert extract_starlette_ip(req) == "203.0.113.5"
 
-    def test_x_real_ip(self) -> None:
+    def test_x_forwarded_for_from_public_peer_ignored(self) -> None:
+        req = _StubRequest({"x-forwarded-for": "1.1.1.1"}, client_host="198.51.100.10")
+        assert extract_starlette_ip(req) == "198.51.100.10"
+
+    def test_x_forwarded_for_with_trusted_proxies_override(self) -> None:
+        req = _StubRequest({"x-forwarded-for": "203.0.113.5"}, client_host="10.0.0.3")
+        assert extract_starlette_ip(req, trusted_proxies=[]) == "10.0.0.3"
+
+    def test_x_real_ip_not_trusted(self) -> None:
         req = _StubRequest({"x-real-ip": "203.0.113.5"})
-        assert extract_starlette_ip(req) == "203.0.113.5"
+        assert extract_starlette_ip(req) == "0.0.0.0"
 
     def test_request_client_host(self) -> None:
         req = _StubRequest({}, client_host="198.51.100.10")

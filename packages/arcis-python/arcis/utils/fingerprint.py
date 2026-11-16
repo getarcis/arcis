@@ -13,7 +13,7 @@ Examples:
 import hashlib
 from typing import List, Optional
 
-from .ip import detect_client_ip
+from .ip import Platform, TrustedProxies, detect_client_ip
 
 
 def _get_header(request, name: str) -> str:
@@ -31,8 +31,8 @@ def fingerprint(
     accept_language: bool = True,
     accept_encoding: bool = True,
     custom: Optional[List[str]] = None,
-    platform: str = 'auto',
-    trusted_proxy_count: int = 1,
+    platform: Platform = 'auto',
+    trusted_proxies: TrustedProxies = None,
 ) -> str:
     """
     Generate a deterministic fingerprint for a request.
@@ -48,8 +48,10 @@ def fingerprint(
         accept_language: Include Accept-Language header. Default: True.
         accept_encoding: Include Accept-Encoding header. Default: True.
         custom: Additional custom string components to include.
-        platform: Platform for IP detection. Default: 'auto'.
-        trusted_proxy_count: Number of trusted proxies for IP detection.
+        platform: Platform whose client-IP header to honor from a trusted
+            peer. Default: 'auto' (X-Forwarded-For walk only).
+        trusted_proxies: Proxy IPs / CIDR ranges for IP resolution. None
+            uses the default loopback, link-local and private set.
 
     Returns:
         Hex-encoded SHA-256 hash (64 characters).
@@ -62,7 +64,7 @@ def fingerprint(
 
     if ip:
         client_ip = detect_client_ip(
-            request, platform=platform, trusted_proxy_count=trusted_proxy_count
+            request, platform=platform, trusted_proxies=trusted_proxies
         )
         components.append(f'ip:{client_ip}')
 

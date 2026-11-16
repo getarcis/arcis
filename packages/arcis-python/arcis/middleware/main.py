@@ -6,6 +6,7 @@ Flask/WSGI integration — the primary entry point for framework integration.
 
 from typing import Optional
 
+from ..utils.ip import TrustedProxies
 from ..sanitizers.sanitize import Sanitizer
 from ..core.constants import DEFAULT_MAX_REQUESTS, DEFAULT_WINDOW_MS
 from .rate_limit import RateLimiter, RateLimitExceeded
@@ -33,6 +34,12 @@ class Arcis:
     Content-Security-Policy), a dict of ``SecurityHeaders`` keyword options,
     a ``SecurityHeaders`` instance, or False. With the baseline CSP nonce on,
     Flask views read the per-request nonce from ``flask.g.csp_nonce``.
+
+    ``trusted_proxies`` lists the proxy IPs / CIDR ranges whose
+    X-Forwarded-For the rate limiter honors (default: loopback, link-local
+    and private ranges; ``[]`` trusts none). The peer is the WSGI
+    ``REMOTE_ADDR``; with Werkzeug ``ProxyFix`` installed its resolved
+    address is used as is.
     """
 
     def __init__(
@@ -55,6 +62,7 @@ class Arcis:
         rate_limit: bool = True,
         rate_limit_max: int = DEFAULT_MAX_REQUESTS,
         rate_limit_window_ms: int = DEFAULT_WINDOW_MS,
+        trusted_proxies: TrustedProxies = None,
         # Security headers options
         headers: HeadersOption = True,
         csp: Optional[str] = None,
@@ -65,6 +73,7 @@ class Arcis:
         is_dev: bool = False,
     ):
         self.block = block
+        self.trusted_proxies = trusted_proxies
         self.sanitizer = Sanitizer(
             xss=sanitize_xss,
             sql=sanitize_sql,
@@ -75,6 +84,7 @@ class Arcis:
         self.rate_limiter = RateLimiter(
             max_requests=rate_limit_max,
             window_ms=rate_limit_window_ms,
+            trusted_proxies=trusted_proxies,
         ) if rate_limit else None
 
         self.security_headers = build_security_headers(headers, csp)
@@ -184,4 +194,5 @@ class Arcis:
             headers=self.security_headers if self.security_headers is not None else False,
             error_handler=self.error_handler,
             block=self.block,
+            trusted_proxies=self.trusted_proxies,
         )

@@ -21,6 +21,10 @@ Usage:
         'rate_limit': True,
         'rate_limit_max': 100,
         'rate_limit_window_ms': 60000,
+        # Proxy IPs / CIDR ranges whose X-Forwarded-For is honored. Default:
+        # loopback, link-local and private ranges. [] trusts none; add
+        # 'unix' when nginx reaches the app over a UNIX socket.
+        'trusted_proxies': None,
         'headers': True,
         'csp': None,
         'is_dev': False,  # Set to True for development
@@ -50,19 +54,35 @@ from .middleware.headers import SecurityHeaders, build_security_headers
 from .middleware.error_handler import ErrorHandler
 from .stores.memory import InMemoryStore
 from .logging.safe_logger import SafeLogger
+from .utils.ip import TrustedProxies, client_ip_from_request, validate_trusted_proxies
 
 logger = logging.getLogger(__name__)
 
 
-def get_client_ip(request: HttpRequest) -> str:
-    """Extract client IP from Django request, handling proxies."""
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        return x_forwarded_for.split(',')[0].strip()
-    x_real_ip = request.META.get('HTTP_X_REAL_IP')
-    if x_real_ip:
-        return x_real_ip
-    return request.META.get('REMOTE_ADDR', 'unknown')
+def _configured_trusted_proxies(trusted_proxies: TrustedProxies = None) -> TrustedProxies:
+    """Explicit ``trusted_proxies``, else ``ARCIS_CONFIG['trusted_proxies']``."""
+    if trusted_proxies is not None:
+        return trusted_proxies
+    return getattr(settings, 'ARCIS_CONFIG', {}).get('trusted_proxies')
+
+
+def get_client_ip(request: HttpRequest, trusted_proxies: TrustedProxies = None) -> str:
+    """Resolve the client IP of a Django request.
+
+    ``X-Forwarded-For`` counts only when ``REMOTE_ADDR`` is a trusted proxy
+    and is read from the right, so a client cannot choose its own IP.
+
+    Args:
+        request: The Django request.
+        trusted_proxies: Proxy IPs / CIDR ranges. None reads
+            ``ARCIS_CONFIG['trusted_proxies']``, then the default loopback,
+            link-local and private set.
+
+    Returns:
+        The client IP, or ``'unknown'`` when it cannot be determined.
+    """
+    resolved = client_ip_from_request(request, _configured_trusted_proxies(trusted_proxies))
+    return resolved or 'unknown'
 
 
 def _expose_csp_nonce(
@@ -152,8 +172,8 @@ class ArcisMiddleware(MiddlewareMixin):
             ArcisMiddleware._rate_limiter = RateLimiter(
                 max_requests=config.get('rate_limit_max', 100),
                 window_ms=config.get('rate_limit_window_ms', 60000),
-                key_func=lambda req: get_client_ip(req),
                 store=self._rate_limit_store,
+                trusted_proxies=config.get('trusted_proxies'),
             )
         self.rate_limiter = ArcisMiddleware._rate_limiter if rate_limit_enabled else None
         
@@ -378,8 +398,8 @@ class ArcisRateLimitMiddleware(MiddlewareMixin):
             ArcisRateLimitMiddleware._rate_limiter = RateLimiter(
                 max_requests=config.get('rate_limit_max', 100),
                 window_ms=config.get('rate_limit_window_ms', 60000),
-                key_func=lambda req: get_client_ip(req),
                 store=self._store,
+                trusted_proxies=config.get('trusted_proxies'),
             )
         self.rate_limiter = ArcisRateLimitMiddleware._rate_limiter
     
@@ -471,9 +491,9 @@ class ArcisErrorMiddleware(MiddlewareMixin):
 # ============================================================================
 # Per-framework wrappers around the composite login / signup / api checks
 # plus a shared CorrelationWindow. Each factory returns a Django view
-# decorator that auto-extracts the client IP (X-Forwarded-For first hop,
-# then META REMOTE_ADDR) and the route path, forwards them into the base
-# check with the right vector tag, and returns a JsonResponse on denial.
+# decorator that resolves the client IP (trust-aware: X-Forwarded-For only
+# from a trusted REMOTE_ADDR) and the route path, forwards them into the
+# base check with the right vector tag, and returns a JsonResponse on denial.
 #
 # Rate limiting stays a separate concern (Pattern 3): mount
 # ArcisRateLimitMiddleware for the Node-parity limits (login 5/min, signup
@@ -506,13 +526,9 @@ def _django_json_body(request: HttpRequest) -> Any:
         return None
 
 
-def _django_client_ip(request: HttpRequest) -> Optional[str]:
-    """Resolve client IP: X-Forwarded-For first hop, then REMOTE_ADDR."""
-    from .middleware.protect_factories import client_ip_from_xff_then
-
-    xff = request.META.get('HTTP_X_FORWARDED_FOR')
-    fallback = request.META.get('REMOTE_ADDR')
-    return client_ip_from_xff_then(xff, fallback)
+def _django_client_ip(request: HttpRequest, trusted_proxies: TrustedProxies) -> Optional[str]:
+    """Resolve the client IP for the protect factories (None when unknown)."""
+    return client_ip_from_request(request, _configured_trusted_proxies(trusted_proxies))
 
 
 def protect_login(
@@ -524,6 +540,7 @@ def protect_login(
     allowed_bot_categories: Optional[List[str]] = None,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ) -> Callable[[Callable], Callable]:
     """Django login-protection view decorator factory.
 
@@ -543,10 +560,14 @@ def protect_login(
         correlation_window: Optional shared window.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None reads
+            ``ARCIS_CONFIG['trusted_proxies']``, then the default set.
 
     Returns:
         A view decorator.
     """
+    validate_trusted_proxies(trusted_proxies)
     from .middleware.protect_factories import block_status_code, check_login
 
     def decorator(view: Callable) -> Callable:
@@ -561,7 +582,7 @@ def protect_login(
                 check_bot=check_bot,
                 allowed_bot_categories=allowed_bot_categories,
                 correlation_window=correlation_window,
-                client_ip=_django_client_ip(request),
+                client_ip=_django_client_ip(request, trusted_proxies),
                 route=route if route is not None else request.path,
             )
             if not result.allowed:
@@ -587,6 +608,7 @@ def protect_signup(
     blocked_email_domains: Optional[List[str]] = None,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ) -> Callable[[Callable], Callable]:
     """Django signup-protection view decorator factory.
 
@@ -608,10 +630,14 @@ def protect_signup(
         correlation_window: Optional shared window.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None reads
+            ``ARCIS_CONFIG['trusted_proxies']``, then the default set.
 
     Returns:
         A view decorator.
     """
+    validate_trusted_proxies(trusted_proxies)
     from .middleware.protect_factories import (
         block_status_code,
         signup_check_with_correlation,
@@ -624,7 +650,7 @@ def protect_signup(
             result = signup_check_with_correlation(
                 shim,
                 correlation_window=correlation_window,
-                client_ip=_django_client_ip(request),
+                client_ip=_django_client_ip(request, trusted_proxies),
                 route=route if route is not None else request.path,
                 email_field=email_field,
                 check_email=check_email,
@@ -654,6 +680,7 @@ def protect_api(
     scan_body: bool = True,
     correlation_window: Any = None,
     route: Optional[str] = None,
+    trusted_proxies: TrustedProxies = None,
 ) -> Callable[[Callable], Callable]:
     """Django API-protection view decorator factory.
 
@@ -672,10 +699,14 @@ def protect_api(
         correlation_window: Optional shared window.
         route: Route label recorded in the window. Defaults to the
             request path.
+        trusted_proxies: Proxies whose X-Forwarded-For counts when
+            resolving the client IP. None reads
+            ``ARCIS_CONFIG['trusted_proxies']``, then the default set.
 
     Returns:
         A view decorator.
     """
+    validate_trusted_proxies(trusted_proxies)
     from .middleware.protect_factories import block_status_code, check_api
 
     def decorator(view: Callable) -> Callable:
@@ -689,7 +720,7 @@ def protect_api(
                 allowed_bot_categories=allowed_bot_categories,
                 scan_body=scan_body,
                 correlation_window=correlation_window,
-                client_ip=_django_client_ip(request),
+                client_ip=_django_client_ip(request, trusted_proxies),
                 route=route if route is not None else request.path,
             )
             if not result.allowed:
